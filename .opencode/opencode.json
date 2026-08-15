@@ -1,0 +1,15 @@
+{
+  "$schema": "https://opencode.ai/config.json",
+  "default_agent": "feature-builder",
+  "agent": {
+    "feature-builder": {
+      "model": "opencode-go/deepseek-v4-flash",
+      "mode": "primary"
+    }
+  },
+  "permission": {
+    "bash": "allow",
+    "edit": "allow",
+    "external_directory": "allow"
+  }
+}
