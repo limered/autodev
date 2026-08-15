@@ -13,3 +13,5 @@ Default canonical labels: `needs-triage`, `needs-info`, `ready-for-agent`, `read
 ### Domain docs
 
 Single-context layout: `CONTEXT.md` at the root, ADRs in `docs/adr/`, glossary in `docs/glossary.md`. See `docs/agents/domain.md`.
+
+> This repository is managed by the AI Software Factory.
