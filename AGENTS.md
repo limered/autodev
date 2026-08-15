@@ -1,4 +1,5 @@
 > This file contains configuration for AI coding agents working in this repo.
+> **Note:** This repository is managed by the AI Software Factory.
 
 ## Agent skills
 
