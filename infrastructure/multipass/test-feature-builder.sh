@@ -8,14 +8,15 @@ set -euo pipefail
 
 BRANCH="$1"
 SPEC="$2"
+REPO="$3"                       # owner/name, e.g. limered/autodev
 
-REPO_SSH="git@github.com:limered/autodev.git"
+REPO_SSH="git@github.com:${REPO}.git"
 SSH_DIR="$HOME/.ssh"
 KEY_NAME="bot-github"
 PAT_TMP="/tmp/github-pat.txt"
 PAT_FILE="$HOME/.github-pat.txt"
 API_KEY_TMP="/tmp/opencode-api-key.txt"
-WORK_DIR="$HOME/autodev"
+WORK_DIR="$HOME/${REPO##*/}"    # clone dir = repo name
 OPENCODE_DIR="/tmp/.opencode"
 # deepseek-v4-flash needs region opt-in; grok-4.5 works over the API today.
 MODEL="${MODEL:-opencode-go/grok-4.5}"
@@ -94,7 +95,7 @@ cd "$WORK_DIR"
 FULL_SPEC="SPEC: $SPEC
 BRANCH: $BRANCH
 BASE: main
-REPO: limered/autodev"
+REPO: $REPO"
 
 echo "Running: OPENCODE_API_KEY=*** $OPENCODE_BIN run --model $MODEL --agent feature-builder --auto --print-logs \"...\""
 # stdin from /dev/null so opencode never blocks waiting on a TTY.
