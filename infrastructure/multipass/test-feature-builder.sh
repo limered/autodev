@@ -17,7 +17,8 @@ PAT_FILE="$HOME/.github-pat.txt"
 API_KEY_TMP="/tmp/opencode-api-key.txt"
 WORK_DIR="$HOME/autodev"
 OPENCODE_DIR="/tmp/.opencode"
-MODEL="opencode-go/deepseek-v4-flash"
+# deepseek-v4-flash needs region opt-in; grok-4.5 works over the API today.
+MODEL="${MODEL:-opencode-go/grok-4.5}"
 
 fail() {
   echo "FAIL: $1" >&2
@@ -95,7 +96,8 @@ BRANCH: $BRANCH
 BASE: main
 REPO: limered/autodev"
 
-echo "Running: OPENCODE_API_KEY=*** $OPENCODE_BIN run --model $MODEL --auto \"...\""
-$OPENCODE_BIN run --model "$MODEL" --auto "$FULL_SPEC"
+echo "Running: OPENCODE_API_KEY=*** $OPENCODE_BIN run --model $MODEL --agent feature-builder --auto --print-logs \"...\""
+# stdin from /dev/null so opencode never blocks waiting on a TTY.
+$OPENCODE_BIN run --model "$MODEL" --agent feature-builder --auto --print-logs "$FULL_SPEC" </dev/null
 
 pass "opencode run completed"

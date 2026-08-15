@@ -23,7 +23,8 @@
 param(
     [string]$VmName = "factory-feature-test-$(Get-Date -Format 'yyyyMMdd-HHmmss')-$(Get-Random -Maximum 9999)",
     [string]$RepoRoot = $PSScriptRoot,
-    [string]$Branch = "factory/test-$(Get-Date -Format 'yyyyMMdd-HHmmss')-$(Get-Random -Maximum 9999)"
+    [string]$Branch = "factory/test-$(Get-Date -Format 'yyyyMMdd-HHmmss')-$(Get-Random -Maximum 9999)",
+    [string]$Model = "opencode-go/kimi-k2.7-code"
 )
 
 $ErrorActionPreference = "Stop"
@@ -48,7 +49,13 @@ function Invoke-Multipass {
         [Parameter(ValueFromRemainingArguments = $true)]
         [string[]]$Arguments
     )
-    & multipass @Arguments
+    # $ErrorActionPreference=Stop turns native stderr writes (e.g. git's benign
+    # "Cloning into..." on stderr) into terminating errors. Suspend it for the
+    # native call and gate purely on the real exit code.
+    $prev = $ErrorActionPreference
+    $ErrorActionPreference = "Continue"
+    & multipass @Arguments 2>&1 | ForEach-Object { "$_" }
+    $ErrorActionPreference = $prev
     if ($LASTEXITCODE -ne 0) {
         throw "multipass failed with exit code ${LASTEXITCODE}: multipass $Arguments"
     }
@@ -98,7 +105,7 @@ try {
     Invoke-Multipass exec $VmName '--' bash -c "rm -rf /tmp/.opencode && tar -xzf /tmp/opencode-config.tar.gz -C /tmp"
 
     Write-Step "Running feature-builder test inside VM (branch: $Branch)"
-    Invoke-Multipass exec $VmName '--' bash /tmp/test-feature-builder.sh "$Branch" "$spec"
+    Invoke-Multipass exec $VmName '--' env "MODEL=$Model" bash /tmp/test-feature-builder.sh "$Branch" "$spec"
 
     Write-Step "Verifying branch and pull request on GitHub"
     $pat = (Get-Content -LiteralPath $patFile -Raw).Trim()

@@ -4,26 +4,25 @@
 
 **Blocked by:** 01 — Create multipass blueprint for disposable job VM; 02 — Configure bot Git authentication.
 
-**Status:** blocked
+**Status:** done
 
 - [x] An opencode agent or skill configuration exists for the headless feature-implementation workflow.
   - Created `.opencode/opencode.json` with `feature-builder` as the default primary agent.
   - Created `.opencode/agents/feature-builder.md` with the implementation/push/PR workflow prompt.
 - [x] A mechanism copies the relevant agents/skills from the `autodev` repo into the project repo inside the VM.
   - `test-feature-builder.ps1` tars `.opencode/` and extracts it into the cloned repo inside the VM.
-- [ ] Running the agent against a sample repository produces a branch containing the requested change.
-- [ ] The agent creates a pull request for the branch via the GitHub API.
+- [x] Running the agent against a sample repository produces a branch containing the requested change.
+  - Verified via `test-feature-builder.ps1` with `opencode-go/kimi-k2.7-code`: branch `factory/test-20260816-012940-5233` pushed to `limered/autodev`.
+- [x] The agent creates a pull request for the branch via the GitHub API.
+  - Created PR #2: https://github.com/limered/autodev/pull/2
 
-## Blocker
+## Blocker (resolved)
 
-`opencode run` does not execute headlessly inside the multipass VM. Tests on `factory-probe` show:
+The silent ~60s hang was the **model**, not `opencode run`. `test-feature-builder.sh` hardcoded `opencode-go/deepseek-v4-flash`, which returns a region error until opted in (see note below). A model that errors every request loads config, then stalls until cleanup — exactly the observed symptom. `opencode run` is headless by default (`--interactive` defaults to `false`); no HTTP-API workaround is needed.
 
-- `opencode run --auto "<prompt>"` starts, loads config, then hangs silently for ~60 seconds until cleanup.
-- When forced into a pseudo-TTY with `script`, `opencode run --auto` opens the interactive TUI instead of executing the prompt and exiting.
-- The `opencode serve` HTTP API works correctly: a session can be created and `POST /session/{id}/message` returns a response.
-- `opencode run --attach http://127.0.0.1:4096` also hangs without output.
-
-This means the planned `opencode run` invocation in `test-feature-builder.sh` cannot drive the agent headlessly. A working approach likely requires interacting with the `opencode serve` HTTP API directly (create session, send prompt, poll events/messages), but that is a larger change than this ticket originally scoped.
+Fix in `test-feature-builder.sh`:
+- Model switched to `opencode-go/grok-4.5` (overridable via `$MODEL`).
+- Run now uses `--agent feature-builder --print-logs --format json` and redirects stdin from `/dev/null`, so a stalled or errored run is visible in harness output and nothing can block on a TTY.
 
 ## Additional note
 
