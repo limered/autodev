@@ -1,0 +1,65 @@
+#cloud-config
+# Disposable AI Software Factory job VM.
+# Provisions an Ubuntu LTS instance with the tools needed for an opencode
+# agent to check out a repo, implement a feature, and open a pull request.
+#
+# Usage:
+#   multipass launch 24.04 --name factory-job-01 \
+#     --cpus 4 --memory 8G --disk 40G \
+#     --cloud-init infrastructure/multipass/cloud-init.yaml
+#
+# Then verify with:
+#   multipass transfer infrastructure/multipass/smoke-test.sh factory-job-01:/tmp/smoke-test.sh
+#   multipass exec factory-job-01 -- bash /tmp/smoke-test.sh
+
+package_update: true
+package_upgrade: true
+
+packages:
+  - apt-transport-https
+  - ca-certificates
+  - curl
+  - git
+  - gnupg
+  - openssh-client
+  - software-properties-common
+  - unzip
+  - wget
+  # Docker from the Ubuntu archive. Swaps the deprecated multipass Docker blueprint.
+  - docker.io
+
+runcmd:
+  # Allow the default ubuntu user to run docker without sudo.
+  - usermod -aG docker ubuntu
+  - systemctl enable --now docker
+
+  # Node.js 20.x LTS (required for the opencode npm package).
+  - curl -fsSL https://deb.nodesource.com/setup_20.x | bash -
+  - apt-get install -y nodejs
+
+  # opencode CLI, invoked headlessly as `opencode run "prompt"`.
+  - npm install -g opencode-ai
+
+  # .NET 8 SDK from the Microsoft package repository.
+  - wget https://packages.microsoft.com/config/ubuntu/24.04/packages-microsoft-prod.deb -O /tmp/packages-microsoft-prod.deb
+  - dpkg -i /tmp/packages-microsoft-prod.deb
+  - apt-get update
+  - apt-get install -y dotnet-sdk-8.0
+
+  # Godot 4 engine (headless-capable binary).
+  # Skipped for the MVP: downloads from GitHub/TuxFamily fail with TLS
+  # "bad record mac" errors inside multipass VMs on this Windows host.
+  # Re-enable once a reliable install path is found. See ADR-001.
+  # - mkdir -p /usr/local/lib/godot
+  # - curl -fsSL --retry 5 --retry-delay 5 --max-time 180 \
+  #     https://downloads.tuxfamily.org/godotengine/4.3/Godot_v4.3-stable_linux.x86_64.zip \
+  #     -o /tmp/godot.zip
+  # - unzip -o /tmp/godot.zip -d /usr/local/lib/godot
+  # - find /usr/local/lib/godot -maxdepth 1 -name 'Godot_*_linux.x86_64' -exec ln -sf {} /usr/local/bin/godot \;
+  # - chmod +x /usr/local/bin/godot
+  # - test -x /usr/local/bin/godot
+
+  # Clean up downloaded archives.
+  - rm -f /tmp/packages-microsoft-prod.deb /tmp/godot.zip
+
+final_message: "AI Software Factory VM provisioning complete. Run smoke-test.sh to verify tools."

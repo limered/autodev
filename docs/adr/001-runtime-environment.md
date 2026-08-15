@@ -20,7 +20,7 @@ Use a Linux VM running on the Windows host as the execution environment for each
 - **Hypervisor:** multipass, using its default backend on Windows (Hyper-V on Pro, VirtualBox/QEMU on Home).
 - **One VM per job/feature**, with 2–3 jobs expected to run in parallel on the local PC.
 - **VM is disposable**; all persistent state is pushed to Git before destruction.
-- **Base image:** Ubuntu LTS pre-baked with Git, Docker, opencode, SSH client, .NET 8 SDK, Godot 4, Node.js, and the bot SSH key.
+- **Base image:** Ubuntu LTS pre-baked with Git, Docker, opencode, SSH client, .NET 8 SDK, Node.js, and the bot SSH key. Godot 4 is deferred because downloads fail with TLS errors inside multipass VMs on the current Windows host.
 - **Repository access** via a single global SSH key tied to a dedicated bot GitHub user; shallow clone at job start.
 - **Pull request creation** uses a GitHub Personal Access Token stored in the VM.
 - **VM image build** via a multipass blueprint/cloud-init file stored in this repository.
