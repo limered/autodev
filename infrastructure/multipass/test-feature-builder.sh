@@ -99,6 +99,11 @@ REPO: $REPO"
 
 echo "Running: OPENCODE_API_KEY=*** $OPENCODE_BIN run --model $MODEL --agent feature-builder --auto --print-logs \"...\""
 # stdin from /dev/null so opencode never blocks waiting on a TTY.
-$OPENCODE_BIN run --model "$MODEL" --agent feature-builder --auto --print-logs "$FULL_SPEC" </dev/null
+# /tmp/heartbeat is the liveness marker contract consumed by the host-side poller.
+$OPENCODE_BIN run --model "$MODEL" --agent feature-builder --auto --print-logs "$FULL_SPEC" </dev/null | \
+  while IFS= read -r line; do
+    printf '%s\n' "$line"
+    touch /tmp/heartbeat
+  done
 
 pass "opencode run completed"
