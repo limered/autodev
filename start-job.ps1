@@ -127,7 +127,18 @@ try {
     Invoke-Multipass exec $VmName '--' bash -c "rm -rf /tmp/.opencode && tar -xzf /tmp/opencode-config.tar.gz -C /tmp"
 
     Write-Step "Running feature-builder job inside VM (repo: $Repo, branch: $Branch)"
-    Invoke-Multipass exec $VmName '--' env "MODEL=$Model" bash /tmp/test-feature-builder.sh "$Branch" "$Spec" "$Repo"
+    $vmJobScript = {
+        param($VmName, $Model, $Branch, $Spec, $Repo)
+        $ErrorActionPreference = "Continue"
+        & multipass exec $VmName '--' env "MODEL=$Model" bash /tmp/test-feature-builder.sh "$Branch" "$Spec" "$Repo" 2>&1 | ForEach-Object { "$_" }
+        if ($LASTEXITCODE -ne 0) {
+            throw "multipass exec failed with exit code ${LASTEXITCODE}"
+        }
+    }
+    $vmJob = Start-Job -ScriptBlock $vmJobScript -ArgumentList $VmName, $Model, $Branch, $Spec, $Repo
+
+    $watchScript = Join-Path $PSScriptRoot "watch-heartbeat.ps1"
+    & $watchScript -VmName $VmName -Job $vmJob
 
     Write-Step "Polling GitHub for the pull request on branch $Branch"
     $pat = (Get-Content -LiteralPath $patFile -Raw).Trim()
