@@ -116,6 +116,9 @@ try {
     Invoke-Multipass transfer $patFile "$($VmName):/tmp/github-pat.txt"
     Invoke-Multipass transfer $apiKeyFile "$($VmName):/tmp/opencode-api-key.txt"
     Invoke-Multipass transfer $testScript "$($VmName):/tmp/test-feature-builder.sh"
+    # The Windows working copy may be CRLF; strip CR so bash doesn't choke on
+    # "set -euo pipefail\r" and friends.
+    Invoke-Multipass exec $VmName '--' bash -c "sed -i 's/\r`$//' /tmp/test-feature-builder.sh"
 
     # Transfer the .opencode directory by tarring it, moving the archive into
     # the VM, and extracting it to /tmp/.opencode.

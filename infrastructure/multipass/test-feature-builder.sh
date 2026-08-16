@@ -7,8 +7,8 @@
 set -euo pipefail
 
 BRANCH="$1"
-SPEC="$2"
-REPO="$3"                       # owner/name, e.g. limered/autodev
+SPEC="${SPEC:?SPEC env var must be set by the host launcher}"
+REPO="$2"                       # owner/name, e.g. limered/autodev
 
 REPO_SSH="git@github.com:${REPO}.git"
 SSH_DIR="$HOME/.ssh"

@@ -4,10 +4,12 @@
 
 **Blocked by:** 06 — Emit heartbeat from the job run
 
-**Status:** ready-for-agent
+**Status:** done
 
-- [ ] The job run is launched so the host is not blocked on a single synchronous exec for its entire duration.
-- [ ] The host polls the marker's freshness via `multipass exec` on an interval.
-- [ ] A marker stale for more than 5 minutes fails the job through the existing failure/teardown path (reuses `$jobFailed` / `finally`).
-- [ ] A healthy job that produces output at least every 5 minutes runs to completion and is not false-killed.
-- [ ] A wedged run (e.g. a dead model) is detected and killed at ~5 minutes rather than hanging indefinitely.
+Implemented by the factory as a VM job — PR #5: https://github.com/limered/autodev/pull/5 (adds `watch-heartbeat.ps1`, rewires `start-job.ps1` to run the job as a background PS job with concurrent heartbeat polling).
+
+- [x] The job run is launched so the host is not blocked on a single synchronous exec for its entire duration.
+- [x] The host polls the marker's freshness via `multipass exec` on an interval.
+- [x] A marker stale for more than 5 minutes fails the job through the existing failure/teardown path (reuses `$jobFailed` / `finally`).
+- [x] A healthy job that produces output at least every 5 minutes runs to completion and is not false-killed.
+- [x] A wedged run (e.g. a dead model) is detected and killed at ~5 minutes rather than hanging indefinitely.
