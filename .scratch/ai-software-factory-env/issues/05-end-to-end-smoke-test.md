@@ -4,9 +4,12 @@
 
 **Blocked by:** 04 — Build Windows host job launcher.
 
-**Status:** ready-for-agent
+**Status:** done
 
-- [ ] A sample repository and issue/spec are chosen or created for the smoke test.
-- [ ] Running `start-job.ps1` with the sample input completes without manual intervention.
-- [ ] A pull request is created in the sample repository by the bot user.
-- [ ] The PR contains the expected change described in the input spec.
+- [x] A sample repository and issue/spec are chosen or created for the smoke test.
+  - Ticket 06 (emit heartbeat) used as the real payload against `limered/autodev`.
+- [x] Running `start-job.ps1` with the sample input completes without manual intervention.
+- [x] A pull request is created in the sample repository by the bot user.
+  - PR #4: https://github.com/limered/autodev/pull/4
+- [x] The PR contains the expected change described in the input spec.
+  - `test-feature-builder.sh` wraps `opencode run` to touch `/tmp/heartbeat` per output line.
