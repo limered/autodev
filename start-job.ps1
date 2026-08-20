@@ -113,7 +113,7 @@ function Save-FreezeSnapshot {
         capturedAtUtc  = (Get-Date).ToUniversalTime().ToString("o")
         jobParams      = $JobParams
         markerMtime    = (Invoke-VmCapture $Name 'stat -c %y /tmp/heartbeat 2>/dev/null || echo missing')
-        agentLogTail   = (Invoke-VmCapture $Name 'tail -n 200 $(ls -t ~/.local/share/opencode/log/*.log 2>/dev/null | head -1) 2>/dev/null || echo "<no opencode log>"')
+        agentLogTail   = (Invoke-VmCapture $Name 'f=$(ls -t ~/.local/share/opencode/log/*.log 2>/dev/null | head -1); [ -n "$f" ] && tail -n 200 "$f" || echo "<no opencode log>"')
         psAux          = (Invoke-VmCapture $Name 'ps aux')
         freeM          = (Invoke-VmCapture $Name 'free -m')
         dfH            = (Invoke-VmCapture $Name 'df -h')
