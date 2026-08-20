@@ -4,10 +4,10 @@
 
 **Blocked by:** 07 — Detect a stalled run and fail the job
 
-**Status:** ready-for-agent
+**Status:** done
 
-- [ ] On a detected stall, a JSON manifest is collected from the still-alive VM before teardown.
-- [ ] The manifest contains: agent log tail, marker timestamp, job params, and `ps aux` / `free -m` / `df -h` output.
-- [ ] The manifest is written to `.scratch/freezes/<job>-<timestamp>/` on the host and survives VM destruction.
-- [ ] The collection step is bounded by a short timeout so a wedged VM cannot re-hang the collector.
-- [ ] The VM is destroyed by default and kept only when `-KeepVmOnFailure` is passed.
+- [x] On a detected stall, a JSON manifest is collected from the still-alive VM before teardown.
+- [x] The manifest contains: agent log tail, marker timestamp, job params, and `ps aux` / `free -m` / `df -h` output.
+- [x] The manifest is written to `.scratch/freezes/<job>-<timestamp>/` on the host and survives VM destruction.
+- [x] The collection step is bounded by a short timeout so a wedged VM cannot re-hang the collector.
+- [x] The VM is destroyed by default and kept only when `-KeepVmOnFailure` is passed.

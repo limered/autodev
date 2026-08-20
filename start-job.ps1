@@ -87,6 +87,43 @@ function Remove-Vm {
     multipass delete $Name --purge 2>&1 | Out-Null
 }
 
+function Invoke-VmCapture {
+    # Bounded in-VM command; a wedged VM cannot re-hang the collector. Returns
+    # captured text (stdout+stderr) or a "<unavailable: ...>" marker on failure.
+    param([string]$Name, [string]$Command, [int]$TimeoutSeconds = 15)
+    $prev = $ErrorActionPreference
+    $ErrorActionPreference = "Continue"
+    $out = & multipass exec $Name -- timeout $TimeoutSeconds bash -c $Command 2>&1 | ForEach-Object { "$_" }
+    $code = $LASTEXITCODE
+    $ErrorActionPreference = $prev
+    if ($code -ne 0) { return "<unavailable: exit $code> $out" }
+    return ($out -join "`n")
+}
+
+function Save-FreezeSnapshot {
+    # Collect a debug manifest from the still-alive VM before teardown.
+    param([string]$Name, [hashtable]$JobParams, [string]$RepoRoot)
+    Write-Step "Capturing freeze snapshot from $Name before teardown"
+    $stamp = Get-Date -Format 'yyyyMMdd-HHmmss'
+    $dir = Join-Path $RepoRoot ".scratch\freezes\$Name-$stamp"
+    New-Item -ItemType Directory -Path $dir -Force | Out-Null
+
+    $manifest = [ordered]@{
+        vm             = $Name
+        capturedAtUtc  = (Get-Date).ToUniversalTime().ToString("o")
+        jobParams      = $JobParams
+        markerMtime    = (Invoke-VmCapture $Name 'stat -c %y /tmp/heartbeat 2>/dev/null || echo missing')
+        agentLogTail   = (Invoke-VmCapture $Name 'tail -n 200 $(ls -t ~/.local/share/opencode/log/*.log 2>/dev/null | head -1) 2>/dev/null || echo "<no opencode log>"')
+        psAux          = (Invoke-VmCapture $Name 'ps aux')
+        freeM          = (Invoke-VmCapture $Name 'free -m')
+        dfH            = (Invoke-VmCapture $Name 'df -h')
+    }
+
+    $path = Join-Path $dir "manifest.json"
+    $manifest | ConvertTo-Json -Depth 6 | Set-Content -LiteralPath $path -Encoding UTF8
+    Write-Step "Freeze snapshot written to $path"
+}
+
 $vmCreated = $false
 $jobFailed = $false
 $prUrl = $null
@@ -164,6 +201,19 @@ try {
 catch {
     $jobFailed = $true
     Write-Host "ERROR: $_" -ForegroundColor Red
+    if ($vmCreated) {
+        try {
+            Save-FreezeSnapshot -Name $VmName -RepoRoot $RepoRoot -JobParams @{
+                repo   = $Repo
+                branch = $Branch
+                spec   = $Spec
+                model  = $Model
+            }
+        }
+        catch {
+            Write-Host "WARN: freeze snapshot capture failed: $_" -ForegroundColor Yellow
+        }
+    }
 }
 finally {
     if ($vmCreated -and -not ($jobFailed -and $KeepVmOnFailure)) {
