@@ -135,6 +135,7 @@ function Save-FreezeSnapshot {
     $path = Join-Path $dir "manifest.json"
     $manifest | ConvertTo-Json -Depth 6 | Set-Content -LiteralPath $path -Encoding UTF8
     Write-Step "Freeze snapshot written to $path"
+    return $path
 }
 
 $vmCreated = $false
@@ -217,21 +218,27 @@ try {
 }
 catch {
     $jobFailed = $true
-    Write-Host "ERROR: $_" -ForegroundColor Red
-    Send-FactoryEvent -RunId $RunId -Type "run-failed" -Fields @{ failureReason = "$_" }
+    $failureReason = "$_"
+    Write-Host "ERROR: $failureReason" -ForegroundColor Red
     if ($vmCreated) {
         try {
-            Save-FreezeSnapshot -Name $VmName -RepoRoot $RepoRoot -JobParams @{
+            $freezePath = Save-FreezeSnapshot -Name $VmName -RepoRoot $RepoRoot -JobParams @{
                 repo   = $Repo
                 branch = $Branch
                 spec   = $Spec
                 model  = $Model
+            }
+            # Emit freeze-captured before run-failed so the freeze info lands
+            # first (ordering is defensive only; the backend tolerates any order).
+            if ($freezePath) {
+                Send-FactoryEvent -RunId $RunId -Type "freeze-captured" -Fields @{ freezeLocalPath = $freezePath }
             }
         }
         catch {
             Write-Host "WARN: freeze snapshot capture failed: $_" -ForegroundColor Yellow
         }
     }
+    Send-FactoryEvent -RunId $RunId -Type "run-failed" -Fields @{ failureReason = $failureReason }
 }
 finally {
     if ($vmCreated -and -not ($jobFailed -and $KeepVmOnFailure)) {

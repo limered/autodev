@@ -98,7 +98,11 @@ try {
 
         $staleSeconds = $vmNow - $referenceEpoch
         if ($staleSeconds -gt $StallThresholdSeconds) {
-            throw "Heartbeat stale for ${staleSeconds}s (threshold ${StallThresholdSeconds}s); job appears stalled"
+            $stallReason = "Heartbeat stale for ${staleSeconds}s (threshold ${StallThresholdSeconds}s); job appears stalled"
+            if ($RunId) {
+                Send-FactoryEvent -RunId $RunId -Type "stall-detected" -Fields @{ failureReason = $stallReason }
+            }
+            throw $stallReason
         }
 
         Start-Sleep -Seconds $PollIntervalSeconds

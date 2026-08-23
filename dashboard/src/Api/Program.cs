@@ -138,6 +138,44 @@ app.MapPost("/runs/{runId:guid}/events", async (Guid runId, HttpRequest req) =>
             }
             break;
 
+        case "stall-detected":
+            // → stalled (transient). This is a STATUS change, so it carries the
+            // timestamp guard AND the sticky-terminal guard: a stall arriving
+            // after the run already failed/done must not revive it.
+            await using (var conn = await dataSource.OpenConnectionAsync())
+            await using (var cmd = new NpgsqlCommand(
+                """
+                UPDATE runs
+                SET status = 'stalled', failure_reason = @failureReason, updated_at = @at
+                WHERE run_id = @id AND @at > updated_at
+                  AND status NOT IN ('done', 'failed');
+                """, conn))
+            {
+                cmd.Parameters.AddWithValue("id", runId);
+                cmd.Parameters.AddWithValue("failureReason", (object?)ev.FailureReason ?? DBNull.Value);
+                cmd.Parameters.AddWithValue("at", at);
+                await cmd.ExecuteNonQueryAsync();
+            }
+            break;
+
+        case "freeze-captured":
+            // Informational: record the freeze flag + host-local path. Timestamp-
+            // guarded; does NOT change status, so it's fine as the run heads to failed.
+            await using (var conn = await dataSource.OpenConnectionAsync())
+            await using (var cmd = new NpgsqlCommand(
+                """
+                UPDATE runs
+                SET freeze_captured = true, freeze_local_path = @path, updated_at = @at
+                WHERE run_id = @id AND @at > updated_at;
+                """, conn))
+            {
+                cmd.Parameters.AddWithValue("id", runId);
+                cmd.Parameters.AddWithValue("path", (object?)ev.FreezeLocalPath ?? DBNull.Value);
+                cmd.Parameters.AddWithValue("at", at);
+                await cmd.ExecuteNonQueryAsync();
+            }
+            break;
+
         case "pr-verified":
             // Informational: set the PR link. Timestamp-guarded; does NOT
             // change status, so it's fine on a terminal run.
@@ -202,14 +240,13 @@ app.MapPost("/runs/{runId:guid}/events", async (Guid runId, HttpRequest req) =>
     return Results.Accepted();
 });
 
-// --- Read: all runs, newest first (public) ---
-app.MapGet("/runs", async () =>
+const string runColumns = "run_id, repo, branch, spec, model, vm_name, status, started_at, finished_at, last_heartbeat_at, pr_url, failure_reason, freeze_captured, freeze_local_path, updated_at";
+
+async Task<List<Run>> QueryRuns(string sql)
 {
     var runs = new List<Run>();
     await using var conn = await dataSource.OpenConnectionAsync();
-    await using var cmd = new NpgsqlCommand(
-        "SELECT run_id, repo, branch, spec, model, vm_name, status, started_at, finished_at, last_heartbeat_at, pr_url, failure_reason, freeze_captured, freeze_local_path, updated_at FROM runs ORDER BY started_at DESC",
-        conn);
+    await using var cmd = new NpgsqlCommand(sql, conn);
     await using var r = await cmd.ExecuteReaderAsync();
     while (await r.ReadAsync())
     {
@@ -226,8 +263,18 @@ app.MapGet("/runs", async () =>
             r.IsDBNull(13) ? null : r.GetString(13),
             r.GetFieldValue<DateTimeOffset>(14)));
     }
-    return Results.Json(runs, jsonOpts);
-});
+    return runs;
+}
+
+// --- Read: all runs, newest first (public) ---
+app.MapGet("/runs", async () =>
+    Results.Json(await QueryRuns(
+        $"SELECT {runColumns} FROM runs ORDER BY started_at DESC"), jsonOpts));
+
+// --- Read: only non-terminal runs, newest first (public) ---
+app.MapGet("/runs/active", async () =>
+    Results.Json(await QueryRuns(
+        $"SELECT {runColumns} FROM runs WHERE status IN ('launching', 'running', 'stalled') ORDER BY started_at DESC"), jsonOpts));
 
 // Serve the built Vue SPA (wwwroot) with SPA fallback to index.html.
 app.UseDefaultFiles();
@@ -249,7 +296,8 @@ record RunEvent(
     string? Model,
     string? VmName,
     string? PrUrl,
-    string? FailureReason);
+    string? FailureReason,
+    string? FreezeLocalPath);
 
 record Run(
     Guid RunId,
