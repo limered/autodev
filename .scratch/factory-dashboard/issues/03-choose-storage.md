@@ -14,10 +14,10 @@ Where and how does the .NET backend persist job-run state — managed Postgres, 
 
 ## Resolution
 
-**Managed paid Postgres**, with the .NET service on a **paid always-on Starter** instance. History must persist across restarts/redeploys, and a paid Render plan is already in place — which removes the free-tier blockers (in-memory loss, 15-min spin-down, 30-day free-Postgres expiry).
+**Managed paid Postgres**, with the .NET service on a **free (or Starter) web instance**. History must persist across restarts/redeploys; all durability lives in Postgres, so the web service is **stateless** and a purge/restart/redeploy loses no data.
 
 - **Database:** paid **basic Postgres** (backups, no expiry). Not free Postgres (expires ~30 days, loses history).
-- **Web service:** paid **Starter** (never spins down) so the host's fire-and-forget POSTs always hit a warm endpoint — no ~1 min cold start, no first-POST timeout after idle.
+- **Web service:** **free tier is acceptable** — the service holds no state, so its spin-down loses nothing. Its only downside is cold-start latency: after 15 min idle the first inbound POST waits ~1 min and, given the host helper's 5s timeout, that *first* event (often `run-started`) may time out and drop, appearing late on the next event. This is cosmetic, not data loss. **Starter (~$7/mo) is optional** to keep the service warm if the delayed-first-event is annoying; an open dashboard tab (browser polling) also keeps it warm, and a one-shot retry in `Send-FactoryEvent` mitigates it further.
 - **Not** in-memory (loses state on restart) and **not** SQLite-on-disk (forces a single instance and disables zero-downtime deploys; Postgres is lower-friction and already affordable here).
 
 ### Schema (single table)
