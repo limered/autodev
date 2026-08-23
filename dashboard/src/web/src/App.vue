@@ -1,5 +1,6 @@
 <script setup>
-import { ref, onMounted, onUnmounted } from 'vue'
+import { ref, computed, onMounted, onUnmounted } from 'vue'
+import { runView } from './runView.js'
 
 const runs = ref([])
 const error = ref(null)
@@ -7,6 +8,10 @@ const now = ref(Date.now())
 const isLoading = ref(false)
 let pollTimer = null
 let tickTimer = null
+
+const displayedRuns = computed(() =>
+  runs.value.map(r => ({ run: r, view: runView(r, now.value) }))
+)
 
 async function load() {
   isLoading.value = true
@@ -20,37 +25,6 @@ async function load() {
   } finally {
     isLoading.value = false
   }
-}
-
-function secondsSince(ts) {
-  if (!ts) return null
-  return Math.max(0, Math.round((now.value - new Date(ts).getTime()) / 1000))
-}
-
-function lastSeen(r) {
-  const secs = secondsSince(r.lastHeartbeatAt)
-  if (secs === null) return '—'
-  if (secs < 60) return `${secs}s ago`
-  if (secs < 3600) return `${Math.floor(secs / 60)}m ${secs % 60}s ago`
-  return `${Math.floor(secs / 3600)}h ${Math.floor((secs % 3600) / 60)}m ago`
-}
-
-function freshnessClass(r) {
-  const secs = secondsSince(r.lastHeartbeatAt)
-  if (secs === null) return 'unknown'
-  if (r.status === 'failed' || r.status === 'done') return 'settled'
-  if (secs > 120) return 'stale-danger'
-  if (secs > 30) return 'stale-warn'
-  return 'fresh'
-}
-
-function formatTime(ts) {
-  if (!ts) return '—'
-  return new Date(ts).toLocaleString()
-}
-
-function statusClass(status) {
-  return `status-${status}`
 }
 
 onMounted(() => {
@@ -81,25 +55,25 @@ onUnmounted(() => {
       <p>Failed to load runs: {{ error }}</p>
     </section>
 
-    <section v-if="runs.length" class="run-list">
+    <section v-if="displayedRuns.length" class="run-list">
       <article
-        v-for="r in runs"
-        :key="r.runId"
+        v-for="r in displayedRuns"
+        :key="r.run.runId"
         class="run-card"
-        :class="statusClass(r.status)"
+        :class="r.view.statusClass"
       >
         <div class="card-header">
           <div class="identity">
             <div class="repo-branch">
-              <span class="repo">{{ r.repo }}</span>
+              <span class="repo">{{ r.run.repo }}</span>
               <span class="sep">/</span>
-              <span class="branch mono">{{ r.branch }}</span>
+              <span class="branch mono">{{ r.run.branch }}</span>
             </div>
-            <div class="model mono">{{ r.model }}</div>
+            <div class="model mono">{{ r.run.model }}</div>
           </div>
-          <div class="status-badge" :class="statusClass(r.status)">
+          <div class="status-badge" :class="r.view.statusClass">
             <span class="status-indicator"></span>
-            {{ r.status }}
+            {{ r.run.status }}
           </div>
         </div>
 
@@ -107,30 +81,30 @@ onUnmounted(() => {
           <div class="primary-stats">
             <div class="stat">
               <span class="stat-label">Last seen</span>
-              <span class="stat-value mono" :class="freshnessClass(r)">{{ lastSeen(r) }}</span>
+              <span class="stat-value mono" :class="r.view.freshnessClass">{{ r.view.lastSeen }}</span>
             </div>
             <div class="stat">
               <span class="stat-label">Started</span>
-              <span class="stat-value mono">{{ formatTime(r.startedAt) }}</span>
+              <span class="stat-value mono">{{ r.view.started }}</span>
             </div>
-            <div v-if="r.vmName" class="stat">
+            <div v-if="r.run.vmName" class="stat">
               <span class="stat-label">VM</span>
-              <span class="stat-value mono">{{ r.vmName }}</span>
+              <span class="stat-value mono">{{ r.run.vmName }}</span>
             </div>
           </div>
 
           <div class="secondary">
-            <div v-if="r.prUrl" class="secondary-row">
+            <div v-if="r.run.prUrl" class="secondary-row">
               <span class="secondary-label">PR</span>
-              <a :href="r.prUrl" target="_blank" rel="noopener" class="pr-link mono">{{ r.prUrl }}</a>
+              <a :href="r.run.prUrl" target="_blank" rel="noopener" class="pr-link mono">{{ r.run.prUrl }}</a>
             </div>
-            <div v-if="r.status === 'failed' && r.failureReason" class="secondary-row failure-row">
+            <div v-if="r.run.status === 'failed' && r.run.failureReason" class="secondary-row failure-row">
               <span class="secondary-label">Failure</span>
-              <span class="failure-reason mono">{{ r.failureReason }}</span>
+              <span class="failure-reason mono">{{ r.run.failureReason }}</span>
             </div>
-            <div v-if="r.freezeCaptured" class="secondary-row">
+            <div v-if="r.run.freezeCaptured" class="secondary-row">
               <span class="secondary-label">Freeze</span>
-              <span class="freeze-path mono" title="Local snapshot path">{{ r.freezeLocalPath || '—' }}</span>
+              <span class="freeze-path mono" title="Local snapshot path">{{ r.run.freezeLocalPath || '—' }}</span>
             </div>
           </div>
         </div>
