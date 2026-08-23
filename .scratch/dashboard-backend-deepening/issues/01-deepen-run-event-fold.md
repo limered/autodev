@@ -8,11 +8,11 @@
 
 **Blocked by:** none.
 
-**Status:** todo
+**Status:** done — PR #7 (merged f4fbea5)
 
-- [ ] `RunFold.apply` is a pure function of current run state + event → intended change (or no-op), with no DB or HTTP dependency.
-- [ ] All 8 event types (`run-started`, `agent-started`, `heartbeat`, `stall-detected`, `freeze-captured`, `pr-verified`, `run-finished`, `run-failed`) route through `apply`; unknown types remain accepted-and-ignored.
-- [ ] Sticky-terminal invariant holds: `stall-detected`/`run-finished`/`run-failed` arriving after a terminal status is a no-op.
-- [ ] Timestamp-guard invariant holds: an event with `at <= updatedAt` is a no-op for status-changing events; heartbeat guards against its own last value.
-- [ ] Tests exercise the fold directly (no DB, no HTTP): terminal-revive rejection, out-of-order rejection, each transition.
-- [ ] `POST /runs/{runId}/events` behaviour is unchanged from the outside (same status codes, same auth, same persisted result).
+- [x] `RunFold.apply` is a pure function of current run state + event → intended change (or no-op), with no DB or HTTP dependency.
+- [x] All 8 event types (`run-started`, `agent-started`, `heartbeat`, `stall-detected`, `freeze-captured`, `pr-verified`, `run-finished`, `run-failed`) route through `apply`; unknown types remain accepted-and-ignored.
+- [x] Sticky-terminal invariant holds: `stall-detected`/`run-finished`/`run-failed` arriving after a terminal status is a no-op.
+- [x] Timestamp-guard invariant holds: an event with `at <= updatedAt` is a no-op for status-changing events; heartbeat guards against its own last value.
+- [x] Tests exercise the fold directly (no DB, no HTTP): terminal-revive rejection, out-of-order rejection, each transition.
+- [x] `POST /runs/{runId}/events` behaviour is unchanged from the outside (same status codes, same auth, same persisted result).
