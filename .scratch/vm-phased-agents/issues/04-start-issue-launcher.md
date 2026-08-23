@@ -6,8 +6,8 @@
 
 **Status:** ready-for-agent
 
-- [ ] `start-issue.ps1` accepts `feature-slug/NN` and `-RepoUrl`
-- [ ] Branch is auto-derived from the issue reference
-- [ ] It invokes `start-job.ps1` passing the issue token as the run input
-- [ ] Host never reads issue file content
-- [ ] Launching by issue token runs a full job end to end
+- [x] `start-issue.ps1` accepts `feature-slug/NN` and `-RepoUrl`
+- [x] Branch is auto-derived from the issue reference
+- [x] It invokes `start-job.ps1` passing the issue token as the run input
+- [x] Host never reads issue file content
+- [x] Launching by issue token runs a full job end to end _(verified: tickets 02–04 were implemented by the factory VM itself — commits authored by AI Software Factory Bot)_

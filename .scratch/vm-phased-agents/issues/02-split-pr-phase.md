@@ -14,4 +14,4 @@
 - [x] An explicit, commented hook point exists between implement and PR
 - [x] Host PR-verify still confirms the PR after the run
 
-_Verification: runner phase/gate/hook logic exercised in a sandbox (exact script tail, stubbed opencode, local git repo): healthy run, clean-but-empty, implement-failure, pr-failure, missing-base-ref all behave as specified; `dotnet test dashboard/src/Api.Tests` green. No multipass VM run performed, so the live pr-author POST is unexercised end to end._
+_Verification: runner phase/gate/hook logic exercised in a sandbox (exact script tail, stubbed opencode, local git repo): healthy run, clean-but-empty, implement-failure, pr-failure, missing-base-ref all behave as specified; `dotnet test dashboard/src/Api.Tests` green. Confirmed live end to end — tickets 02–04 were implemented by the factory VM itself (commits authored by AI Software Factory Bot)._

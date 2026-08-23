@@ -10,4 +10,4 @@
 - [x] Standard implement instructions live in the feature-builder agent definition, not assembled inline in the shell
 - [x] Given `feature-slug/NN`, the agent resolves and reads `.scratch/<feature-slug>/issues/<NN>-*.md` from the clone
 - [x] A missing/unresolvable issue fails the run fast with a reason surfaced to the dashboard/freeze
-- [ ] An unambiguous end-to-end run implements a real issue from token alone _(not yet verified — no VM run performed)_
+- [x] An unambiguous end-to-end run implements a real issue from token alone _(verified: tickets 02–04 were implemented by the factory VM itself — commits authored by AI Software Factory Bot)_

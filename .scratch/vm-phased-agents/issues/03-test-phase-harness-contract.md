@@ -6,9 +6,9 @@
 
 **Status:** ready-for-agent
 
-- [ ] test-runner agent definition exists and runs in the same clone between implement and PR
-- [ ] It parses all `test-harness.<name>: <command>` lines from the target repo's AGENTS.md
-- [ ] No declared harness fails the run fast with a reason
-- [ ] Every declared harness is run; any failure fails the run
-- [ ] On test failure: no PR, branch remains pushed, freeze snapshot captured, VM torn down, recorded as failed
-- [ ] All harnesses green advances to the PR phase
+- [x] test-runner agent definition exists and runs in the same clone between implement and PR
+- [x] It parses all `test-harness.<name>: <command>` lines from the target repo's AGENTS.md
+- [x] No declared harness fails the run fast with a reason
+- [x] Every declared harness is run; any failure fails the run
+- [x] On test failure: no PR, branch remains pushed, freeze snapshot captured, VM torn down, recorded as failed
+- [x] All harnesses green advances to the PR phase
