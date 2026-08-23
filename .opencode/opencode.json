@@ -3,15 +3,15 @@
   "default_agent": "feature-builder",
   "agent": {
     "feature-builder": {
-      "model": "opencode-go/deepseek-v4-flash",
+      "model": "opencode-go/kimi-k2.7-code",
       "mode": "primary"
     },
     "pr-author": {
-      "model": "opencode-go/deepseek-v4-flash",
+      "model": "opencode-go/kimi-k2.7-code",
       "mode": "primary"
     },
     "test-runner": {
-      "model": "opencode-go/deepseek-v4-flash",
+      "model": "opencode-go/kimi-k2.7-code",
       "mode": "primary"
     }
   },
