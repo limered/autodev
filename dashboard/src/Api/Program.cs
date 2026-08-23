@@ -1,6 +1,7 @@
 using System.Text.Json;
 using Api.Folding;
 using Api.Models;
+using Api.Store;
 using Npgsql;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -8,18 +9,20 @@ var builder = WebApplication.CreateBuilder(args);
 var connectionString = builder.Configuration.GetConnectionString("Runs");
 var factoryToken = builder.Configuration["FACTORY_TOKEN"];
 
-var jsonOpts = new JsonSerializerOptions(JsonSerializerDefaults.Web);
-
-var app = builder.Build();
-
 // Fail fast if the DB connection string is missing.
 if (string.IsNullOrWhiteSpace(connectionString))
 {
-    app.Logger.LogCritical("ConnectionStrings__Runs is not set. Set the Postgres connection string env var. Exiting.");
+    Console.Error.WriteLine("ConnectionStrings__Runs is not set. Set the Postgres connection string env var. Exiting.");
     return 1;
 }
 
 var dataSource = NpgsqlDataSource.Create(connectionString);
+builder.Services.AddSingleton(dataSource);
+builder.Services.AddSingleton<IRunStore, RunStore>();
+
+var jsonOpts = new JsonSerializerOptions(JsonSerializerDefaults.Web);
+
+var app = builder.Build();
 
 // Verify the DB connection and create the schema idempotently at boot.
 try
@@ -56,7 +59,7 @@ catch (Exception ex)
 }
 
 // --- Ingest: one event per call (ticket 02 handles run-started only) ---
-app.MapPost("/runs/{runId:guid}/events", async (Guid runId, HttpRequest req) =>
+app.MapPost("/runs/{runId:guid}/events", async (Guid runId, HttpRequest req, IRunStore store) =>
 {
     // Shared-secret auth on writes only.
     if (string.IsNullOrEmpty(factoryToken) ||
@@ -81,7 +84,7 @@ app.MapPost("/runs/{runId:guid}/events", async (Guid runId, HttpRequest req) =>
 
     ev = ev with { RunId = runId };
 
-    var current = await LoadRun(runId);
+    var current = await store.Get(runId);
     var next = RunFold.Apply(current, ev);
     if (next is not null)
     {
@@ -90,34 +93,6 @@ app.MapPost("/runs/{runId:guid}/events", async (Guid runId, HttpRequest req) =>
 
     return Results.Accepted();
 });
-
-const string runColumns = "run_id, repo, branch, spec, model, vm_name, status, started_at, finished_at, last_heartbeat_at, pr_url, failure_reason, freeze_captured, freeze_local_path, updated_at";
-
-async Task<RunState?> LoadRun(Guid runId)
-{
-    await using var conn = await dataSource.OpenConnectionAsync();
-    await using var cmd = new NpgsqlCommand(
-        $"SELECT {runColumns} FROM runs WHERE run_id = @id", conn);
-    cmd.Parameters.AddWithValue("id", runId);
-    await using var r = await cmd.ExecuteReaderAsync();
-    if (!await r.ReadAsync())
-    {
-        return null;
-    }
-
-    return new RunState(
-        r.GetGuid(0), r.GetString(1), r.GetString(2), r.GetString(3), r.GetString(4),
-        r.IsDBNull(5) ? null : r.GetString(5),
-        r.GetString(6),
-        r.GetFieldValue<DateTimeOffset>(7),
-        r.IsDBNull(8) ? null : r.GetFieldValue<DateTimeOffset>(8),
-        r.IsDBNull(9) ? null : r.GetFieldValue<DateTimeOffset>(9),
-        r.IsDBNull(10) ? null : r.GetString(10),
-        r.IsDBNull(11) ? null : r.GetString(11),
-        r.GetBoolean(12),
-        r.IsDBNull(13) ? null : r.GetString(13),
-        r.GetFieldValue<DateTimeOffset>(14));
-}
 
 async Task PersistRun(RunState? current, RunState next)
 {
@@ -202,39 +177,13 @@ async Task PersistRun(RunState? current, RunState next)
     }
 }
 
-async Task<List<RunState>> QueryRuns(string sql)
-{
-    var runs = new List<RunState>();
-    await using var conn = await dataSource.OpenConnectionAsync();
-    await using var cmd = new NpgsqlCommand(sql, conn);
-    await using var r = await cmd.ExecuteReaderAsync();
-    while (await r.ReadAsync())
-    {
-        runs.Add(new RunState(
-            r.GetGuid(0), r.GetString(1), r.GetString(2), r.GetString(3), r.GetString(4),
-            r.IsDBNull(5) ? null : r.GetString(5),
-            r.GetString(6),
-            r.GetFieldValue<DateTimeOffset>(7),
-            r.IsDBNull(8) ? null : r.GetFieldValue<DateTimeOffset>(8),
-            r.IsDBNull(9) ? null : r.GetFieldValue<DateTimeOffset>(9),
-            r.IsDBNull(10) ? null : r.GetString(10),
-            r.IsDBNull(11) ? null : r.GetString(11),
-            r.GetBoolean(12),
-            r.IsDBNull(13) ? null : r.GetString(13),
-            r.GetFieldValue<DateTimeOffset>(14)));
-    }
-    return runs;
-}
-
 // --- Read: all runs, newest first (public) ---
-app.MapGet("/runs", async () =>
-    Results.Json(await QueryRuns(
-        $"SELECT {runColumns} FROM runs ORDER BY started_at DESC"), jsonOpts));
+app.MapGet("/runs", async (IRunStore store) =>
+    Results.Json(await store.All(), jsonOpts));
 
 // --- Read: only non-terminal runs, newest first (public) ---
-app.MapGet("/runs/active", async () =>
-    Results.Json(await QueryRuns(
-        $"SELECT {runColumns} FROM runs WHERE status IN ('launching', 'running', 'stalled') ORDER BY started_at DESC"), jsonOpts));
+app.MapGet("/runs/active", async (IRunStore store) =>
+    Results.Json(await store.Active(), jsonOpts));
 
 // Serve the built Vue SPA (wwwroot) with SPA fallback to index.html.
 app.UseDefaultFiles();
