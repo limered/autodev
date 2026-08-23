@@ -103,14 +103,25 @@ function Remove-Vm {
 function Invoke-VmCapture {
     # Bounded in-VM command; a wedged VM cannot re-hang the collector. Returns
     # captured text (stdout+stderr) or a "<unavailable: ...>" marker on failure.
-    param([string]$Name, [string]$Command, [int]$TimeoutSeconds = 15)
-    $prev = $ErrorActionPreference
-    $ErrorActionPreference = "Continue"
-    $out = & multipass exec $Name -- timeout $TimeoutSeconds bash -c $Command 2>&1 | ForEach-Object { "$_" }
-    $code = $LASTEXITCODE
-    $ErrorActionPreference = $prev
-    if ($code -ne 0) { return "<unavailable: exit $code> $out" }
-    return ($out -join "`n")
+    # The in-VM `timeout` bounds a slow command, but if `multipass exec` itself
+    # never returns (VM wedged / tearing down) that's unbounded — so also cap the
+    # host side with a job we abandon after HostTimeoutSeconds.
+    param([string]$Name, [string]$Command, [int]$TimeoutSeconds = 15, [int]$HostTimeoutSeconds = 25)
+    $job = Start-Job -ScriptBlock {
+        param($Name, $Command, $TimeoutSeconds)
+        $out = & multipass exec $Name -- timeout $TimeoutSeconds bash -c $Command 2>&1 | ForEach-Object { "$_" }
+        [PSCustomObject]@{ Code = $LASTEXITCODE; Out = ($out -join "`n") }
+    } -ArgumentList $Name, $Command, $TimeoutSeconds
+    if (-not (Wait-Job -Job $job -Timeout $HostTimeoutSeconds)) {
+        Stop-Job -Job $job -ErrorAction SilentlyContinue
+        Remove-Job -Job $job -Force -ErrorAction SilentlyContinue
+        return "<unavailable: host exec timed out after ${HostTimeoutSeconds}s>"
+    }
+    $r = Receive-Job -Job $job
+    Remove-Job -Job $job -Force -ErrorAction SilentlyContinue
+    if ($null -eq $r) { return "<unavailable: no result>" }
+    if ($r.Code -ne 0) { return "<unavailable: exit $($r.Code)> $($r.Out)" }
+    return $r.Out
 }
 
 function Save-FreezeSnapshot {

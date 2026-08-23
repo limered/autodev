@@ -100,10 +100,26 @@ REPO: $REPO"
 echo "Running: OPENCODE_API_KEY=*** $OPENCODE_BIN run --model $MODEL --agent feature-builder --auto --print-logs \"...\""
 # stdin from /dev/null so opencode never blocks waiting on a TTY.
 # /tmp/heartbeat is the liveness marker contract consumed by the host-side poller.
-$OPENCODE_BIN run --model "$MODEL" --agent feature-builder --auto --print-logs "$FULL_SPEC" </dev/null | \
-  while IFS= read -r line; do
-    printf '%s\n' "$line"
-    touch /tmp/heartbeat
-  done
+#
+# Liveness = "the opencode process is alive", not "it printed a line this minute".
+# A long silent model turn (final commit/PR generation) emits no lines for minutes
+# and was false-killing healthy runs. So: a ticker touches the marker every 30s
+# while opencode's pid is alive. The ADR's real failure (a dead model that errors
+# every request) makes opencode exit fast -> pid gone -> ticker stops -> marker
+# goes stale as intended.
+# ponytail: process-liveness, not output-progress. A deadlocked-but-alive opencode
+# would keep the marker fresh forever; ADR 002 scopes the failure to a dead model
+# that *exits*, and VM-level hangs out of scope, so this is the right signal today.
+touch /tmp/heartbeat
+$OPENCODE_BIN run --model "$MODEL" --agent feature-builder --auto --print-logs "$FULL_SPEC" </dev/null &
+OC_PID=$!
+( while kill -0 "$OC_PID" 2>/dev/null; do sleep 30; touch /tmp/heartbeat 2>/dev/null; done ) &
+TICKER_PID=$!
+trap 'kill "$TICKER_PID" 2>/dev/null' EXIT
+
+OC_RC=0
+wait "$OC_PID" || OC_RC=$?
+kill "$TICKER_PID" 2>/dev/null
+[[ "$OC_RC" -eq 0 ]] || fail "opencode run exited $OC_RC"
 
 pass "opencode run completed"
