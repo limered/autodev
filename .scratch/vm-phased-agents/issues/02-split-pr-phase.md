@@ -6,10 +6,12 @@
 
 **Status:** ready-for-agent
 
-- [ ] feature-builder no longer POSTs a PR
-- [ ] A new pr-author agent definition exists and creates the PR from the branch diff
-- [ ] PR phase runs as a distinct `opencode run` after the implement phase
-- [ ] Gate between phases: proceed only if implement exited 0 AND the branch has commits ahead of base
-- [ ] A clean-but-empty implement (no commits) stops before the PR phase and is recorded as failed
-- [ ] An explicit, commented hook point exists between implement and PR
-- [ ] Host PR-verify still confirms the PR after the run
+- [x] feature-builder no longer POSTs a PR
+- [x] A new pr-author agent definition exists and creates the PR from the branch diff
+- [x] PR phase runs as a distinct `opencode run` after the implement phase
+- [x] Gate between phases: proceed only if implement exited 0 AND the branch has commits ahead of base
+- [x] A clean-but-empty implement (no commits) stops before the PR phase and is recorded as failed
+- [x] An explicit, commented hook point exists between implement and PR
+- [x] Host PR-verify still confirms the PR after the run
+
+_Verification: runner phase/gate/hook logic exercised in a sandbox (exact script tail, stubbed opencode, local git repo): healthy run, clean-but-empty, implement-failure, pr-failure, missing-base-ref all behave as specified; `dotnet test dashboard/src/Api.Tests` green. No multipass VM run performed, so the live pr-author POST is unexercised end to end._
