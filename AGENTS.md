@@ -13,3 +13,9 @@ Default canonical labels: `needs-triage`, `needs-info`, `ready-for-agent`, `read
 ### Domain docs
 
 Single-context layout: `CONTEXT.md` at the root, ADRs in `docs/adr/`, glossary in `docs/glossary.md`. See `docs/agents/domain.md`.
+
+## Test harness
+
+The factory test phase runs every `test-harness.<name>` command declared here. Any failure fails the run.
+
+test-harness.api: dotnet test dashboard/src/Api.Tests
