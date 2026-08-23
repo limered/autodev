@@ -1,13 +1,13 @@
 # Render Blueprint for the factory dashboard.
-# Build context is rooted at dashboard/ (dockerContext + dockerfilePath).
+# rootDir roots the build (context + Dockerfile) inside dashboard/.
 # Postgres is created MANUALLY on Render (per build ticket 01) — no databases: block here.
 services:
   - type: web
     name: factory-dashboard
     runtime: docker
     plan: starter
-    dockerContext: dashboard
-    dockerfilePath: dashboard/Dockerfile
+    rootDir: dashboard
+    dockerfilePath: Dockerfile
     healthCheckPath: /health
     envVars:
       - key: ASPNETCORE_URLS
