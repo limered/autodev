@@ -109,7 +109,8 @@ app.MapPost("/runs/{runId:guid}/events", async (Guid runId, HttpRequest req) =>
                 """
                 UPDATE runs
                 SET status = 'running', vm_name = @vm, updated_at = @at
-                WHERE run_id = @id AND @at > updated_at;
+                WHERE run_id = @id AND @at > updated_at
+                  AND status NOT IN ('done', 'failed');
                 """, conn))
             {
                 cmd.Parameters.AddWithValue("id", runId);
@@ -132,6 +133,61 @@ app.MapPost("/runs/{runId:guid}/events", async (Guid runId, HttpRequest req) =>
                 """, conn))
             {
                 cmd.Parameters.AddWithValue("id", runId);
+                cmd.Parameters.AddWithValue("at", at);
+                await cmd.ExecuteNonQueryAsync();
+            }
+            break;
+
+        case "pr-verified":
+            // Informational: set the PR link. Timestamp-guarded; does NOT
+            // change status, so it's fine on a terminal run.
+            await using (var conn = await dataSource.OpenConnectionAsync())
+            await using (var cmd = new NpgsqlCommand(
+                """
+                UPDATE runs
+                SET pr_url = @prUrl, updated_at = @at
+                WHERE run_id = @id AND @at > updated_at;
+                """, conn))
+            {
+                cmd.Parameters.AddWithValue("id", runId);
+                cmd.Parameters.AddWithValue("prUrl", (object?)ev.PrUrl ?? DBNull.Value);
+                cmd.Parameters.AddWithValue("at", at);
+                await cmd.ExecuteNonQueryAsync();
+            }
+            break;
+
+        case "run-finished":
+            // → done (terminal). Sticky-terminal: won't overwrite an already
+            // terminal status, but sets it from a non-terminal state.
+            await using (var conn = await dataSource.OpenConnectionAsync())
+            await using (var cmd = new NpgsqlCommand(
+                """
+                UPDATE runs
+                SET status = 'done', finished_at = @at, updated_at = @at
+                WHERE run_id = @id AND @at > updated_at
+                  AND status NOT IN ('done', 'failed');
+                """, conn))
+            {
+                cmd.Parameters.AddWithValue("id", runId);
+                cmd.Parameters.AddWithValue("at", at);
+                await cmd.ExecuteNonQueryAsync();
+            }
+            break;
+
+        case "run-failed":
+            // → failed (terminal), with a free-text reason. Sticky-terminal:
+            // won't overwrite an already terminal status.
+            await using (var conn = await dataSource.OpenConnectionAsync())
+            await using (var cmd = new NpgsqlCommand(
+                """
+                UPDATE runs
+                SET status = 'failed', finished_at = @at, failure_reason = @failureReason, updated_at = @at
+                WHERE run_id = @id AND @at > updated_at
+                  AND status NOT IN ('done', 'failed');
+                """, conn))
+            {
+                cmd.Parameters.AddWithValue("id", runId);
+                cmd.Parameters.AddWithValue("failureReason", (object?)ev.FailureReason ?? DBNull.Value);
                 cmd.Parameters.AddWithValue("at", at);
                 await cmd.ExecuteNonQueryAsync();
             }
@@ -191,7 +247,9 @@ record RunEvent(
     string? Branch,
     string? Spec,
     string? Model,
-    string? VmName);
+    string? VmName,
+    string? PrUrl,
+    string? FailureReason);
 
 record Run(
     Guid RunId,

@@ -4,10 +4,10 @@
 
 **Blocked by:** 03 — Live run: agent-started + heartbeat.
 
-**Status:** ready-for-agent
+**Status:** done
 
-- [ ] The backend folds `pr-verified` (sets prUrl), `run-finished` (→ `done`, sets finishedAt), and `run-failed` (→ `failed`, sets finishedAt + failureReason).
-- [ ] Sticky-terminal rule: once a run is `done` or `failed`, no later event can change its status.
-- [ ] `start-job.ps1` emits `pr-verified` when the PR is found, `run-finished` on success, and `run-failed` in its catch block (with a free-text failureReason).
-- [ ] The Vue table shows terminal status, the PR link (when present), and the failure reason (when failed).
-- [ ] A real successful run ends `done` with its PR link; a real failing run ends `failed` with a reason — both correct on the dashboard.
+- [x] The backend folds `pr-verified` (sets prUrl), `run-finished` (→ `done`, sets finishedAt), and `run-failed` (→ `failed`, sets finishedAt + failureReason).
+- [x] Sticky-terminal rule: once a run is `done` or `failed`, no later event can change its status.
+- [x] `start-job.ps1` emits `pr-verified` when the PR is found, `run-finished` on success, and `run-failed` in its catch block (with a free-text failureReason).
+- [x] The Vue table shows terminal status, the PR link (when present), and the failure reason (when failed).
+- [ ] A real successful run ends `done` with its PR link; a real failing run ends `failed` with a reason — both correct on the dashboard. *(verified live after redeploy, as with 02/03.)*

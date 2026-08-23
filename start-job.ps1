@@ -212,10 +212,13 @@ try {
     if (-not $pr) { throw "No open pull request found for branch $Branch" }
     $prUrl = $pr.html_url
     Write-Step "Verified PR: $prUrl"
+    Send-FactoryEvent -RunId $RunId -Type "pr-verified" -Fields @{ prUrl = $prUrl }
+    Send-FactoryEvent -RunId $RunId -Type "run-finished"
 }
 catch {
     $jobFailed = $true
     Write-Host "ERROR: $_" -ForegroundColor Red
+    Send-FactoryEvent -RunId $RunId -Type "run-failed" -Fields @{ failureReason = "$_" }
     if ($vmCreated) {
         try {
             Save-FreezeSnapshot -Name $VmName -RepoRoot $RepoRoot -JobParams @{
