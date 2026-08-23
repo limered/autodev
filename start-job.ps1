@@ -184,7 +184,7 @@ try {
     $vmJobScript = {
         param($VmName, $Model, $Branch, $Spec, $Repo)
         $ErrorActionPreference = "Continue"
-        & multipass exec $VmName '--' env "MODEL=$Model" bash /tmp/test-feature-builder.sh "$Branch" "$Spec" "$Repo" 2>&1 | ForEach-Object { "$_" }
+        & multipass exec $VmName '--' env "MODEL=$Model" "SPEC=$Spec" bash /tmp/test-feature-builder.sh "$Branch" "$Repo" 2>&1 | ForEach-Object { "$_" }
         if ($LASTEXITCODE -ne 0) {
             throw "multipass exec failed with exit code ${LASTEXITCODE}"
         }
