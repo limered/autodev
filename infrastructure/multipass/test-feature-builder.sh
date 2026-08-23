@@ -7,7 +7,7 @@
 set -euo pipefail
 
 BRANCH="$1"
-SPEC="$(printf '%s' "${SPEC_B64:?SPEC_B64 env var must be set by the host launcher}" | base64 -d)"
+ISSUE="$(printf '%s' "${ISSUE_B64:?ISSUE_B64 env var must be set by the host launcher}" | base64 -d)"
 REPO="$2"                       # owner/name, e.g. limered/autodev
 
 REPO_SSH="git@github.com:${REPO}.git"
@@ -90,9 +90,9 @@ fi
 [[ -n "$OPENCODE_BIN" ]] || fail "opencode binary not found in PATH"
 pass "opencode binary: $OPENCODE_BIN"
 
-# 9. Run opencode headlessly against the spec.
+# 9. Run opencode headlessly against the issue token.
 cd "$WORK_DIR"
-FULL_SPEC="SPEC: $SPEC
+FULL_SPEC="ISSUE: $ISSUE
 BRANCH: $BRANCH
 BASE: main
 REPO: $REPO"
