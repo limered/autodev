@@ -184,7 +184,10 @@ try {
     $vmJobScript = {
         param($VmName, $Model, $Branch, $Spec, $Repo)
         $ErrorActionPreference = "Continue"
-        & multipass exec $VmName '--' env "MODEL=$Model" "SPEC=$Spec" bash /tmp/test-feature-builder.sh "$Branch" "$Repo" 2>&1 | ForEach-Object { "$_" }
+        # Base64 the spec so spaces/quotes/newlines never reach the env/exec arg
+        # boundary (a bare word like "to" was being parsed as the command -> exit 127).
+        $specB64 = [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($Spec))
+        & multipass exec $VmName '--' env "MODEL=$Model" "SPEC_B64=$specB64" bash /tmp/test-feature-builder.sh "$Branch" "$Repo" 2>&1 | ForEach-Object { "$_" }
         if ($LASTEXITCODE -ne 0) {
             throw "multipass exec failed with exit code ${LASTEXITCODE}"
         }

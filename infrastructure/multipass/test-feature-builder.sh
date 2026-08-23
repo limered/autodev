@@ -7,7 +7,7 @@
 set -euo pipefail
 
 BRANCH="$1"
-SPEC="${SPEC:?SPEC env var must be set by the host launcher}"
+SPEC="$(printf '%s' "${SPEC_B64:?SPEC_B64 env var must be set by the host launcher}" | base64 -d)"
 REPO="$2"                       # owner/name, e.g. limered/autodev
 
 REPO_SSH="git@github.com:${REPO}.git"
