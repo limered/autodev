@@ -197,7 +197,10 @@ try {
     Send-FactoryEvent -RunId $RunId -Type "agent-started" -Fields @{ vmName = $VmName }
 
     $watchScript = Join-Path $PSScriptRoot "watch-heartbeat.ps1"
-    & $watchScript -VmName $VmName -Job $vmJob -RunId $RunId -RepoRoot $RepoRoot
+    # 10 min, not the 5 min default: a long silent model completion (no interim
+    # output line -> no heartbeat touch) was false-killing legit mid-work agents.
+    # A dead model never recovers, so the extra 5 min only costs a rare real stall.
+    & $watchScript -VmName $VmName -Job $vmJob -RunId $RunId -RepoRoot $RepoRoot -StallThresholdSeconds 600
 
     Write-Step "Polling GitHub for the pull request on branch $Branch"
     $pat = (Get-Content -LiteralPath $patFile -Raw).Trim()

@@ -40,10 +40,13 @@ cannot report a stalled agent as alive.
 **Detection = host-side polling.**
 The host polls the marker's freshness via `multipass exec <vm> -- stat`. The
 host is the healthy vantage point; a stuck agent cannot be trusted to report on
-itself. **Staleness threshold: 5 minutes.** A single threshold is sufficient —
+itself. **Staleness threshold: 10 minutes.** A single threshold is sufficient —
 a dead model never recovers, so a longer wait only costs a few minutes on a rare
 failure while avoiding false-kills of legitimately long steps (large model
-completions, `dotnet test`, Docker pulls).
+completions, `dotnet test`, Docker pulls). Originally 5 minutes; raised to 10
+after a legitimately-mid-work agent (17 steps in, all files written) was
+false-killed during a single silent model completion — the risk flagged below,
+observed in practice with `kimi-k2.7-code`.
 
 **On stall = collect a freeze snapshot, then tear down.**
 A stall becomes a normal job failure (reuses the existing `$jobFailed` /
@@ -79,7 +82,7 @@ calls, not inline — the `try/finally` in `start-job.ps1` is already dense.
 - No cooperation required from the (broken) agent; the heartbeat is derived from output it already produces.
 
 ### Negative / Risks
-- A legitimately long single step over 5 minutes with zero interim output would be false-killed; tune the threshold if this occurs.
+- A legitimately long single step with zero interim output can be false-killed; observed at the original 5 min threshold with `kimi-k2.7-code`, mitigated by raising it to 10 min. Tune further if it recurs.
 - Snapshot collection depends on `multipass exec` still working; a VM wedged at the hypervisor level (not just the agent) would yield only a partial snapshot even with the bounded timeout.
 
 ## Open Questions
