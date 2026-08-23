@@ -139,7 +139,7 @@ run_agent_phase() {
   return "$rc"
 }
 
-echo "Running phase 1/2 (implement): OPENCODE_API_KEY=*** $OPENCODE_BIN run --model $MODEL --agent feature-builder --auto --print-logs \"...\""
+echo "Running phase 1/3 (implement): OPENCODE_API_KEY=*** $OPENCODE_BIN run --model $MODEL --agent feature-builder --auto --print-logs \"...\""
 if ! run_agent_phase feature-builder "$IMPL_SPEC"; then
   fail "implement phase failed: opencode run exited non-zero (see log above)"
 fi
@@ -160,26 +160,31 @@ fi
 pass "gate passed: HEAD is $AHEAD_COUNT commit(s) ahead of $BASE_REF"
 
 # 11. -----------------------------------------------------------------------
-#     HOOK POINT - between the implement and PR phases.
+#     Phase 2 - test: run the test-runner agent in the same clone.
 #
-#     The gate above has passed (implement exited 0 with commits ahead of
-#     base); the PR phase below has not started yet. Future run phases
-#     occupy this slot: issue 03 (vm-phased-agents) will run the test-runner
-#     harness phase exactly here, letting the PR phase proceed only when
-#     every declared test harness is green.
-#
-#     Nothing runs here today.
+#     The test-runner reads the target repo's AGENTS.md for
+#     `test-harness.<name>: <command>` entries and runs every one. If no
+#     harness is declared, or any harness exits non-zero, the run fails here:
+#     the branch stays pushed, but the PR phase below does not run.
 #     -----------------------------------------------------------------------
-echo "-- inter-phase hook point reached (no inter-phase steps configured) --"
+TEST_SPEC="BRANCH: $BRANCH
+BASE: $BASE
+REPO: $REPO"
 
-# 12. Phase 2 - PR: run the pr-author agent as a second, distinct opencode run
-#     in the same clone. It authors the PR title and body from the branch diff
-#     and POSTs the pull request.
+echo "Running phase 2/3 (test): OPENCODE_API_KEY=*** $OPENCODE_BIN run --model $MODEL --agent test-runner --auto --print-logs \"...\""
+if ! run_agent_phase test-runner "$TEST_SPEC"; then
+  fail "test phase failed: a declared harness is red or no harness was declared (see log above)"
+fi
+pass "test phase completed (test-runner exited 0, every harness green)"
+
+# 12. Phase 3 - PR: run the pr-author agent as a distinct opencode run in the
+#     same clone. It authors the PR title and body from the branch diff and
+#     POSTs the pull request.
 PR_SPEC="BRANCH: $BRANCH
 BASE: $BASE
 REPO: $REPO"
 
-echo "Running phase 2/2 (PR): OPENCODE_API_KEY=*** $OPENCODE_BIN run --model $MODEL --agent pr-author --auto --print-logs \"...\""
+echo "Running phase 3/3 (PR): OPENCODE_API_KEY=*** $OPENCODE_BIN run --model $MODEL --agent pr-author --auto --print-logs \"...\""
 if ! run_agent_phase pr-author "$PR_SPEC"; then
   fail "pr phase failed: opencode run exited non-zero (see log above)"
 fi

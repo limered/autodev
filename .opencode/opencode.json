@@ -9,6 +9,10 @@
     "pr-author": {
       "model": "opencode-go/deepseek-v4-flash",
       "mode": "primary"
+    },
+    "test-runner": {
+      "model": "opencode-go/deepseek-v4-flash",
+      "mode": "primary"
     }
   },
   "permission": {
