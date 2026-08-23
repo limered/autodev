@@ -6,8 +6,8 @@
 
 **Status:** ready-for-agent
 
-- [ ] `runView(run, nowMs)` returns last-seen label, freshness class, status class, and started label for a run
-- [ ] The five inline helpers (`secondsSince`, `lastSeen`, `freshnessClass`, `formatTime`, `statusClass`) no longer exist as separate template-facing functions
-- [ ] The template renders identical output to today for launching/running/stalled/done/failed runs and for missing/absent timestamps
-- [ ] `now` reaches the derived logic as an injected number, not via reactive access inside the logic
-- [ ] A test runner is wired up and one test drives `runView` across representative runs, including null `lastHeartbeatAt`
+- [x] `runView(run, nowMs)` returns last-seen label, freshness class, status class, and started label for a run
+- [x] The five inline helpers (`secondsSince`, `lastSeen`, `freshnessClass`, `formatTime`, `statusClass`) no longer exist as separate template-facing functions
+- [x] The template renders identical output to today for launching/running/stalled/done/failed runs and for missing/absent timestamps
+- [x] `now` reaches the derived logic as an injected number, not via reactive access inside the logic
+- [x] A test runner is wired up and one test drives `runView` across representative runs, including null `lastHeartbeatAt`
