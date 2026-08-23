@@ -1,9 +1,11 @@
 #!/usr/bin/env bash
 # End-to-end feature-builder test for the AI Software Factory job VM.
 # Sets up the bot SSH key, GitHub PAT, opencode API key, clones the project
-# repo, injects the .opencode agent configuration, and runs opencode headlessly
-# against a tiny spec. The calling PowerShell harness verifies the resulting
-# branch/PR.
+# repo, injects the .opencode agent configuration, then runs two opencode
+# phases headlessly in the same clone: implement (feature-builder agent:
+# issue token in, implemented branch pushed) and - after a gate plus a hook
+# point - PR (pr-author agent: PR authored from the branch diff and POSTed).
+# The calling PowerShell harness verifies the resulting branch/PR.
 set -euo pipefail
 
 BRANCH="$1"
@@ -90,14 +92,27 @@ fi
 [[ -n "$OPENCODE_BIN" ]] || fail "opencode binary not found in PATH"
 pass "opencode binary: $OPENCODE_BIN"
 
-# 9. Run opencode headlessly against the issue token.
+# 9. Phase 1 - implement: run the feature-builder agent headlessly against the
+#    issue token. It implements, commits, and pushes the branch. It does NOT
+#    create the PR; that is phase 2's job.
 cd "$WORK_DIR"
-FULL_SPEC="ISSUE: $ISSUE
+BASE="${BASE:-main}"
+BASE_REF="origin/$BASE"
+IMPL_SPEC="ISSUE: $ISSUE
 BRANCH: $BRANCH
-BASE: main
+BASE: $BASE
 REPO: $REPO"
 
-echo "Running: OPENCODE_API_KEY=*** $OPENCODE_BIN run --model $MODEL --agent feature-builder --auto --print-logs \"...\""
+TICKER_PID=""
+stop_ticker() {
+  if [[ -n "$TICKER_PID" ]]; then
+    kill "$TICKER_PID" 2>/dev/null || true
+    TICKER_PID=""
+  fi
+}
+trap stop_ticker EXIT
+
+# Runs one agent phase headlessly and returns the opencode exit code.
 # stdin from /dev/null so opencode never blocks waiting on a TTY.
 # /tmp/heartbeat is the liveness marker contract consumed by the host-side poller.
 #
@@ -110,16 +125,62 @@ echo "Running: OPENCODE_API_KEY=*** $OPENCODE_BIN run --model $MODEL --agent fea
 # ponytail: process-liveness, not output-progress. A deadlocked-but-alive opencode
 # would keep the marker fresh forever; ADR 002 scopes the failure to a dead model
 # that *exits*, and VM-level hangs out of scope, so this is the right signal today.
-touch /tmp/heartbeat
-$OPENCODE_BIN run --model "$MODEL" --agent feature-builder --auto --print-logs "$FULL_SPEC" </dev/null &
-OC_PID=$!
-( while kill -0 "$OC_PID" 2>/dev/null; do sleep 30; touch /tmp/heartbeat 2>/dev/null; done ) &
-TICKER_PID=$!
-trap 'kill "$TICKER_PID" 2>/dev/null' EXIT
+run_agent_phase() {
+  local agent="$1"
+  local prompt="$2"
+  touch /tmp/heartbeat
+  $OPENCODE_BIN run --model "$MODEL" --agent "$agent" --auto --print-logs "$prompt" </dev/null &
+  local phase_pid=$!
+  ( while kill -0 "$phase_pid" 2>/dev/null; do sleep 30; touch /tmp/heartbeat 2>/dev/null; done ) &
+  TICKER_PID=$!
+  local rc=0
+  wait "$phase_pid" || rc=$?
+  stop_ticker
+  return "$rc"
+}
 
-OC_RC=0
-wait "$OC_PID" || OC_RC=$?
-kill "$TICKER_PID" 2>/dev/null
-[[ "$OC_RC" -eq 0 ]] || fail "opencode run exited $OC_RC"
+echo "Running phase 1/2 (implement): OPENCODE_API_KEY=*** $OPENCODE_BIN run --model $MODEL --agent feature-builder --auto --print-logs \"...\""
+if ! run_agent_phase feature-builder "$IMPL_SPEC"; then
+  fail "implement phase failed: opencode run exited non-zero (see log above)"
+fi
+pass "implement phase completed (feature-builder exited 0)"
 
-pass "opencode run completed"
+# 10. Gate between phases: the PR phase runs only if the implement agent exited
+#     cleanly AND the branch has commits ahead of base. A clean-but-empty
+#     implement (exit 0, nothing committed) stops here, before the PR phase,
+#     and is recorded as a failed run - fail() exits 1, which fails the
+#     multipass exec on the host, which marks the run failed (run-failed
+#     event, freeze snapshot, VM teardown).
+if ! AHEAD_COUNT=$(git rev-list --count "$BASE_REF..HEAD" 2>/dev/null); then
+  fail "gate: cannot count commits ahead of $BASE_REF - is the base ref present in the clone?"
+fi
+if [[ "$AHEAD_COUNT" -eq 0 ]]; then
+  fail "clean-but-empty implement: HEAD has no commits ahead of $BASE_REF; stopping before the PR phase"
+fi
+pass "gate passed: HEAD is $AHEAD_COUNT commit(s) ahead of $BASE_REF"
+
+# 11. -----------------------------------------------------------------------
+#     HOOK POINT - between the implement and PR phases.
+#
+#     The gate above has passed (implement exited 0 with commits ahead of
+#     base); the PR phase below has not started yet. Future run phases
+#     occupy this slot: issue 03 (vm-phased-agents) will run the test-runner
+#     harness phase exactly here, letting the PR phase proceed only when
+#     every declared test harness is green.
+#
+#     Nothing runs here today.
+#     -----------------------------------------------------------------------
+echo "-- inter-phase hook point reached (no inter-phase steps configured) --"
+
+# 12. Phase 2 - PR: run the pr-author agent as a second, distinct opencode run
+#     in the same clone. It authors the PR title and body from the branch diff
+#     and POSTs the pull request.
+PR_SPEC="BRANCH: $BRANCH
+BASE: $BASE
+REPO: $REPO"
+
+echo "Running phase 2/2 (PR): OPENCODE_API_KEY=*** $OPENCODE_BIN run --model $MODEL --agent pr-author --auto --print-logs \"...\""
+if ! run_agent_phase pr-author "$PR_SPEC"; then
+  fail "pr phase failed: opencode run exited non-zero (see log above)"
+fi
+pass "pr phase completed (pr-author exited 0, PR created)"

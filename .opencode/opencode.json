@@ -5,6 +5,10 @@
     "feature-builder": {
       "model": "opencode-go/deepseek-v4-flash",
       "mode": "primary"
+    },
+    "pr-author": {
+      "model": "opencode-go/deepseek-v4-flash",
+      "mode": "primary"
     }
   },
   "permission": {
