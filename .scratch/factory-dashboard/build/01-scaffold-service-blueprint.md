@@ -4,12 +4,12 @@
 
 **Blocked by:** None — can start immediately.
 
-**Status:** ready-for-agent
+**Status:** done
 
-- [ ] All dashboard code lives under a root `dashboard/` folder, separate from the host scripts.
-- [ ] Multi-stage `Dockerfile`: a Node stage builds the Vue app to `dist/`; a .NET aspnet stage runs the published app and serves `dist/` as static files with SPA fallback. App binds `0.0.0.0:$PORT`.
-- [ ] ASP.NET Core serves the Vue SPA at `/` (same origin — no CORS).
-- [ ] A committed `render.yaml` Blueprint defines one `type: web`, `runtime: docker`, `plan: starter` service with a health check.
-- [ ] Postgres is **created manually** on Render (not by the Blueprint); its connection string is supplied to the service via an env var (`ConnectionStrings__Runs`).
-- [ ] The deployed service starts, serves the page, and opens a working DB connection at boot.
-- [ ] `FACTORY_TOKEN` is defined as a secret env var (`sync: false`) for later use.
+- [x] All dashboard code lives under a root `dashboard/` folder, separate from the host scripts.
+- [x] Multi-stage `Dockerfile`: a Node stage builds the Vue app to `dist/`; a .NET aspnet stage runs the published app and serves `dist/` as static files with SPA fallback. App binds `0.0.0.0:$PORT`.
+- [x] ASP.NET Core serves the Vue SPA at `/` (same origin — no CORS).
+- [x] A committed `render.yaml` Blueprint defines one `type: web`, `runtime: docker`, `plan: starter` service with a health check.
+- [x] Postgres is **created manually** on Render (not by the Blueprint); its connection string is supplied to the service via an env var (`ConnectionStrings__Runs`).
+- [x] The deployed service starts, serves the page, and opens a working DB connection at boot.
+- [x] `FACTORY_TOKEN` is defined as a secret env var (`sync: false`) for later use.
