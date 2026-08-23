@@ -4,12 +4,12 @@
 
 **Blocked by:** 01 — Scaffold dashboard service + Render Blueprint.
 
-**Status:** ready-for-agent
+**Status:** done
 
-- [ ] A `runs` table exists (single-table schema keyed by host-generated `runId`), created via migration or idempotent startup.
-- [ ] `POST /runs/{runId}/events` accepts a `run-started` event (fields: repo, branch, spec, model), upserts the row in `launching` status, and returns `202`. The endpoint requires header `X-Factory-Token` and returns `401` if missing/wrong.
-- [ ] `GET /runs` returns all runs newest-first as JSON.
-- [ ] The Vue frontend polls `GET /runs` and renders one row per run showing repo, branch, model, status.
-- [ ] A shared `Send-FactoryEvent` PowerShell helper POSTs `{type, at, ...}` with the token header, a short timeout, and swallows all errors (never throws). Backend URL + token are read from `.secrets/`; if absent, reporting is a silent no-op.
-- [ ] `start-job.ps1` generates a `runId` GUID at startup and emits `run-started` via the helper.
-- [ ] Launching a real job makes a row appear on the deployed dashboard.
+- [x] A `runs` table exists (single-table schema keyed by host-generated `runId`), created via migration or idempotent startup.
+- [x] `POST /runs/{runId}/events` accepts a `run-started` event (fields: repo, branch, spec, model), upserts the row in `launching` status, and returns `202`. The endpoint requires header `X-Factory-Token` and returns `401` if missing/wrong.
+- [x] `GET /runs` returns all runs newest-first as JSON.
+- [x] The Vue frontend polls `GET /runs` and renders one row per run showing repo, branch, model, status.
+- [x] A shared `Send-FactoryEvent` PowerShell helper POSTs `{type, at, ...}` with the token header, a short timeout, and swallows all errors (never throws). Backend URL + token are read from `.secrets/`; if absent, reporting is a silent no-op.
+- [x] `start-job.ps1` generates a `runId` GUID at startup and emits `run-started` via the helper.
+- [ ] Launching a real job makes a row appear on the deployed dashboard. *(Verify after deploy + host `.secrets/` config — no local Postgres to test the DB path.)*

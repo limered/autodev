@@ -51,6 +51,19 @@ if ($RepoUrl -notmatch 'github\.com[:/]([^/]+/[^/]+?)(\.git)?$') {
 }
 $Repo = $Matches[1]
 
+# Host-generated run id: the identity carried on every dashboard event.
+$RunId = [guid]::NewGuid().ToString()
+
+# Fire-and-forget dashboard reporting (no-op if .secrets/ config is absent).
+. (Join-Path $RepoRoot "factory-report.ps1")
+Initialize-FactoryReport -RepoRoot $RepoRoot
+Send-FactoryEvent -RunId $RunId -Type "run-started" -Fields @{
+    repo   = $Repo
+    branch = $Branch
+    spec   = $Spec
+    model  = $Model
+}
+
 $cloudInit = Join-Path $RepoRoot "infrastructure\multipass\cloud-init.yaml"
 $testScript = Join-Path $RepoRoot "infrastructure\multipass\test-feature-builder.sh"
 $secretsDir = Join-Path $RepoRoot ".secrets"
