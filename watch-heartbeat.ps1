@@ -32,10 +32,19 @@ param(
     [Parameter(Mandatory = $true)][string]$VmName,
     [Parameter(Mandatory = $true)][System.Management.Automation.Job]$Job,
     [int]$StallThresholdSeconds = 300,
-    [int]$PollIntervalSeconds = 10
+    [int]$PollIntervalSeconds = 10,
+    [string]$RunId,
+    [string]$RepoRoot
 )
 
 $ErrorActionPreference = "Stop"
+
+# Dashboard reporting is optional: only if a RunId + RepoRoot were passed AND
+# the .secrets/ config exists. Send-FactoryEvent is a no-op otherwise.
+if ($RunId -and $RepoRoot) {
+    . (Join-Path $RepoRoot "factory-report.ps1")
+    Initialize-FactoryReport -RepoRoot $RepoRoot
+}
 
 function Get-VmEpochSeconds {
     param([string]$Name)
@@ -65,10 +74,19 @@ function Get-HeartbeatEpochSeconds {
 
 try {
     $vmStartEpoch = $null
+    $lastReportedHeartbeat = $null
 
     while ($Job.State -eq "Running") {
         $vmNow = Get-VmEpochSeconds -Name $VmName
         $heartbeatEpoch = Get-HeartbeatEpochSeconds -Name $VmName
+
+        # Report a heartbeat only when the marker mtime actually advanced since
+        # last reported — an idle agent simply stops reporting.
+        if ($RunId -and $heartbeatEpoch -ne $null -and $heartbeatEpoch -ne $lastReportedHeartbeat) {
+            $lastReportedHeartbeat = $heartbeatEpoch
+            $at = [DateTimeOffset]::FromUnixTimeSeconds($heartbeatEpoch).UtcDateTime.ToString("o")
+            Send-FactoryEvent -RunId $RunId -Type "heartbeat" -Fields @{ at = $at }
+        }
 
         $referenceEpoch = if ($heartbeatEpoch -ne $null) {
             $heartbeatEpoch

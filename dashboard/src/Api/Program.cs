@@ -101,6 +101,42 @@ app.MapPost("/runs/{runId:guid}/events", async (Guid runId, HttpRequest req) =>
             }
             break;
 
+        case "agent-started":
+            // → running, set vmName. Timestamp-guarded: only if newer than the
+            // last applied change, so a stale retry can't move it backwards.
+            await using (var conn = await dataSource.OpenConnectionAsync())
+            await using (var cmd = new NpgsqlCommand(
+                """
+                UPDATE runs
+                SET status = 'running', vm_name = @vm, updated_at = @at
+                WHERE run_id = @id AND @at > updated_at;
+                """, conn))
+            {
+                cmd.Parameters.AddWithValue("id", runId);
+                cmd.Parameters.AddWithValue("vm", (object?)ev.VmName ?? DBNull.Value);
+                cmd.Parameters.AddWithValue("at", at);
+                await cmd.ExecuteNonQueryAsync();
+            }
+            break;
+
+        case "heartbeat":
+            // Update liveness only; guarded against its own last value so an
+            // out-of-order/duplicate heartbeat is a no-op. Does not touch status.
+            await using (var conn = await dataSource.OpenConnectionAsync())
+            await using (var cmd = new NpgsqlCommand(
+                """
+                UPDATE runs
+                SET last_heartbeat_at = @at
+                WHERE run_id = @id
+                  AND (last_heartbeat_at IS NULL OR @at > last_heartbeat_at);
+                """, conn))
+            {
+                cmd.Parameters.AddWithValue("id", runId);
+                cmd.Parameters.AddWithValue("at", at);
+                await cmd.ExecuteNonQueryAsync();
+            }
+            break;
+
         default:
             // Unknown/not-yet-implemented event types are accepted and ignored
             // (later tickets add fold logic). Keeps the host fire-and-forget.
@@ -154,7 +190,8 @@ record RunEvent(
     string? Repo,
     string? Branch,
     string? Spec,
-    string? Model);
+    string? Model,
+    string? VmName);
 
 record Run(
     Guid RunId,

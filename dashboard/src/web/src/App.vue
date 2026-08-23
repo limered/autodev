@@ -3,7 +3,9 @@ import { ref, onMounted, onUnmounted } from 'vue'
 
 const runs = ref([])
 const error = ref(null)
-let timer = null
+const now = ref(Date.now())
+let pollTimer = null
+let tickTimer = null
 
 async function load() {
   try {
@@ -16,11 +18,23 @@ async function load() {
   }
 }
 
+function lastSeen(r) {
+  if (!r.lastHeartbeatAt) return '—'
+  const secs = Math.max(0, Math.round((now.value - new Date(r.lastHeartbeatAt).getTime()) / 1000))
+  if (secs < 60) return `${secs}s ago`
+  if (secs < 3600) return `${Math.floor(secs / 60)}m ago`
+  return `${Math.floor(secs / 3600)}h ago`
+}
+
 onMounted(() => {
   load()
-  timer = setInterval(load, 5000)
+  pollTimer = setInterval(load, 5000)
+  tickTimer = setInterval(() => { now.value = Date.now() }, 1000)
 })
-onUnmounted(() => clearInterval(timer))
+onUnmounted(() => {
+  clearInterval(pollTimer)
+  clearInterval(tickTimer)
+})
 </script>
 
 <template>
@@ -29,7 +43,7 @@ onUnmounted(() => clearInterval(timer))
     <p v-if="error" class="error">Failed to load: {{ error }}</p>
     <table v-if="runs.length">
       <thead>
-        <tr><th>Repo</th><th>Branch</th><th>Model</th><th>Status</th></tr>
+        <tr><th>Repo</th><th>Branch</th><th>Model</th><th>Status</th><th>Last seen</th></tr>
       </thead>
       <tbody>
         <tr v-for="r in runs" :key="r.runId">
@@ -37,6 +51,7 @@ onUnmounted(() => clearInterval(timer))
           <td>{{ r.branch }}</td>
           <td>{{ r.model }}</td>
           <td>{{ r.status }}</td>
+          <td>{{ lastSeen(r) }}</td>
         </tr>
       </tbody>
     </table>

@@ -190,8 +190,10 @@ try {
     }
     $vmJob = Start-Job -ScriptBlock $vmJobScript -ArgumentList $VmName, $Model, $Branch, $Spec, $Repo
 
+    Send-FactoryEvent -RunId $RunId -Type "agent-started" -Fields @{ vmName = $VmName }
+
     $watchScript = Join-Path $PSScriptRoot "watch-heartbeat.ps1"
-    & $watchScript -VmName $VmName -Job $vmJob
+    & $watchScript -VmName $VmName -Job $vmJob -RunId $RunId -RepoRoot $RepoRoot
 
     Write-Step "Polling GitHub for the pull request on branch $Branch"
     $pat = (Get-Content -LiteralPath $patFile -Raw).Trim()
