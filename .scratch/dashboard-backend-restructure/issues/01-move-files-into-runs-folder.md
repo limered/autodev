@@ -6,7 +6,7 @@
 
 **Status:** ready-for-agent
 
-- [ ] `RunState.cs`, `RunEvent.cs` (was `Models/`), `RunFold.cs` (was `Folding/`), and `RunStore.cs` (was `Store/`) all live directly under `Runs/`, flat — no by-kind sub-folders.
-- [ ] All moved types use the `Api.Runs` namespace; all references updated.
-- [ ] No logic changes — diff is moves, namespace, and using directives only.
-- [ ] `dotnet test dashboard/src/Api.Tests` stays green with `RunFoldTests` unchanged.
+- [x] `RunState.cs`, `RunEvent.cs` (was `Models/`), `RunFold.cs` (was `Folding/`), and `RunStore.cs` (was `Store/`) all live directly under `Runs/`, flat — no by-kind sub-folders.
+- [x] All moved types use the `Api.Runs` namespace; all references updated.
+- [x] No logic changes — diff is moves, namespace, and using directives only.
+- [x] `dotnet test dashboard/src/Api.Tests` stays green with `RunFoldTests` unchanged.
