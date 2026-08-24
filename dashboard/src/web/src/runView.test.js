@@ -65,6 +65,27 @@ describe('runView', () => {
     expect(runView(failedRun, nowMs).statusClass).toBe('status-failed')
   })
 
+  it('honours a stalled status even when the heartbeat is fresh', () => {
+    const run = {
+      ...baseRun,
+      status: 'stalled',
+      lastHeartbeatAt: new Date(nowMs - 5 * 1000).toISOString()
+    }
+
+    expect(runView(run, nowMs).freshnessClass).toBe('stale-warn')
+    expect(runView(run, nowMs).lastSeen).toBe('5s ago')
+  })
+
+  it('does not escalate stalled runs to danger based on heartbeat age', () => {
+    const run = {
+      ...baseRun,
+      status: 'stalled',
+      lastHeartbeatAt: new Date(nowMs - 300 * 1000).toISOString()
+    }
+
+    expect(runView(run, nowMs).freshnessClass).toBe('stale-warn')
+  })
+
   it('handles missing heartbeat gracefully', () => {
     const run = { ...baseRun, lastHeartbeatAt: null }
 
