@@ -1,4 +1,4 @@
-namespace Api.Models;
+namespace Api.Runs;
 
 public record RunState(
     Guid RunId,

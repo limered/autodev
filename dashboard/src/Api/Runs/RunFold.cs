@@ -1,6 +1,4 @@
-using Api.Models;
-
-namespace Api.Folding;
+namespace Api.Runs;
 
 public static class RunFold
 {
