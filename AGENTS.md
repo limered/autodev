@@ -19,6 +19,7 @@ Single-context layout: `CONTEXT.md` at the root, ADRs in `docs/adr/`, glossary i
 The factory test phase runs every `test-harness.<name>` command declared here. Any failure fails the run.
 
 test-harness.api: dotnet test dashboard/src/Api.Tests
+test-harness.web: npm test --prefix dashboard/src/web
 
 ## Frontend structure
 

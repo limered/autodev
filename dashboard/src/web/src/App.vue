@@ -1,6 +1,6 @@
 <script setup>
 import { ref, computed, onMounted, onUnmounted } from 'vue'
-import { runView } from './runView.js'
+import { runView } from './RunView/models/runView.js'
 import { useRunsFeed } from './RunView/services/useRunsFeed.js'
 
 const now = ref(Date.now())

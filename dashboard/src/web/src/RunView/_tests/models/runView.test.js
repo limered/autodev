@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { runView } from './runView.js'
+import { runView } from '../../models/runView.js'
 
 describe('runView', () => {
   const nowMs = new Date('2024-06-15T12:00:00Z').getTime()
