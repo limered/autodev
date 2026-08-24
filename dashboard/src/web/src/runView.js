@@ -14,6 +14,7 @@ export function runView(run, nowMs) {
   function freshnessClass(secs) {
     if (secs === null) return 'unknown'
     if (run.status === 'failed' || run.status === 'done') return 'settled'
+    if (run.status === 'stalled') return 'stale-warn'
     if (secs > 120) return 'stale-danger'
     if (secs > 30) return 'stale-warn'
     return 'fresh'
