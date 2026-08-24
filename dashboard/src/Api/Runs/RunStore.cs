@@ -1,8 +1,7 @@
 using System.Reflection;
-using Api.Models;
 using Npgsql;
 
-namespace Api.Store;
+namespace Api.Runs;
 
 public interface IRunStore
 {

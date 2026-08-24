@@ -1,4 +1,4 @@
-namespace Api.Models;
+namespace Api.Runs;
 
 public record RunEvent(
     string Type,
