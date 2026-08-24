@@ -21,7 +21,7 @@ $ErrorActionPreference = "Stop"
 $spec = "Add a one-line note to AGENTS.md stating this repo is managed by the AI Software Factory."
 
 $result = & (Join-Path $PSScriptRoot "start-job.ps1") `
-    -RepoUrl "git@github.com:limered/autodev.git" `
+    -RepoUrl "https://github.com/limered/autodev.git" `
     -Spec $spec `
     -Model $Model
 

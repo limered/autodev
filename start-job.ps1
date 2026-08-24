@@ -12,7 +12,7 @@
   the VM. Emits a result object; exits 1 on failure.
 
 .PARAMETER RepoUrl
-  Target repo SSH URL, e.g. git@github.com:owner/name.git.
+  Target repo HTTPS URL, e.g. https://github.com/owner/name.git.
 
 .PARAMETER Spec
   Feature description / spec the agent should implement.
@@ -67,7 +67,6 @@ Send-FactoryEvent -RunId $RunId -Type "run-started" -Fields @{
 $cloudInit = Join-Path $RepoRoot "infrastructure\multipass\cloud-init.yaml"
 $testScript = Join-Path $RepoRoot "infrastructure\multipass\test-feature-builder.sh"
 $secretsDir = Join-Path $RepoRoot ".secrets"
-$sshKey = Join-Path $secretsDir "bot-github"
 $patFile = Join-Path $secretsDir "github-pat.txt"
 $apiKeyFile = Join-Path $secretsDir "opencode-api-key.txt"
 $opencodeDir = Join-Path $RepoRoot ".opencode"
@@ -169,12 +168,7 @@ try {
     Write-Step "Waiting for cloud-init provisioning to complete"
     Invoke-Multipass exec $VmName '--' cloud-init status --wait
 
-    Write-Step "Transferring bot SSH key, PAT, opencode API key, .opencode config, and test script into VM"
-    Invoke-Multipass transfer $sshKey "$($VmName):/tmp/bot-github"
-    $sshPubKey = "$sshKey.pub"
-    if (Test-Path $sshPubKey) {
-        Invoke-Multipass transfer $sshPubKey "$($VmName):/tmp/bot-github.pub"
-    }
+    Write-Step "Transferring PAT, opencode API key, .opencode config, and test script into VM"
     Invoke-Multipass transfer $patFile "$($VmName):/tmp/github-pat.txt"
     Invoke-Multipass transfer $apiKeyFile "$($VmName):/tmp/opencode-api-key.txt"
     Invoke-Multipass transfer $testScript "$($VmName):/tmp/test-feature-builder.sh"

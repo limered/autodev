@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # End-to-end feature-builder test for the AI Software Factory job VM.
-# Sets up the bot SSH key, GitHub PAT, opencode API key, clones the project
+# Sets up the GitHub PAT, opencode API key, clones the project
 # repo, injects the .opencode agent configuration, then runs two opencode
 # phases headlessly in the same clone: implement (feature-builder agent:
 # issue token in, implemented branch pushed) and - after a gate plus a hook
@@ -12,9 +12,6 @@ BRANCH="$1"
 ISSUE="$(printf '%s' "${ISSUE_B64:?ISSUE_B64 env var must be set by the host launcher}" | base64 -d)"
 REPO="$2"                       # owner/name, e.g. limered/autodev
 
-REPO_SSH="git@github.com:${REPO}.git"
-SSH_DIR="$HOME/.ssh"
-KEY_NAME="bot-github"
 PAT_TMP="/tmp/github-pat.txt"
 PAT_FILE="$HOME/.github-pat.txt"
 API_KEY_TMP="/tmp/opencode-api-key.txt"
@@ -33,23 +30,6 @@ pass() {
 }
 
 echo "== Feature builder end-to-end test =="
-
-# 1. SSH private key injected by the host must land in ~/.ssh with tight permissions.
-mkdir -p "$SSH_DIR"
-[[ -f "/tmp/$KEY_NAME" ]] || fail "SSH private key not found at /tmp/$KEY_NAME"
-mv "/tmp/$KEY_NAME" "$SSH_DIR/$KEY_NAME"
-chmod 600 "$SSH_DIR/$KEY_NAME"
-pass "SSH private key installed in ~/.ssh"
-
-# Move the public key alongside the private key if it was injected.
-[[ -f "/tmp/$KEY_NAME.pub" ]] && mv "/tmp/$KEY_NAME.pub" "$SSH_DIR/$KEY_NAME.pub"
-
-# 2. GitHub must be a known host so StrictHostKeyChecking can stay on.
-if ! ssh-keygen -F github.com >/dev/null 2>&1; then
-  ssh-keyscan -H github.com >> "$SSH_DIR/known_hosts" 2>/dev/null
-fi
-[[ -f "$SSH_DIR/known_hosts" ]] || fail "known_hosts file not created"
-pass "GitHub is in ~/.ssh/known_hosts"
 
 # 3. PAT injected by the host must be readable and copied to ~/.github-pat.txt.
 [[ -f "$PAT_TMP" ]] || fail "PAT file not found at $PAT_TMP"
@@ -71,11 +51,12 @@ git config --global user.email "bot@ai-software-factory.local"
 git config --global user.name "AI Software Factory Bot"
 pass "Git identity configured"
 
-# 6. Shallow clone over SSH using the bot key only.
+# 6. Shallow clone over HTTPS using the bot PAT. The token is embedded in the
+#    remote URL so both the clone and later `git push` authenticate without SSH.
 rm -rf "$WORK_DIR"
-export GIT_SSH_COMMAND="ssh -i $SSH_DIR/$KEY_NAME -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes"
-git clone --depth 1 "$REPO_SSH" "$WORK_DIR"
-pass "Shallow-cloned $REPO_SSH"
+REPO_HTTPS="https://x-access-token:${PAT}@github.com/${REPO}.git"
+git clone --depth 1 "$REPO_HTTPS" "$WORK_DIR"
+pass "Shallow-cloned https://github.com/${REPO}.git"
 
 # 7. Copy the .opencode configuration into the cloned project repo.
 [[ -d "$OPENCODE_DIR" ]] || fail ".opencode directory not found at $OPENCODE_DIR"

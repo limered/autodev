@@ -17,7 +17,7 @@
   Issue token: feature-slug/NN.
 
 .PARAMETER RepoUrl
-  Target repo SSH URL, e.g. git@github.com:owner/name.git.
+  Target repo HTTPS URL, e.g. https://github.com/owner/name.git.
 
 .PARAMETER Model
   opencode model id. Defaults to start-job.ps1's default.
