@@ -156,7 +156,6 @@ $pr = $null
 try {
     if (-not (Test-Path $cloudInit)) { throw "cloud-init not found: $cloudInit" }
     if (-not (Test-Path $testScript)) { throw "test script not found: $testScript" }
-    if (-not (Test-Path $sshKey)) { throw "SSH private key not found: $sshKey" }
     if (-not (Test-Path $patFile)) { throw "PAT file not found: $patFile" }
     if (-not (Test-Path $apiKeyFile)) { throw "opencode API key file not found: $apiKeyFile" }
     if (-not (Test-Path $opencodeDir)) { throw ".opencode directory not found: $opencodeDir" }
