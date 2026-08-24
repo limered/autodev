@@ -11,8 +11,8 @@ The existing run view-model (`runView.js` + its test, landed in deepening ticket
 **Status:** ready-for-agent
 
 - [x] A documented convention exists: theme folders split by role (`RunView/components`, `RunView/models`), shared code under `_shared/`, promote-to-`_shared` only on second use _(recorded in AGENTS.md → Frontend structure)_
-- [ ] Tests live in a parallel `_tests/` folder per theme, mirroring the code structure (`RunView/models/x.js` → `RunView/_tests/models/x.test.js`)
-- [ ] `runView.js` moves under the `RunView` theme folder; its test moves to the parallel `_tests/`
-- [ ] `App.vue` / imports updated so the app builds and runs after the move
-- [ ] `npm test` (vitest) passes against the relocated tests
-- [ ] A `test-harness.web` entry in AGENTS.md runs the frontend suite so the factory test phase covers it
+- [x] Tests live in a parallel `_tests/` folder per theme, mirroring the code structure (`RunView/models/x.js` → `RunView/_tests/models/x.test.js`)
+- [x] `runView.js` moves under the `RunView` theme folder; its test moves to the parallel `_tests/`
+- [x] `App.vue` / imports updated so the app builds and runs after the move
+- [x] `npm test` (vitest) passes against the relocated tests
+- [x] A `test-harness.web` entry in AGENTS.md runs the frontend suite so the factory test phase covers it
