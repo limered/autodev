@@ -1,40 +1,22 @@
 <script setup>
 import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { runView } from './runView.js'
+import { useRunsFeed } from './RunView/services/useRunsFeed.js'
 
-const runs = ref([])
-const error = ref(null)
 const now = ref(Date.now())
-const isLoading = ref(false)
-let pollTimer = null
 let tickTimer = null
+
+const { runs, error, isLoading } = useRunsFeed(() => fetch('/runs'))
 
 const displayedRuns = computed(() =>
   runs.value.map(r => ({ run: r, view: runView(r, now.value) }))
 )
 
-async function load() {
-  isLoading.value = true
-  try {
-    const res = await fetch('/runs')
-    if (!res.ok) throw new Error(`HTTP ${res.status}`)
-    runs.value = await res.json()
-    error.value = null
-  } catch (e) {
-    error.value = e.message
-  } finally {
-    isLoading.value = false
-  }
-}
-
 onMounted(() => {
-  load()
-  pollTimer = setInterval(load, 5000)
   tickTimer = setInterval(() => { now.value = Date.now() }, 1000)
 })
 
 onUnmounted(() => {
-  clearInterval(pollTimer)
   clearInterval(tickTimer)
 })
 </script>
