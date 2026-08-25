@@ -58,100 +58,10 @@ app.MapPost("/runs/{runId:guid}/events", async (Guid runId, HttpRequest req, IRu
         return Results.BadRequest();
     }
 
-    ev = ev with { RunId = runId };
-
-    var current = await store.Get(runId);
-    var next = RunFold.Apply(current, ev);
-    if (next is not null)
-    {
-        await PersistRun(current, next);
-    }
+    await store.Apply(runId, ev);
 
     return Results.Accepted();
 });
-
-async Task PersistRun(RunState? current, RunState next)
-{
-    if (current is null)
-    {
-        // run-started: insert the initial row idempotently.
-        await using var conn = await dataSource.OpenConnectionAsync();
-        await using var cmd = new NpgsqlCommand(
-            """
-            INSERT INTO runs (run_id, repo, branch, spec, model, status, started_at, updated_at)
-            VALUES (@id, @repo, @branch, @spec, @model, @status, @startedAt, @updatedAt)
-            ON CONFLICT (run_id) DO NOTHING;
-            """, conn);
-        cmd.Parameters.AddWithValue("id", next.RunId);
-        cmd.Parameters.AddWithValue("repo", next.Repo);
-        cmd.Parameters.AddWithValue("branch", next.Branch);
-        cmd.Parameters.AddWithValue("spec", next.Spec);
-        cmd.Parameters.AddWithValue("model", next.Model);
-        cmd.Parameters.AddWithValue("status", next.Status);
-        cmd.Parameters.AddWithValue("startedAt", next.StartedAt);
-        cmd.Parameters.AddWithValue("updatedAt", next.UpdatedAt);
-        await cmd.ExecuteNonQueryAsync();
-        return;
-    }
-
-    // Heartbeat is special: it does not bump updated_at and must guard only against
-    // its own previous value, so concurrent status updates are not clobbered.
-    var onlyHeartbeatChanged =
-        next.LastHeartbeatAt != current.LastHeartbeatAt &&
-        next.UpdatedAt == current.UpdatedAt &&
-        next.VmName == current.VmName &&
-        next.Status == current.Status &&
-        next.FinishedAt == current.FinishedAt &&
-        next.PrUrl == current.PrUrl &&
-        next.FailureReason == current.FailureReason &&
-        next.FreezeCaptured == current.FreezeCaptured &&
-        next.FreezeLocalPath == current.FreezeLocalPath;
-
-    if (onlyHeartbeatChanged)
-    {
-        await using var conn = await dataSource.OpenConnectionAsync();
-        await using var cmd = new NpgsqlCommand(
-            """
-            UPDATE runs
-            SET last_heartbeat_at = @lastHeartbeatAt
-            WHERE run_id = @id
-              AND (last_heartbeat_at IS NULL OR @lastHeartbeatAt > last_heartbeat_at);
-            """, conn);
-        cmd.Parameters.AddWithValue("id", next.RunId);
-        cmd.Parameters.AddWithValue("lastHeartbeatAt", next.LastHeartbeatAt!.Value);
-        await cmd.ExecuteNonQueryAsync();
-        return;
-    }
-
-    var changes = new List<(string column, string param, object? value)>();
-    if (next.VmName != current.VmName) changes.Add(("vm_name", "vm", (object?)next.VmName ?? DBNull.Value));
-    if (next.Status != current.Status) changes.Add(("status", "status", next.Status));
-    if (next.FinishedAt != current.FinishedAt) changes.Add(("finished_at", "finishedAt", (object?)next.FinishedAt ?? DBNull.Value));
-    if (next.PrUrl != current.PrUrl) changes.Add(("pr_url", "prUrl", (object?)next.PrUrl ?? DBNull.Value));
-    if (next.FailureReason != current.FailureReason) changes.Add(("failure_reason", "failureReason", (object?)next.FailureReason ?? DBNull.Value));
-    if (next.FreezeCaptured != current.FreezeCaptured) changes.Add(("freeze_captured", "freezeCaptured", next.FreezeCaptured));
-    if (next.FreezeLocalPath != current.FreezeLocalPath) changes.Add(("freeze_local_path", "freezeLocalPath", (object?)next.FreezeLocalPath ?? DBNull.Value));
-    if (next.UpdatedAt != current.UpdatedAt) changes.Add(("updated_at", "updatedAt", next.UpdatedAt));
-
-    if (changes.Count == 0)
-    {
-        return;
-    }
-
-    var setClauses = changes.Select(c => $"{c.column} = @{c.param}");
-    var sql = $"UPDATE runs SET {string.Join(", ", setClauses)} WHERE run_id = @id AND @updatedAt > updated_at";
-
-    await using (var conn = await dataSource.OpenConnectionAsync())
-    await using (var cmd = new NpgsqlCommand(sql, conn))
-    {
-        cmd.Parameters.AddWithValue("id", next.RunId);
-        foreach (var (_, param, value) in changes)
-        {
-            cmd.Parameters.AddWithValue(param, value ?? DBNull.Value);
-        }
-        await cmd.ExecuteNonQueryAsync();
-    }
-}
 
 // --- Read: all runs, newest first (public) ---
 app.MapGet("/runs", async (IRunStore store) =>
