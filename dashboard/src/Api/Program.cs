@@ -5,7 +5,6 @@ using Npgsql;
 var builder = WebApplication.CreateBuilder(args);
 
 var connectionString = builder.Configuration.GetConnectionString("Runs");
-var factoryToken = builder.Configuration["FACTORY_TOKEN"];
 
 // Fail fast if the DB connection string is missing.
 if (string.IsNullOrWhiteSpace(connectionString))
@@ -14,11 +13,14 @@ if (string.IsNullOrWhiteSpace(connectionString))
     return 1;
 }
 
+builder.Services.ConfigureHttpJsonOptions(options =>
+{
+    options.SerializerOptions.PropertyNamingPolicy = JsonNamingPolicy.CamelCase;
+});
+
 var dataSource = NpgsqlDataSource.Create(connectionString);
 builder.Services.AddSingleton(dataSource);
 builder.Services.AddSingleton<IRunStore, RunStore>();
-
-var jsonOpts = new JsonSerializerOptions(JsonSerializerDefaults.Web);
 
 var app = builder.Build();
 
@@ -34,42 +36,7 @@ catch (Exception ex)
     return 1;
 }
 
-// --- Ingest: one event per call (ticket 02 handles run-started only) ---
-app.MapPost("/runs/{runId:guid}/events", async (Guid runId, HttpRequest req, IRunStore store) =>
-{
-    // Shared-secret auth on writes only.
-    if (string.IsNullOrEmpty(factoryToken) ||
-        req.Headers["X-Factory-Token"].ToString() != factoryToken)
-    {
-        return Results.Unauthorized();
-    }
-
-    RunEvent? ev;
-    try
-    {
-        ev = await JsonSerializer.DeserializeAsync<RunEvent>(req.Body, jsonOpts);
-    }
-    catch (JsonException)
-    {
-        return Results.BadRequest();
-    }
-    if (ev is null || string.IsNullOrWhiteSpace(ev.Type))
-    {
-        return Results.BadRequest();
-    }
-
-    await store.Apply(runId, ev);
-
-    return Results.Accepted();
-});
-
-// --- Read: all runs, newest first (public) ---
-app.MapGet("/runs", async (IRunStore store) =>
-    Results.Json(await store.All(), jsonOpts));
-
-// --- Read: only non-terminal runs, newest first (public) ---
-app.MapGet("/runs/active", async (IRunStore store) =>
-    Results.Json(await store.Active(), jsonOpts));
+app.MapRunsEndpoints();
 
 // Serve the built Vue SPA (wwwroot) with SPA fallback to index.html.
 app.UseDefaultFiles();
