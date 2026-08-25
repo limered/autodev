@@ -6,9 +6,9 @@
 
 **Status:** ready-for-agent
 
-- [ ] `IRunStore` gains `Task<RunState> Apply(Guid runId, RunEvent ev)`; `RunStore` implements it by folding the old `PersistRun` logic (insert-on-start, heartbeat-only monotonic update, diff-based `WHERE @updatedAt > updated_at` update) in.
-- [ ] `RunFold.Apply` is called internally by the store; it stays a pure static helper.
-- [ ] `PersistRun` no longer exists in `Program.cs`.
-- [ ] Fetch-current and persist are one atomic operation (transaction), so concurrent events to the same run cannot interleave — the monotonic guard still applies.
-- [ ] A new ingest test drives `Apply` against a fake `IRunStore` (the second adapter), covering start, heartbeat-only, out-of-order no-op, and a normal update. No DB, no framework fixtures.
-- [ ] `dotnet test dashboard/src/Api.Tests` stays green.
+- [x] `IRunStore` gains `Task<RunState> Apply(Guid runId, RunEvent ev)`; `RunStore` implements it by folding the old `PersistRun` logic (insert-on-start, heartbeat-only monotonic update, diff-based `WHERE @updatedAt > updated_at` update) in.
+- [x] `RunFold.Apply` is called internally by the store; it stays a pure static helper.
+- [x] `PersistRun` no longer exists in `Program.cs`.
+- [x] Fetch-current and persist are one atomic operation (transaction), so concurrent events to the same run cannot interleave — the monotonic guard still applies.
+- [x] A new ingest test drives `Apply` against a fake `IRunStore` (the second adapter), covering start, heartbeat-only, out-of-order no-op, and a normal update. No DB, no framework fixtures.
+- [x] `dotnet test dashboard/src/Api.Tests` stays green.
