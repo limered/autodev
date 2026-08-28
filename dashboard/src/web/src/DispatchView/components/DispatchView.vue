@@ -1,5 +1,5 @@
 <script setup>
-import { computed, ref } from 'vue'
+import { computed, ref, watch } from 'vue'
 import { useIssuesFeed } from '../services/useIssuesFeed.js'
 import { useQueueFeed } from '../services/useQueueFeed.js'
 import { queueStatus, queueStatusClass } from '../models/queueView.js'
@@ -9,6 +9,17 @@ const queueFeed = useQueueFeed(() => fetch('/queue'))
 
 const { issues } = issuesFeed
 const { queue } = queueFeed
+
+const localQueue = ref([])
+watch(
+  queue,
+  (newQueue) => {
+    if (!isReordering.value && draggedId.value === null) {
+      localQueue.value = [...newQueue]
+    }
+  },
+  { immediate: true }
+)
 
 const enqueueError = ref(null)
 const isEnqueueing = ref(false)
@@ -36,6 +47,90 @@ async function enqueue(issue) {
     enqueueError.value = e.message
   } finally {
     isEnqueueing.value = false
+  }
+}
+
+const reorderError = ref(null)
+const isReordering = ref(false)
+const draggedId = ref(null)
+const dragOverId = ref(null)
+
+function onDragStart(item, event) {
+  draggedId.value = item.id
+  event.dataTransfer.effectAllowed = 'move'
+  event.dataTransfer.setData('text/plain', String(item.id))
+}
+
+function onDragOver(event, id) {
+  event.preventDefault()
+  dragOverId.value = id
+}
+
+function onDragLeave() {
+  dragOverId.value = null
+}
+
+function onDragEnd() {
+  draggedId.value = null
+  dragOverId.value = null
+}
+
+async function onDrop(targetId) {
+  dragOverId.value = null
+  const sourceId = draggedId.value
+  draggedId.value = null
+
+  if (sourceId === null || sourceId === targetId) return
+
+  const fromIndex = localQueue.value.findIndex(i => i.id === sourceId)
+  const toIndex = localQueue.value.findIndex(i => i.id === targetId)
+  if (fromIndex < 0 || toIndex < 0) return
+
+  const reordered = [...localQueue.value]
+  const [moved] = reordered.splice(fromIndex, 1)
+  reordered.splice(toIndex, 0, moved)
+  localQueue.value = reordered
+
+  await persistOrder()
+}
+
+async function persistOrder() {
+  isReordering.value = true
+  reorderError.value = null
+
+  try {
+    const ids = localQueue.value.map(i => i.id)
+    const res = await fetch('/queue/order', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ids })
+    })
+    if (!res.ok) throw new Error(`HTTP ${res.status}`)
+    await queueFeed.load()
+  } catch (e) {
+    reorderError.value = e.message
+    await queueFeed.load()
+  } finally {
+    isReordering.value = false
+  }
+}
+
+const removeError = ref(null)
+const isRemoving = ref(false)
+
+async function remove(item) {
+  if (isRemoving.value) return
+  isRemoving.value = true
+  removeError.value = null
+
+  try {
+    const res = await fetch(`/queue/${item.id}`, { method: 'DELETE' })
+    if (!res.ok) throw new Error(`HTTP ${res.status}`)
+    await Promise.all([issuesFeed.load(), queueFeed.load()])
+  } catch (e) {
+    removeError.value = e.message
+  } finally {
+    isRemoving.value = false
   }
 }
 </script>
@@ -95,9 +190,10 @@ async function enqueue(issue) {
       <section class="queue-column">
         <header class="panel-header">
           <h2><span class="prompt">&gt;</span> Run Queue</h2>
-          <div class="connection" :class="{ loading: queueFeed.isLoading.value }">
+          <div class="connection" :class="{ loading: queueFeed.isLoading.value || isReordering || isRemoving }">
             <span class="connection-dot"></span>
             <span v-if="queueFeed.error.value">sync error</span>
+            <span v-else-if="isReordering || isRemoving">saving</span>
             <span v-else>live</span>
           </div>
         </header>
@@ -107,11 +203,28 @@ async function enqueue(issue) {
           <p>Failed to load run queue: {{ queueFeed.error.value }}</p>
         </section>
 
-        <section v-if="queue.length" class="queue-list">
+        <section v-if="reorderError" class="error-banner" role="alert">
+          <strong>Reorder failed</strong>
+          <p>{{ reorderError }}</p>
+        </section>
+
+        <section v-if="removeError" class="error-banner" role="alert">
+          <strong>Remove failed</strong>
+          <p>{{ removeError }}</p>
+        </section>
+
+        <section v-if="localQueue.length" class="queue-list">
           <article
-            v-for="item in queue"
+            v-for="item in localQueue"
             :key="item.id"
             class="queue-row"
+            :class="{ dragging: draggedId === item.id, 'drag-over': dragOverId === item.id }"
+            draggable="true"
+            @dragstart="onDragStart(item, $event)"
+            @dragover="onDragOver($event, item.id)"
+            @dragleave="onDragLeave"
+            @drop="onDrop(item.id)"
+            @dragend="onDragEnd"
           >
             <span class="queue-rank mono">#{{ item.rank }}</span>
             <div class="queue-meta">
@@ -129,6 +242,13 @@ async function enqueue(issue) {
               <span class="status-indicator"></span>
               {{ queueStatus(item) }}
             </span>
+            <button
+              class="remove-button"
+              :disabled="isRemoving"
+              @click="remove(item)"
+            >
+              Remove
+            </button>
           </article>
         </section>
 
@@ -308,10 +428,20 @@ h2 {
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: var(--radius);
+  cursor: grab;
+  transition: border-color 0.15s ease, opacity 0.15s ease;
 }
 
 .queue-row:hover {
   border-color: var(--text-dim);
+}
+
+.queue-row.dragging {
+  opacity: 0.4;
+}
+
+.queue-row.drag-over {
+  border-color: var(--accent);
 }
 
 .queue-rank {
@@ -375,6 +505,30 @@ h2 {
 .status-running .status-indicator { animation: blink 1.4s infinite; }
 .status-done { color: var(--blue); }
 .status-failed { color: var(--red); }
+
+.remove-button {
+  flex-shrink: 0;
+  padding: 0.3rem 0.6rem;
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  color: var(--text-muted);
+  font-size: 0.75rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.15s ease, border-color 0.15s ease, color 0.15s ease;
+}
+
+.remove-button:hover:not(:disabled) {
+  color: var(--red);
+  border-color: var(--red);
+  background: rgba(248, 81, 73, 0.08);
+}
+
+.remove-button:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
 
 @keyframes blink {
   0%, 100% { opacity: 1; }
