@@ -6,9 +6,9 @@
 
 **Status:** ready-for-agent
 
-- [ ] `PATCH /queue/order` accepts the full ordered list of queue-item ids and rewrites their ranks in one transaction. Web-write, no auth token.
-- [ ] `DELETE /queue/{id}` removes a queue item.
-- [ ] The dispatch view supports drag-to-reorder on the queue column; dropping persists the new order via the reorder endpoint.
-- [ ] Each queue row has a **Remove** control.
+- [x] `PATCH /queue/order` accepts the full ordered list of queue-item ids and rewrites their ranks in one transaction. Web-write, no auth token.
+- [x] `DELETE /queue/{id}` removes a queue item.
+- [x] The dispatch view supports drag-to-reorder on the queue column; dropping persists the new order via the reorder endpoint.
+- [x] Each queue row has a **Remove** control.
 - [ ] Demoable: drag a lower item to the top, reload the page, the new order survives; remove an item, it disappears.
-- [ ] Local flow unchanged.
+- [x] Local flow unchanged.
