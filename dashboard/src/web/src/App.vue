@@ -2,6 +2,7 @@
 import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { runView } from './RunView/models/runView.js'
 import { useRunsFeed } from './RunView/services/useRunsFeed.js'
+import DispatchView from './DispatchView/components/DispatchView.vue'
 
 const now = ref(Date.now())
 let tickTimer = null
@@ -37,67 +38,71 @@ onUnmounted(() => {
       <p>Failed to load runs: {{ error }}</p>
     </section>
 
-    <section v-if="displayedRuns.length" class="run-list">
-      <article
-        v-for="r in displayedRuns"
-        :key="r.run.runId"
-        class="run-card"
-        :class="r.view.statusClass"
-      >
-        <div class="card-header">
-          <div class="identity">
-            <div class="repo-branch">
-              <span class="repo">{{ r.run.repo }}</span>
-              <span class="sep">/</span>
-              <span class="branch mono">{{ r.run.branch }}</span>
-            </div>
-            <div class="model mono">{{ r.run.model }}</div>
-          </div>
-          <div class="status-badge" :class="r.view.statusClass">
-            <span class="status-indicator"></span>
-            {{ r.run.status }}
-          </div>
-        </div>
+    <div class="dispatch-layout">
+      <DispatchView />
 
-        <div class="card-body">
-          <div class="primary-stats">
-            <div class="stat">
-              <span class="stat-label">Last seen</span>
-              <span class="stat-value mono" :class="r.view.freshnessClass">{{ r.view.lastSeen }}</span>
+      <section v-if="displayedRuns.length" class="run-list">
+        <article
+          v-for="r in displayedRuns"
+          :key="r.run.runId"
+          class="run-card"
+          :class="r.view.statusClass"
+        >
+          <div class="card-header">
+            <div class="identity">
+              <div class="repo-branch">
+                <span class="repo">{{ r.run.repo }}</span>
+                <span class="sep">/</span>
+                <span class="branch mono">{{ r.run.branch }}</span>
+              </div>
+              <div class="model mono">{{ r.run.model }}</div>
             </div>
-            <div class="stat">
-              <span class="stat-label">Started</span>
-              <span class="stat-value mono">{{ r.view.started }}</span>
-            </div>
-            <div v-if="r.run.vmName" class="stat">
-              <span class="stat-label">VM</span>
-              <span class="stat-value mono">{{ r.run.vmName }}</span>
+            <div class="status-badge" :class="r.view.statusClass">
+              <span class="status-indicator"></span>
+              {{ r.run.status }}
             </div>
           </div>
 
-          <div class="secondary">
-            <div v-if="r.run.prUrl" class="secondary-row">
-              <span class="secondary-label">PR</span>
-              <a :href="r.run.prUrl" target="_blank" rel="noopener" class="pr-link mono">{{ r.run.prUrl }}</a>
+          <div class="card-body">
+            <div class="primary-stats">
+              <div class="stat">
+                <span class="stat-label">Last seen</span>
+                <span class="stat-value mono" :class="r.view.freshnessClass">{{ r.view.lastSeen }}</span>
+              </div>
+              <div class="stat">
+                <span class="stat-label">Started</span>
+                <span class="stat-value mono">{{ r.view.started }}</span>
+              </div>
+              <div v-if="r.run.vmName" class="stat">
+                <span class="stat-label">VM</span>
+                <span class="stat-value mono">{{ r.run.vmName }}</span>
+              </div>
             </div>
-            <div v-if="r.run.status === 'failed' && r.run.failureReason" class="secondary-row failure-row">
-              <span class="secondary-label">Failure</span>
-              <span class="failure-reason mono">{{ r.run.failureReason }}</span>
-            </div>
-            <div v-if="r.run.freezeCaptured" class="secondary-row">
-              <span class="secondary-label">Freeze</span>
-              <span class="freeze-path mono" title="Local snapshot path">{{ r.run.freezeLocalPath || '—' }}</span>
+
+            <div class="secondary">
+              <div v-if="r.run.prUrl" class="secondary-row">
+                <span class="secondary-label">PR</span>
+                <a :href="r.run.prUrl" target="_blank" rel="noopener" class="pr-link mono">{{ r.run.prUrl }}</a>
+              </div>
+              <div v-if="r.run.status === 'failed' && r.run.failureReason" class="secondary-row failure-row">
+                <span class="secondary-label">Failure</span>
+                <span class="failure-reason mono">{{ r.run.failureReason }}</span>
+              </div>
+              <div v-if="r.run.freezeCaptured" class="secondary-row">
+                <span class="secondary-label">Freeze</span>
+                <span class="freeze-path mono" title="Local snapshot path">{{ r.run.freezeLocalPath || '—' }}</span>
+              </div>
             </div>
           </div>
-        </div>
-      </article>
-    </section>
+        </article>
+      </section>
 
-    <section v-else-if="!error" class="empty-state">
-      <div class="empty-prompt">&gt;_</div>
-      <h2>No runs yet</h2>
-      <p>The factory is idle. New runs will appear here as they start.</p>
-    </section>
+      <section v-else-if="!error" class="empty-state">
+        <div class="empty-prompt">&gt;_</div>
+        <h2>No runs yet</h2>
+        <p>The factory is idle. New runs will appear here as they start.</p>
+      </section>
+    </div>
   </main>
 </template>
 
@@ -415,6 +420,19 @@ h1 {
 
 .mono {
   font-family: var(--font-mono);
+}
+
+.dispatch-layout {
+  display: grid;
+  grid-template-columns: 1fr 1.5fr;
+  gap: 1.5rem;
+  align-items: start;
+}
+
+@media (max-width: 900px) {
+  .dispatch-layout {
+    grid-template-columns: 1fr;
+  }
 }
 
 @media (max-width: 640px) {
