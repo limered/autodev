@@ -1,5 +1,6 @@
 using System.Text.Json;
 using Api.Issues;
+using Api.Queue;
 using Api.Runs;
 using Npgsql;
 
@@ -23,6 +24,7 @@ var dataSource = NpgsqlDataSource.Create(connectionString);
 builder.Services.AddSingleton(dataSource);
 builder.Services.AddSingleton<IRunStore, RunStore>();
 builder.Services.AddSingleton<IIssuesStore, IssuesStore>();
+builder.Services.AddSingleton<IQueueStore, QueueStore>();
 
 var app = builder.Build();
 
@@ -31,6 +33,7 @@ try
 {
     await RunsSchema.EnsureAsync(dataSource);
     await IssuesSchema.EnsureAsync(dataSource);
+    await QueueSchema.EnsureAsync(dataSource);
     app.Logger.LogInformation("Postgres connection opened and schema ensured.");
 }
 catch (Exception ex)
@@ -41,6 +44,7 @@ catch (Exception ex)
 
 app.MapRunsEndpoints();
 app.MapIssuesEndpoints();
+app.MapQueueEndpoints();
 
 // Serve the built Vue SPA (wwwroot) with SPA fallback to index.html.
 app.UseDefaultFiles();
