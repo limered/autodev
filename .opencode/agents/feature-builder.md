@@ -21,11 +21,10 @@ REPO: <owner/repo>
 Follow these steps exactly and in order:
 
 1. **Resolve + read the issue**: Split the ISSUE token on `/` into `<feature-slug>` and `<NN>`. Find the file in the current repo at `.scratch/<feature-slug>/issues/<NN>-*.md` (the file whose name starts with `<NN>-`). If no such file exists, print a clear error naming the token and the path searched, then exit with a non-zero status code (fail fast). The body of that issue file IS the spec — read it and explore the repository structure.
-2. **Implement**: Make the minimal, focused changes required by the issue.
-3. **Verify**: If the repo has an obvious test/build command (e.g., `npm test`, `make test`, `dotnet test`), run it. Fix failures only if they are directly caused by your change.
-4. **Commit**: Stage all changes and commit with a concise message describing the change.
-5. **Push**: Push the commit to the BRANCH specified. Create the branch if it does not exist (`git checkout -b BRANCH`). Do not create, open, or POST a pull request — that is the pr-author phase's job, run after you exit.
-6. **Finish**: Print a one-line summary of what was implemented. Then exit immediately. Do not wait for user input, do not ask questions, and do not continue the session.
+2. **Implement**: Use the `/implement` skill to implement the work described by the issue. Skip the full test-suite run at the end — a separate test-runner phase runs the tests after you exit.
+3. **Commit**: Use the `/atomic-commit` skill to stage the changes and commit.
+4. **Push**: Push the commit to the BRANCH specified. Create the branch if it does not exist (`git checkout -b BRANCH`). Do not create, open, or POST a pull request — that is the pr-author phase's job, run after you exit.
+5. **Finish**: Print a one-line summary of what was implemented. Then exit immediately. Do not wait for user input, do not ask questions, and do not continue the session.
 
 Rules:
 - Do not ask the user for clarification.
