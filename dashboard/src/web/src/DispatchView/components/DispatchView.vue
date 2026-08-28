@@ -2,7 +2,7 @@
 import { computed, ref, watch } from 'vue'
 import { useIssuesFeed } from '../services/useIssuesFeed.js'
 import { useQueueFeed } from '../services/useQueueFeed.js'
-import { queueStatus, queueStatusClass } from '../models/queueView.js'
+import { queueStatus, queueStatusClass, isQueueItemRunning } from '../models/queueView.js'
 
 const issuesFeed = useIssuesFeed(() => fetch('/issues'))
 const queueFeed = useQueueFeed(() => fetch('/queue'))
@@ -28,6 +28,9 @@ const queuedIssueIds = computed(() => new Set(queue.value.map(q => q.issueId)))
 const eligibleIssues = computed(() =>
   issues.value.filter(issue => !queuedIssueIds.value.has(issue.githubId))
 )
+const hasRunningItem = computed(() => queue.value.some(isQueueItemRunning))
+const nextQueueItem = computed(() => localQueue.value[0] ?? null)
+
 
 async function enqueue(issue) {
   if (isEnqueueing.value) return
@@ -133,6 +136,26 @@ async function remove(item) {
     isRemoving.value = false
   }
 }
+
+const startNextError = ref(null)
+const isStartingNext = ref(false)
+
+async function startNext() {
+  const item = nextQueueItem.value
+  if (!item || isStartingNext.value || hasRunningItem.value) return
+  isStartingNext.value = true
+  startNextError.value = null
+
+  try {
+    const res = await fetch(`/queue/${item.id}/start-next`, { method: 'POST' })
+    if (!res.ok) throw new Error(`HTTP ${res.status}`)
+    await queueFeed.load()
+  } catch (e) {
+    startNextError.value = e.message
+  } finally {
+    isStartingNext.value = false
+  }
+}
 </script>
 
 <template>
@@ -213,6 +236,19 @@ async function remove(item) {
           <p>{{ removeError }}</p>
         </section>
 
+        <section v-if="startNextError" class="error-banner" role="alert">
+          <strong>Start failed</strong>
+          <p>{{ startNextError }}</p>
+        </section>
+
+        <button
+          class="start-next-button"
+          :disabled="!nextQueueItem || hasRunningItem || isStartingNext"
+          @click="startNext"
+        >
+          {{ isStartingNext ? 'Starting…' : 'Start next' }}
+        </button>
+
         <section v-if="localQueue.length" class="queue-list">
           <article
             v-for="item in localQueue"
@@ -242,6 +278,13 @@ async function remove(item) {
               <span class="status-indicator"></span>
               {{ queueStatus(item) }}
             </span>
+            <a
+              v-if="item.runId"
+              :href="`/#run-${item.runId}`"
+              class="run-link mono"
+            >
+              Run ↗
+            </a>
             <button
               class="remove-button"
               :disabled="isRemoving"
@@ -501,10 +544,47 @@ h2 {
 }
 
 .status-queued { color: var(--text-muted); }
+.status-starting { color: var(--cyan); }
+.status-starting .status-indicator { animation: blink 1.4s infinite; }
 .status-running { color: var(--green); }
 .status-running .status-indicator { animation: blink 1.4s infinite; }
 .status-done { color: var(--blue); }
 .status-failed { color: var(--red); }
+
+.start-next-button {
+  width: 100%;
+  margin-bottom: 1rem;
+  padding: 0.6rem 1rem;
+  background: var(--surface);
+  border: 1px solid var(--accent);
+  border-radius: var(--radius);
+  color: var(--accent);
+  font-size: 0.9rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+
+.start-next-button:hover:not(:disabled) {
+  background: var(--accent);
+  color: var(--background);
+}
+
+.start-next-button:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.run-link {
+  flex-shrink: 0;
+  font-size: 0.8rem;
+  color: var(--accent);
+  text-decoration: none;
+}
+
+.run-link:hover {
+  text-decoration: underline;
+}
 
 .remove-button {
   flex-shrink: 0;

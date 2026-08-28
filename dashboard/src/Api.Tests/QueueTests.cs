@@ -89,4 +89,54 @@ public class QueueTests
 
         Assert.False(deleted);
     }
+
+    [Fact]
+    public async Task StartNext_SetsStartRequestedAt()
+    {
+        var store = new FakeQueueStore();
+        var item = await store.Enqueue(42);
+
+        var updated = await store.StartNext(item!.Id);
+
+        Assert.NotNull(updated);
+        Assert.NotNull(updated.StartRequestedAt);
+    }
+
+    [Fact]
+    public async Task StartNext_MissingItem_ReturnsNull()
+    {
+        var store = new FakeQueueStore();
+
+        var updated = await store.StartNext(999);
+
+        Assert.Null(updated);
+    }
+
+    [Fact]
+    public async Task ClaimNext_ClaimsHighestRankedStartRequestedItem()
+    {
+        var store = new FakeQueueStore();
+        var first = await store.Enqueue(1);
+        var second = await store.Enqueue(2);
+        await store.StartNext(first!.Id);
+        await store.StartNext(second!.Id);
+
+        var claim = await store.ClaimNext();
+
+        Assert.NotNull(claim);
+        var all = await store.All();
+        Assert.Equal(claim.RunId, all[0].RunId);
+        Assert.Equal(1, all[0].IssueId);
+    }
+
+    [Fact]
+    public async Task ClaimNext_NoStartRequestedItems_ReturnsNull()
+    {
+        var store = new FakeQueueStore();
+        await store.Enqueue(1);
+
+        var claim = await store.ClaimNext();
+
+        Assert.Null(claim);
+    }
 }
