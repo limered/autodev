@@ -5,6 +5,7 @@ public record QueueListItem(
     long IssueId,
     int Rank,
     Guid? RunId,
+    DateTimeOffset? StartRequestedAt,
     string? RunStatus,
     string? Title,
     string? Repo,

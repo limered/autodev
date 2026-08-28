@@ -33,10 +33,42 @@ public sealed class FakeQueueStore : IQueueStore
             null,
             null,
             null,
+            null,
             false);
 
         _items.Add(item);
         return Task.FromResult<QueueListItem?>(item);
+    }
+
+    public Task<QueueListItem?> StartNext(long id)
+    {
+        var item = _items.FirstOrDefault(i => i.Id == id);
+        if (item is null)
+        {
+            return Task.FromResult<QueueListItem?>(null);
+        }
+
+        var idx = _items.IndexOf(item);
+        _items[idx] = item with { StartRequestedAt = DateTimeOffset.UtcNow };
+        return Task.FromResult<QueueListItem?>(_items[idx]);
+    }
+
+    public Task<ClaimedQueueItem?> ClaimNext()
+    {
+        var item = _items
+            .Where(i => i.StartRequestedAt.HasValue && i.RunId is null)
+            .OrderBy(i => i.Rank)
+            .FirstOrDefault();
+
+        if (item is null)
+        {
+            return Task.FromResult<ClaimedQueueItem?>(null);
+        }
+
+        var runId = Guid.NewGuid();
+        var idx = _items.IndexOf(item);
+        _items[idx] = item with { RunId = runId };
+        return Task.FromResult<ClaimedQueueItem?>(new ClaimedQueueItem(runId, "https://github.com/test/repo.git", "spec"));
     }
 
     public Task Reorder(IReadOnlyList<long> ids)

@@ -6,9 +6,13 @@ public interface IQueueStore
 {
     Task<IReadOnlyList<QueueListItem>> All();
     Task<QueueListItem?> Enqueue(long issueId);
+    Task<QueueListItem?> StartNext(long id);
+    Task<ClaimedQueueItem?> ClaimNext();
     Task Reorder(IReadOnlyList<long> ids);
     Task<bool> Delete(long id);
 }
+
+public record ClaimedQueueItem(Guid RunId, string RepoUrl, string Spec);
 
 public sealed class QueueStore : IQueueStore
 {
@@ -76,6 +80,77 @@ public sealed class QueueStore : IQueueStore
         return await GetById(id);
     }
 
+    public async Task<QueueListItem?> StartNext(long id)
+    {
+        await using var conn = await _dataSource.OpenConnectionAsync();
+        await using var tx = await conn.BeginTransactionAsync();
+
+        await using var cmd = new NpgsqlCommand(
+            """
+            UPDATE queue
+            SET start_requested_at = now()
+            WHERE id = @id
+              AND start_requested_at IS NULL
+            RETURNING id;
+            """, conn, tx);
+        cmd.Parameters.AddWithValue("id", id);
+
+        var updatedId = await cmd.ExecuteScalarAsync();
+        await tx.CommitAsync();
+
+        if (updatedId is null)
+        {
+            return await GetById(id);
+        }
+
+        return await GetById((long)updatedId);
+    }
+
+    public async Task<ClaimedQueueItem?> ClaimNext()
+    {
+        await using var conn = await _dataSource.OpenConnectionAsync();
+        await using var tx = await conn.BeginTransactionAsync();
+
+        var runId = Guid.NewGuid();
+
+        await using var cmd = new NpgsqlCommand(
+            """
+            WITH next_item AS (
+                SELECT q.id
+                FROM queue q
+                WHERE q.start_requested_at IS NOT NULL
+                  AND q.run_id IS NULL
+                ORDER BY q.rank
+                FOR UPDATE SKIP LOCKED
+                LIMIT 1
+            )
+            UPDATE queue q
+            SET run_id = @runId
+            FROM next_item, issues i
+            WHERE q.id = next_item.id
+              AND i.github_id = q.issue_id
+            RETURNING q.run_id, i.repo, i.body, i.title;
+            """, conn, tx);
+        cmd.Parameters.AddWithValue("runId", runId);
+
+        await using var reader = await cmd.ExecuteReaderAsync();
+        if (!await reader.ReadAsync())
+        {
+            await tx.CommitAsync();
+            return null;
+        }
+
+        var claimedRunId = reader.GetGuid(0);
+        var repo = reader.GetString(1);
+        var body = reader.IsDBNull(2) ? null : reader.GetString(2);
+        var title = reader.IsDBNull(3) ? null : reader.GetString(3);
+        await tx.CommitAsync();
+
+        var repoUrl = $"https://github.com/{repo}.git";
+        var spec = !string.IsNullOrWhiteSpace(body) ? body.Trim() : title ?? repo;
+        return new ClaimedQueueItem(claimedRunId, repoUrl, spec);
+    }
+
     public async Task Reorder(IReadOnlyList<long> ids)
     {
         await using var conn = await _dataSource.OpenConnectionAsync();
@@ -133,6 +208,7 @@ public sealed class QueueStore : IQueueStore
             q.issue_id,
             q.rank,
             q.run_id,
+            q.start_requested_at,
             r.status AS run_status,
             i.title,
             i.repo,
@@ -153,6 +229,7 @@ public sealed class QueueStore : IQueueStore
             r.GetInt64(r.GetOrdinal("issue_id")),
             r.GetInt32(r.GetOrdinal("rank")),
             GetGuidOrNull(r, "run_id"),
+            GetDateTimeOffsetOrNull(r, "start_requested_at"),
             GetStringOrNull(r, "run_status"),
             GetStringOrNull(r, "title"),
             GetStringOrNull(r, "repo"),
@@ -160,6 +237,12 @@ public sealed class QueueStore : IQueueStore
             GetStringOrNull(r, "html_url"),
             GetStringOrNull(r, "issue_state"),
             r.GetBoolean(r.GetOrdinal("issue_present")));
+    }
+
+    private static DateTimeOffset? GetDateTimeOffsetOrNull(NpgsqlDataReader r, string column)
+    {
+        var ordinal = r.GetOrdinal(column);
+        return r.IsDBNull(ordinal) ? null : r.GetFieldValue<DateTimeOffset>(ordinal);
     }
 
     private static string? GetStringOrNull(NpgsqlDataReader r, string column)

@@ -80,6 +80,15 @@ public sealed class RunStore : IRunStore
         }
 
         await Persist(next, current, conn, tx);
+
+        if (ev.Type == "run-finished")
+        {
+            await using var deleteQueueCmd = new NpgsqlCommand(
+                "DELETE FROM queue WHERE run_id = @runId;", conn, tx);
+            deleteQueueCmd.Parameters.AddWithValue("runId", runId);
+            await deleteQueueCmd.ExecuteNonQueryAsync();
+        }
+
         await tx.CommitAsync();
         return next;
     }
