@@ -6,6 +6,8 @@ public interface IQueueStore
 {
     Task<IReadOnlyList<QueueListItem>> All();
     Task<QueueListItem?> Enqueue(long issueId);
+    Task Reorder(IReadOnlyList<long> ids);
+    Task<bool> Delete(long id);
 }
 
 public sealed class QueueStore : IQueueStore
@@ -74,6 +76,41 @@ public sealed class QueueStore : IQueueStore
         return await GetById(id);
     }
 
+    public async Task Reorder(IReadOnlyList<long> ids)
+    {
+        await using var conn = await _dataSource.OpenConnectionAsync();
+        await using var tx = await conn.BeginTransactionAsync();
+
+        const string sql =
+            """
+            UPDATE queue
+            SET rank = @rank
+            WHERE id = @id;
+            """;
+
+        for (var i = 0; i < ids.Count; i++)
+        {
+            await using var cmd = new NpgsqlCommand(sql, conn, tx);
+            cmd.Parameters.AddWithValue("id", ids[i]);
+            cmd.Parameters.AddWithValue("rank", i + 1);
+            await cmd.ExecuteNonQueryAsync();
+        }
+
+        await tx.CommitAsync();
+    }
+
+    public async Task<bool> Delete(long id)
+    {
+        await using var conn = await _dataSource.OpenConnectionAsync();
+        await using var cmd = new NpgsqlCommand(
+            "DELETE FROM queue WHERE id = @id;",
+            conn);
+        cmd.Parameters.AddWithValue("id", id);
+
+        var rows = await cmd.ExecuteNonQueryAsync();
+        return rows == 1;
+    }
+
     private async Task<QueueListItem?> GetById(long id)
     {
         await using var conn = await _dataSource.OpenConnectionAsync();
@@ -106,6 +143,7 @@ public sealed class QueueStore : IQueueStore
         FROM queue q
         LEFT JOIN issues i ON i.github_id = q.issue_id
         LEFT JOIN runs r ON r.run_id = q.run_id
+        ORDER BY q.rank
         """;
 
     private static QueueListItem Map(NpgsqlDataReader r)

@@ -38,4 +38,31 @@ public sealed class FakeQueueStore : IQueueStore
         _items.Add(item);
         return Task.FromResult<QueueListItem?>(item);
     }
+
+    public Task Reorder(IReadOnlyList<long> ids)
+    {
+        for (var i = 0; i < ids.Count; i++)
+        {
+            var item = _items.FirstOrDefault(q => q.Id == ids[i]);
+            if (item is not null)
+            {
+                var idx = _items.IndexOf(item);
+                _items[idx] = item with { Rank = i + 1 };
+            }
+        }
+
+        return Task.CompletedTask;
+    }
+
+    public Task<bool> Delete(long id)
+    {
+        var item = _items.FirstOrDefault(q => q.Id == id);
+        if (item is null)
+        {
+            return Task.FromResult(false);
+        }
+
+        _items.Remove(item);
+        return Task.FromResult(true);
+    }
 }

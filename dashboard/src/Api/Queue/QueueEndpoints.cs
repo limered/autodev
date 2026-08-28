@@ -14,8 +14,21 @@ public static class QueueEndpoints
 
         app.MapGet("/queue", async (IQueueStore store) => Results.Json(await store.All()));
 
+        app.MapPatch("/queue/order", async (ReorderRequest req, IQueueStore store) =>
+        {
+            await store.Reorder(req.Ids);
+            return Results.NoContent();
+        });
+
+        app.MapDelete("/queue/{id:long}", async (long id, IQueueStore store) =>
+            await store.Delete(id)
+                ? Results.NoContent()
+                : Results.NotFound());
+
         return app;
     }
 }
 
 public record EnqueueRequest(long IssueId);
+
+public record ReorderRequest(long[] Ids);
