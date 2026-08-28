@@ -29,6 +29,9 @@
 .PARAMETER RepoRoot
   Path to the autodev repo root (source of .opencode, blueprint, secrets).
 
+.PARAMETER RunId
+  Optional run identity used for all lifecycle events. Defaults to a fresh GUID.
+
 .PARAMETER KeepVmOnFailure
   Leave the VM running if the job fails, for debugging.
 #>
@@ -40,6 +43,7 @@ param(
     [string]$Branch = "factory/job-$(Get-Date -Format 'yyyyMMdd-HHmmss')-$(Get-Random -Maximum 9999)",
     [string]$VmName = "factory-job-$(Get-Date -Format 'yyyyMMdd-HHmmss')-$(Get-Random -Maximum 9999)",
     [string]$RepoRoot = $PSScriptRoot,
+    [string]$RunId = [guid]::NewGuid().ToString(),
     [switch]$KeepVmOnFailure
 )
 
@@ -51,8 +55,8 @@ if ($RepoUrl -notmatch 'github\.com[:/]([^/]+/[^/]+?)(\.git)?$') {
 }
 $Repo = $Matches[1]
 
-# Host-generated run id: the identity carried on every dashboard event.
-$RunId = [guid]::NewGuid().ToString()
+# The run id is either supplied by the dispatch client or defaulted above to a
+# fresh GUID; it is the identity carried on every dashboard event.
 
 # Fire-and-forget dashboard reporting (no-op if .secrets/ config is absent).
 . (Join-Path $RepoRoot "factory-report.ps1")
