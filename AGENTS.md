@@ -14,6 +14,10 @@ Default canonical labels: `needs-triage`, `needs-info`, `ready-for-agent`, `read
 
 Single-context layout: `CONTEXT.md` at the root, ADRs in `docs/adr/`, glossary in `docs/glossary.md`. See `docs/agents/domain.md`.
 
+### Commits
+
+Use the `/atomic-commit` skill to stage and commit changes.
+
 ## Test harness
 
 The factory test phase runs every `test-harness.<name>` command declared here. Any failure fails the run.
