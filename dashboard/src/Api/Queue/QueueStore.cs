@@ -64,7 +64,7 @@ public sealed class QueueStore : IQueueStore
 
         await using var rankCmd = new NpgsqlCommand(
             "SELECT COALESCE(MAX(rank), 0) FROM queue;", conn, tx);
-        var maxRank = (int)(long)(await rankCmd.ExecuteScalarAsync() ?? 0L);
+        var maxRank = (int)(await rankCmd.ExecuteScalarAsync() ?? 0);
 
         await using var insertCmd = new NpgsqlCommand(
             """
