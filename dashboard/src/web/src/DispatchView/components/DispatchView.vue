@@ -1,21 +1,27 @@
 <script setup>
 import { computed, ref, watch } from 'vue'
-import { useIssuesFeed } from '../services/useIssuesFeed.js'
-import { useQueueFeed } from '../services/useQueueFeed.js'
-import { useHostFeed } from '../services/useHostFeed.js'
+import { usePollingFeed } from '../../_shared/services/usePollingFeed.js'
+import { useQueueActions } from '../services/useQueueActions.js'
 import { queueStatus, queueStatusClass, isQueueItemRunning, isQueueItemFailed } from '../models/queueView.js'
 import { hostView } from '../models/hostView.js'
 
-const issuesFeed = useIssuesFeed(() => fetch('/issues'))
-const queueFeed = useQueueFeed(() => fetch('/queue'))
-const hostFeed = useHostFeed(() => fetch('/host'))
+const issuesFeed = usePollingFeed(() => fetch('/issues'))
+const queueFeed = usePollingFeed(() => fetch('/queue'))
+const hostFeed = usePollingFeed(() => fetch('/host'))
 
-const { issues } = issuesFeed
-const { queue } = queueFeed
-const { host } = hostFeed
+const { items: issues } = issuesFeed
+const { items: queue } = queueFeed
+const { items: host } = hostFeed
 
-const reorderError = ref(null)
-const isReordering = ref(false)
+const actions = useQueueActions()
+const {
+  enqueueError, isEnqueueing,
+  reorderError, isReordering,
+  removeError, isRemoving,
+  startNextError, isStartingNext,
+  restartError, isRestarting
+} = actions
+
 const draggedId = ref(null)
 const dragOverId = ref(null)
 
@@ -30,9 +36,6 @@ watch(
   { immediate: true }
 )
 
-const enqueueError = ref(null)
-const isEnqueueing = ref(false)
-
 const queuedIssueIds = computed(() => new Set(queue.value.map(q => q.issueId)))
 const eligibleIssues = computed(() =>
   issues.value.filter(issue => !queuedIssueIds.value.has(issue.gitHubId))
@@ -45,23 +48,8 @@ const isPollingLoading = computed(() => issuesFeed.isLoading.value || queueFeed.
 const hostBadge = computed(() => hostView(host.value, Date.now()))
 
 async function enqueue(issue) {
-  if (isEnqueueing.value) return
-  isEnqueueing.value = true
-  enqueueError.value = null
-
-  try {
-    const res = await fetch('/queue', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ issueId: issue.gitHubId })
-    })
-    if (!res.ok) throw new Error(`HTTP ${res.status}`)
-
+  if (await actions.enqueue(issue.gitHubId)) {
     await Promise.all([issuesFeed.load(), queueFeed.load()])
-  } catch (e) {
-    enqueueError.value = e.message
-  } finally {
-    isEnqueueing.value = false
   }
 }
 
@@ -101,85 +89,27 @@ async function onDrop(targetId) {
   reordered.splice(toIndex, 0, moved)
   localQueue.value = reordered
 
-  await persistOrder()
+  await actions.reorder(localQueue.value.map(i => i.id))
+  await queueFeed.load()
 }
-
-async function persistOrder() {
-  isReordering.value = true
-  reorderError.value = null
-
-  try {
-    const ids = localQueue.value.map(i => i.id)
-    const res = await fetch('/queue/order', {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ ids })
-    })
-    if (!res.ok) throw new Error(`HTTP ${res.status}`)
-    await queueFeed.load()
-  } catch (e) {
-    reorderError.value = e.message
-    await queueFeed.load()
-  } finally {
-    isReordering.value = false
-  }
-}
-
-const removeError = ref(null)
-const isRemoving = ref(false)
 
 async function remove(item) {
-  if (isRemoving.value) return
-  isRemoving.value = true
-  removeError.value = null
-
-  try {
-    const res = await fetch(`/queue/${item.id}`, { method: 'DELETE' })
-    if (!res.ok) throw new Error(`HTTP ${res.status}`)
+  if (await actions.remove(item.id)) {
     await Promise.all([issuesFeed.load(), queueFeed.load()])
-  } catch (e) {
-    removeError.value = e.message
-  } finally {
-    isRemoving.value = false
   }
 }
-
-const startNextError = ref(null)
-const isStartingNext = ref(false)
 
 async function startNext() {
   const item = nextQueueItem.value
-  if (!item || isStartingNext.value || hasRunningItem.value) return
-  isStartingNext.value = true
-  startNextError.value = null
-
-  try {
-    const res = await fetch(`/queue/${item.id}/start-next`, { method: 'POST' })
-    if (!res.ok) throw new Error(`HTTP ${res.status}`)
+  if (!item || hasRunningItem.value) return
+  if (await actions.startNext(item.id)) {
     await queueFeed.load()
-  } catch (e) {
-    startNextError.value = e.message
-  } finally {
-    isStartingNext.value = false
   }
 }
 
-const restartError = ref(null)
-const isRestarting = ref(false)
-
 async function restart(item) {
-  if (isRestarting.value) return
-  isRestarting.value = true
-  restartError.value = null
-
-  try {
-    const res = await fetch(`/queue/${item.id}/restart`, { method: 'POST' })
-    if (!res.ok) throw new Error(`HTTP ${res.status}`)
+  if (await actions.restart(item.id)) {
     await queueFeed.load()
-  } catch (e) {
-    restartError.value = e.message
-  } finally {
-    isRestarting.value = false
   }
 }
 </script>
