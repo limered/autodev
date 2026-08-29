@@ -5,18 +5,18 @@ namespace Api.Tests;
 
 /// <summary>
 /// Integration tests that exercise the <em>real</em> <see cref="QueueStore"/> SQL against a
-/// real Postgres container (via <see cref="PostgresQueueFixture"/>). They re-run the
+/// real Postgres container (via <see cref="PostgresFixture"/>). They re-run the
 /// meaningful behaviours <see cref="QueueTests"/> asserts against <c>FakeQueueStore</c>,
 /// but through actual SQL so the bugs a fake cannot catch (reader-open-during-commit in
 /// <see cref="QueueStore.ClaimNext"/>, a WHERE appended after ORDER BY in the shared select,
 /// and an Int32&rarr;long unbox on MAX(rank)) fail in CI instead of on Render.
 /// </summary>
-public sealed class QueueStoreIntegrationTests : IClassFixture<PostgresQueueFixture>, IAsyncLifetime
+public sealed class QueueStoreIntegrationTests : IClassFixture<PostgresFixture>, IAsyncLifetime
 {
-    private readonly PostgresQueueFixture _fixture;
+    private readonly PostgresFixture _fixture;
     private readonly QueueStore _store;
 
-    public QueueStoreIntegrationTests(PostgresQueueFixture fixture)
+    public QueueStoreIntegrationTests(PostgresFixture fixture)
     {
         _fixture = fixture;
         // Only meaningful when Docker is available; tests skip otherwise before touching _store.

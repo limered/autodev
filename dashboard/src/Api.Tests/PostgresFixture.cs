@@ -2,6 +2,7 @@ using Api.Host;
 using Api.Issues;
 using Api.Queue;
 using Api.Runs;
+using Microsoft.Extensions.Logging.Abstractions;
 using Npgsql;
 using Testcontainers.PostgreSql;
 using Xunit;
@@ -9,18 +10,25 @@ using Xunit;
 namespace Api.Tests;
 
 /// <summary>
-/// Spins up a throwaway Postgres container, applies the queue schema and the
-/// sibling schemas <see cref="QueueStore"/> LEFT JOINs against (issues, runs),
-/// and constructs a real <see cref="QueueStore"/> over an <see cref="NpgsqlDataSource"/>.
-/// Shared across every test in <see cref="QueueStoreIntegrationTests"/> via
+/// Spins up a throwaway Postgres container, applies every schema the stores read
+/// (queue, issues, runs, host), and constructs real stores over an
+/// <see cref="NpgsqlDataSource"/>. Shared across an integration test class via
 /// <see cref="IClassFixture{TFixture}"/> so the container starts once per class.
 /// </summary>
-public sealed class PostgresQueueFixture : IAsyncLifetime
+public sealed class PostgresFixture : IAsyncLifetime
 {
-    private readonly PostgreSqlContainer _container = new PostgreSqlBuilder().Build();
+    private readonly PostgreSqlContainer? _container = TryBuildContainer();
 
     private NpgsqlDataSource _dataSource = null!;
     private HostStore _hostStore = null!;
+
+    // Building the container validates Docker config eagerly and throws when Docker is
+    // absent; swallow that so tests skip cleanly instead of failing at fixture construction.
+    private static PostgreSqlContainer? TryBuildContainer()
+    {
+        try { return new PostgreSqlBuilder().Build(); }
+        catch (Exception) { return null; }
+    }
 
     /// <summary>
     /// <see langword="true"/> when the Postgres container started successfully and the
@@ -35,12 +43,64 @@ public sealed class PostgresQueueFixture : IAsyncLifetime
     /// </summary>
     public QueueStore CreateStore() => new(_dataSource, _hostStore);
 
+    /// <summary>
+    /// Constructs a real <see cref="RunStore"/> wired with a real <see cref="RunCompletion"/>
+    /// and a <see cref="RecordingGitHubIssuesClient"/> so tests can assert the finish path
+    /// resolved and closed the linked issue. Only valid when <see cref="IsDockerAvailable"/>.
+    /// </summary>
+    public (RunStore Store, RecordingGitHubIssuesClient GitHub) CreateRunStore()
+    {
+        var gitHub = new RecordingGitHubIssuesClient();
+        var store = new RunStore(
+            _dataSource,
+            NullLogger<RunStore>.Instance,
+            gitHub,
+            _hostStore,
+            new RunCompletion());
+        return (store, gitHub);
+    }
+
+    /// <summary>Seeds a queue row linking an issue to a run, for the run-finished path.</summary>
+    public async Task SeedQueueRowAsync(long issueId, Guid runId)
+    {
+        await using var conn = await _dataSource.OpenConnectionAsync();
+        await using var cmd = new NpgsqlCommand(
+            "INSERT INTO queue (issue_id, rank, run_id, start_requested_at) VALUES (@issueId, 1, @runId, now());",
+            conn);
+        cmd.Parameters.AddWithValue("issueId", issueId);
+        cmd.Parameters.AddWithValue("runId", runId);
+        await cmd.ExecuteNonQueryAsync();
+    }
+
+    /// <summary>Counts queue rows for a run, so tests can assert the finish path deleted it.</summary>
+    public async Task<int> CountQueueRowsAsync(Guid runId)
+    {
+        await using var conn = await _dataSource.OpenConnectionAsync();
+        await using var cmd = new NpgsqlCommand(
+            "SELECT count(*) FROM queue WHERE run_id = @runId;", conn);
+        cmd.Parameters.AddWithValue("runId", runId);
+        return (int)(long)(await cmd.ExecuteScalarAsync())!;
+    }
+
+    /// <summary>Reads a run's persisted columns for assertions the fold alone can't cover.</summary>
+    public async Task<RunState?> GetRunAsync(Guid runId)
+    {
+        var (store, _) = CreateRunStore();
+        return await store.Get(runId);
+    }
+
     public async Task InitializeAsync()
     {
         // Starting the container is the only Docker-dependent step; a failure here means
         // Docker is not available, so tests should skip rather than fail. Everything after
         // this point (schema setup, store construction) runs against a real DB and any
         // error there is a genuine failure we want surfaced.
+        if (_container is null)
+        {
+            IsDockerAvailable = false;
+            return;
+        }
+
         try
         {
             await _container.StartAsync();
@@ -71,7 +131,10 @@ public sealed class PostgresQueueFixture : IAsyncLifetime
             await _dataSource.DisposeAsync();
         }
 
-        await _container.DisposeAsync();
+        if (_container is not null)
+        {
+            await _container.DisposeAsync();
+        }
     }
 
     /// <summary>
