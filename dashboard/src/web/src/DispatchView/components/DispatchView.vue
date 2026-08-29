@@ -2,13 +2,17 @@
 import { computed, ref, watch } from 'vue'
 import { useIssuesFeed } from '../services/useIssuesFeed.js'
 import { useQueueFeed } from '../services/useQueueFeed.js'
+import { useHostFeed } from '../services/useHostFeed.js'
 import { queueStatus, queueStatusClass, isQueueItemRunning, isQueueItemFailed } from '../models/queueView.js'
+import { hostView } from '../models/hostView.js'
 
 const issuesFeed = useIssuesFeed(() => fetch('/issues'))
 const queueFeed = useQueueFeed(() => fetch('/queue'))
+const hostFeed = useHostFeed(() => fetch('/host'))
 
 const { issues } = issuesFeed
 const { queue } = queueFeed
+const { host } = hostFeed
 
 const localQueue = ref([])
 watch(
@@ -31,7 +35,9 @@ const eligibleIssues = computed(() =>
 const hasRunningItem = computed(() => queue.value.some(isQueueItemRunning))
 const nextQueueItem = computed(() => localQueue.value[0] ?? null)
 const isSaving = computed(() => isReordering.value || isRemoving.value || isRestarting.value)
-
+const connectionError = computed(() => issuesFeed.error.value || queueFeed.error.value)
+const isPollingLoading = computed(() => issuesFeed.isLoading.value || queueFeed.isLoading.value)
+const hostBadge = computed(() => hostView(host.value, Date.now()))
 
 async function enqueue(issue) {
   if (isEnqueueing.value) return
@@ -180,15 +186,27 @@ async function restart(item) {
 
 <template>
   <section class="dispatch-panel">
+    <header class="dispatch-header">
+      <h2><span class="prompt">&gt;</span> Dispatch</h2>
+      <div class="dispatch-indicators">
+        <div class="connection" :class="{ loading: isPollingLoading || isSaving }">
+          <span class="connection-dot"></span>
+          <span v-if="connectionError">sync error</span>
+          <span v-else-if="isSaving">saving</span>
+          <span v-else>live</span>
+        </div>
+        <div class="connection host-badge" :class="hostBadge.freshnessClass">
+          <span class="connection-dot"></span>
+          <span>{{ hostBadge.label }}</span>
+          <span v-if="!hostBadge.online" class="host-last-seen">(last seen {{ hostBadge.lastSeen }})</span>
+        </div>
+      </div>
+    </header>
+
     <div class="dispatch-columns">
       <section class="eligible-column">
         <header class="panel-header">
           <h2><span class="prompt">&gt;</span> Eligible Issues</h2>
-          <div class="connection" :class="{ loading: issuesFeed.isLoading.value }">
-            <span class="connection-dot"></span>
-            <span v-if="issuesFeed.error.value">sync error</span>
-            <span v-else>live</span>
-          </div>
         </header>
 
         <section v-if="issuesFeed.error.value" class="error-banner" role="alert">
@@ -233,12 +251,7 @@ async function restart(item) {
       <section class="queue-column">
         <header class="panel-header">
           <h2><span class="prompt">&gt;</span> Run Queue</h2>
-          <div class="connection" :class="{ loading: queueFeed.isLoading.value || isSaving }">
-            <span class="connection-dot"></span>
-            <span v-if="queueFeed.error.value">sync error</span>
-            <span v-else-if="isSaving">saving</span>
-            <span v-else>live</span>
-          </div>
+          <span v-if="isSaving" class="queue-saving">saving…</span>
         </header>
 
         <section v-if="queueFeed.error.value" class="error-banner" role="alert">
@@ -393,6 +406,58 @@ h2 {
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: 999px;
+  font-size: 0.7rem;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.connection.loading {
+  animation: pulse 1.4s infinite;
+}
+
+.dispatch-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-bottom: 1rem;
+  padding-bottom: 0.75rem;
+  border-bottom: 1px solid var(--border);
+}
+
+.dispatch-indicators {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.host-badge.fresh {
+  color: var(--green);
+  border-color: var(--green);
+}
+
+.host-badge.fresh .connection-dot {
+  background: var(--green);
+}
+
+.host-badge.stale-danger,
+.host-badge.unknown {
+  color: var(--red);
+  border-color: var(--red);
+}
+
+.host-badge.stale-danger .connection-dot,
+.host-badge.unknown .connection-dot {
+  background: var(--red);
+}
+
+.host-last-seen {
+  text-transform: none;
+  letter-spacing: 0;
+}
+
+.queue-saving {
   font-size: 0.7rem;
   color: var(--text-muted);
   text-transform: uppercase;
@@ -670,6 +735,11 @@ h2 {
 @keyframes blink {
   0%, 100% { opacity: 1; }
   50% { opacity: 0.35; }
+}
+
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.6; }
 }
 
 @media (max-width: 640px) {

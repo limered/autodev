@@ -1,3 +1,4 @@
+using Api.Host;
 using Npgsql;
 
 namespace Api.Queue;
@@ -18,10 +19,12 @@ public record ClaimedQueueItem(Guid RunId, string RepoUrl, string Spec);
 public sealed class QueueStore : IQueueStore
 {
     private readonly NpgsqlDataSource _dataSource;
+    private readonly IHostStore _hostStore;
 
-    public QueueStore(NpgsqlDataSource dataSource)
+    public QueueStore(NpgsqlDataSource dataSource, IHostStore hostStore)
     {
         _dataSource = dataSource;
+        _hostStore = hostStore;
     }
 
     public async Task<IReadOnlyList<QueueListItem>> All()
@@ -160,6 +163,7 @@ public sealed class QueueStore : IQueueStore
         {
             await reader.DisposeAsync();
             await tx.CommitAsync();
+            await _hostStore.StampLastSeen();
             return null;
         }
 
@@ -169,6 +173,8 @@ public sealed class QueueStore : IQueueStore
         var title = reader.IsDBNull(3) ? null : reader.GetString(3);
         await reader.DisposeAsync();
         await tx.CommitAsync();
+
+        await _hostStore.StampLastSeen();
 
         var repoUrl = $"https://github.com/{repo}.git";
         var spec = !string.IsNullOrWhiteSpace(body) ? body.Trim() : title ?? repo;
