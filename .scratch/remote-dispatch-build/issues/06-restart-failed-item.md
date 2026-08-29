@@ -6,8 +6,8 @@
 
 **Status:** ready-for-agent
 
-- [ ] `POST /queue/{id}/restart` clears the queue row's run id, returning the item to the `queued` (inferred) state at its existing rank. Web-write, no token.
-- [ ] The dispatch view shows a **Restart** control only on items whose linked run is failed.
-- [ ] After restart, the item is eligible for the next Start next / claim.
+- [x] `POST /queue/{id}/restart` clears the queue row's run id, returning the item to the `queued` (inferred) state at its existing rank. Web-write, no token.
+- [x] The dispatch view shows a **Restart** control only on items whose linked run is failed.
+- [x] After restart, the item is eligible for the next Start next / claim.
 - [ ] Demoable: a failed queue item, click Restart, it shows as queued again and can be started.
-- [ ] Local flow unchanged.
+- [x] Local flow unchanged.
