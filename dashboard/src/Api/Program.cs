@@ -1,4 +1,5 @@
 using System.Text.Json;
+using Api.Host;
 using Api.Issues;
 using Api.Queue;
 using Api.Runs;
@@ -25,6 +26,7 @@ builder.Services.AddSingleton(dataSource);
 builder.Services.AddSingleton<IRunStore, RunStore>();
 builder.Services.AddSingleton<IIssuesStore, IssuesStore>();
 builder.Services.AddSingleton<IQueueStore, QueueStore>();
+builder.Services.AddSingleton<IHostStore, HostStore>();
 
 var app = builder.Build();
 
@@ -34,6 +36,7 @@ try
     await RunsSchema.EnsureAsync(dataSource);
     await IssuesSchema.EnsureAsync(dataSource);
     await QueueSchema.EnsureAsync(dataSource);
+    await HostSchema.EnsureAsync(dataSource);
     app.Logger.LogInformation("Postgres connection opened and schema ensured.");
 }
 catch (Exception ex)
@@ -45,6 +48,7 @@ catch (Exception ex)
 app.MapRunsEndpoints();
 app.MapIssuesEndpoints();
 app.MapQueueEndpoints();
+app.MapHostEndpoints();
 
 // Serve the built Vue SPA (wwwroot) with SPA fallback to index.html.
 app.UseDefaultFiles();
