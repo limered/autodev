@@ -359,7 +359,7 @@ async function restart(item) {
 
 .dispatch-columns {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
   gap: 1.5rem;
 }
 
@@ -373,6 +373,7 @@ async function restart(item) {
 .queue-column {
   display: flex;
   flex-direction: column;
+  min-width: 0;
   min-height: 0;
 }
 
@@ -536,6 +537,9 @@ h2 {
 .issue-ref {
   font-size: 0.8rem;
   color: var(--text-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .enqueue-button {
