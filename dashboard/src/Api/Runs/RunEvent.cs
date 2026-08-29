@@ -17,7 +17,8 @@ public record RunEvent(
     string? PrUrl,
     string? FailureReason,
     string? FreezeLocalPath,
-    IReadOnlyList<RunStage>? Stages = null)
+    IReadOnlyList<RunStage>? Stages = null,
+    string? CurrentPhase = null)
 {
     public Guid RunId { get; init; }
 }

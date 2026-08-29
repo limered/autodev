@@ -10,7 +10,7 @@ public static class RunFold
         {
             "run-started" => ApplyRunStarted(current, ev, at),
             "agent-started" => ApplyAgentStarted(current, ev, at),
-            "heartbeat" => ApplyHeartbeat(current, at),
+            "heartbeat" => ApplyHeartbeat(current, ev, at),
             "stall-detected" => ApplyStallDetected(current, ev, at),
             "freeze-captured" => ApplyFreezeCaptured(current, ev, at),
             "pr-verified" => ApplyPrVerified(current, ev, at),
@@ -61,7 +61,7 @@ public static class RunFold
         };
     }
 
-    private static RunState? ApplyHeartbeat(RunState? current, DateTimeOffset at)
+    private static RunState? ApplyHeartbeat(RunState? current, RunEvent ev, DateTimeOffset at)
     {
         if (current is null)
         {
@@ -73,9 +73,13 @@ public static class RunFold
             return null;
         }
 
+        // currentPhase rides the heartbeat: the host relay reads the in-VM phase
+        // marker and attaches it. A heartbeat without it keeps the last known
+        // phase, so a transient read miss never wipes the advancing phase.
         return current with
         {
             LastHeartbeatAt = at,
+            CurrentPhase = ev.CurrentPhase ?? current.CurrentPhase,
         };
     }
 

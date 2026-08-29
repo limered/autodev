@@ -107,4 +107,38 @@ public class IngestTests
         Assert.Equal("pr-author", fromStore.Stages[2].Agent);
         Assert.Equal("m3", fromStore.Stages[2].Model);
     }
+
+    [Fact]
+    public async Task Apply_Heartbeat_PersistsCurrentPhase()
+    {
+        var store = new FakeRunStore();
+        await store.Apply(RunId, E("run-started", T0, e => e with { Repo = "r" }));
+
+        var state = await store.Apply(RunId, E("heartbeat", T1, e => e with { CurrentPhase = "feature-builder" }));
+
+        Assert.NotNull(state);
+        Assert.Equal("feature-builder", state.CurrentPhase);
+        Assert.Equal(T1, state.LastHeartbeatAt);
+
+        var fromStore = await store.Get(RunId);
+        Assert.NotNull(fromStore);
+        Assert.Equal("feature-builder", fromStore.CurrentPhase);
+    }
+
+    [Fact]
+    public async Task Apply_Heartbeat_AdvancesCurrentPhaseThroughStore()
+    {
+        var store = new FakeRunStore();
+        await store.Apply(RunId, E("run-started", T0, e => e with { Repo = "r" }));
+        await store.Apply(RunId, E("heartbeat", T1, e => e with { CurrentPhase = "feature-builder" }));
+
+        var state = await store.Apply(RunId, E("heartbeat", T2, e => e with { CurrentPhase = "test-runner" }));
+
+        Assert.NotNull(state);
+        Assert.Equal("test-runner", state.CurrentPhase);
+
+        var fromStore = await store.Get(RunId);
+        Assert.NotNull(fromStore);
+        Assert.Equal("test-runner", fromStore.CurrentPhase);
+    }
 }

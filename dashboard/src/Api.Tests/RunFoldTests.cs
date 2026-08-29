@@ -16,8 +16,8 @@ public class RunFoldTests
         return configure?.Invoke(ev) ?? ev;
     }
 
-    private static RunState State(string status = "launching", DateTimeOffset? updatedAt = null, DateTimeOffset? lastHeartbeatAt = null) =>
-        new(RunId, "repo", "branch", "spec", "model", null, status, T0, null, lastHeartbeatAt, null, null, false, null, updatedAt ?? T0, null);
+    private static RunState State(string status = "launching", DateTimeOffset? updatedAt = null, DateTimeOffset? lastHeartbeatAt = null, string? currentPhase = null) =>
+        new(RunId, "repo", "branch", "spec", "model", null, status, T0, null, lastHeartbeatAt, null, null, false, null, updatedAt ?? T0, null, currentPhase);
 
     [Fact]
     public void RunStarted_CreatesNewRun()
@@ -41,6 +41,7 @@ public class RunFoldTests
         Assert.False(next.FreezeCaptured);
         Assert.Null(next.FreezeLocalPath);
         Assert.Null(next.Stages);
+        Assert.Null(next.CurrentPhase);
     }
 
     [Fact]
@@ -142,6 +143,56 @@ public class RunFoldTests
         var next = RunFold.Apply(current, E("heartbeat", T1));
 
         Assert.NotNull(next);
+        Assert.Equal(T1, next.LastHeartbeatAt);
+    }
+
+    [Fact]
+    public void Heartbeat_CarriesCurrentPhase()
+    {
+        var current = State("running", updatedAt: T0, currentPhase: null);
+
+        var next = RunFold.Apply(current, E("heartbeat", T1, e => e with { CurrentPhase = "feature-builder" }));
+
+        Assert.NotNull(next);
+        Assert.Equal(T1, next.LastHeartbeatAt);
+        Assert.Equal("feature-builder", next.CurrentPhase);
+        Assert.Equal(T0, next.UpdatedAt); // heartbeat never bumps UpdatedAt
+        Assert.Equal("running", next.Status); // unchanged
+    }
+
+    [Fact]
+    public void Heartbeat_AdvancesCurrentPhase()
+    {
+        var current = State("running", updatedAt: T0, lastHeartbeatAt: T0, currentPhase: "feature-builder");
+
+        var next = RunFold.Apply(current, E("heartbeat", T1, e => e with { CurrentPhase = "test-runner" }));
+
+        Assert.NotNull(next);
+        Assert.Equal("test-runner", next.CurrentPhase);
+        Assert.Equal(T1, next.LastHeartbeatAt);
+    }
+
+    [Fact]
+    public void Heartbeat_WithoutCurrentPhase_KeepsExistingPhase()
+    {
+        var current = State("running", updatedAt: T0, lastHeartbeatAt: T0, currentPhase: "feature-builder");
+
+        var next = RunFold.Apply(current, E("heartbeat", T1));
+
+        Assert.NotNull(next);
+        Assert.Equal("feature-builder", next.CurrentPhase);
+        Assert.Equal(T1, next.LastHeartbeatAt);
+    }
+
+    [Fact]
+    public void Heartbeat_FirstHeartbeat_CarriesCurrentPhase()
+    {
+        var current = State("running", updatedAt: T0, lastHeartbeatAt: null, currentPhase: null);
+
+        var next = RunFold.Apply(current, E("heartbeat", T1, e => e with { CurrentPhase = "feature-builder" }));
+
+        Assert.NotNull(next);
+        Assert.Equal("feature-builder", next.CurrentPhase);
         Assert.Equal(T1, next.LastHeartbeatAt);
     }
 

@@ -96,6 +96,9 @@ trap stop_ticker EXIT
 # Runs one agent phase headlessly and returns the opencode exit code.
 # stdin from /dev/null so opencode never blocks waiting on a TTY.
 # /tmp/heartbeat is the liveness marker contract consumed by the host-side poller.
+# /tmp/current-phase is the phase marker: each phase writes its agent name here
+# as it begins, so the host heartbeat poller can relay the current phase up to
+# the backend without any new secrets crossing into the VM.
 #
 # Liveness = "the opencode process is alive", not "it printed a line this minute".
 # A long silent model turn (final commit/PR generation) emits no lines for minutes
@@ -109,6 +112,9 @@ trap stop_ticker EXIT
 run_agent_phase() {
   local agent="$1"
   local prompt="$2"
+  # Write the phase marker before touching the heartbeat so the host reads a
+  # consistent (phase, heartbeat-mtime) pair when it observes the mtime advance.
+  printf '%s' "$agent" > /tmp/current-phase
   touch /tmp/heartbeat
   # No --model: each agent resolves its own model from the unpacked opencode
   # config (~/.config/opencode), so feature-builder, test-runner and pr-author
