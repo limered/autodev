@@ -158,6 +158,7 @@ public sealed class QueueStore : IQueueStore
         await using var reader = await cmd.ExecuteReaderAsync();
         if (!await reader.ReadAsync())
         {
+            await reader.DisposeAsync();
             await tx.CommitAsync();
             return null;
         }
@@ -166,6 +167,7 @@ public sealed class QueueStore : IQueueStore
         var repo = reader.GetString(1);
         var body = reader.IsDBNull(2) ? null : reader.GetString(2);
         var title = reader.IsDBNull(3) ? null : reader.GetString(3);
+        await reader.DisposeAsync();
         await tx.CommitAsync();
 
         var repoUrl = $"https://github.com/{repo}.git";
