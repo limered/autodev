@@ -6,7 +6,7 @@ import { usePagedRuns } from '../services/usePagedRuns.js'
 const now = ref(Date.now())
 let tickTimer = null
 
-const { runs, error, hasMore, isLoading, loadNext } = usePagedRuns(() => fetch('/runs'))
+const { runs, error, hasMore, isLoading, loadNext } = usePagedRuns(url => fetch(url))
 
 const displayedRuns = computed(() =>
   runs.value.map(r => ({ run: r, view: runView(r, now.value) }))
