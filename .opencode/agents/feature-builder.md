@@ -1,6 +1,7 @@
 ---
 description: Implements a software feature from a spec issue, commits, and pushes the branch. Does not create the PR.
 mode: primary
+model: opencode-go/glm-5.2
 permission:
   bash: allow
   edit: allow
