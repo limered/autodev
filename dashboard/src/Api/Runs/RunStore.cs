@@ -1,5 +1,6 @@
 using System.Reflection;
 using System.Text.Json;
+using Api.Host;
 using Api.Issues;
 using Npgsql;
 using NpgsqlTypes;
@@ -19,6 +20,7 @@ public sealed class RunStore : IRunStore
     private readonly NpgsqlDataSource _dataSource;
     private readonly ILogger<RunStore> _logger;
     private readonly IGitHubIssuesClient _gitHub;
+    private readonly IHostStore _hostStore;
 
     private const string RunColumns =
         "run_id, repo, branch, spec, model, vm_name, status, started_at, finished_at, last_heartbeat_at, pr_url, failure_reason, freeze_captured, freeze_local_path, updated_at, stages, current_phase";
@@ -41,11 +43,12 @@ public sealed class RunStore : IRunStore
         }
     }
 
-    public RunStore(NpgsqlDataSource dataSource, ILogger<RunStore> logger, IGitHubIssuesClient gitHub)
+    public RunStore(NpgsqlDataSource dataSource, ILogger<RunStore> logger, IGitHubIssuesClient gitHub, IHostStore hostStore)
     {
         _dataSource = dataSource;
         _logger = logger;
         _gitHub = gitHub;
+        _hostStore = hostStore;
     }
 
     public async Task<IReadOnlyList<RunState>> All()
@@ -79,6 +82,10 @@ public sealed class RunStore : IRunStore
 
         await using var conn = await _dataSource.OpenConnectionAsync();
         await using var tx = await conn.BeginTransactionAsync();
+
+        // A run event only arrives via the host relay, so any event proves the
+        // host is alive — including during a blocking job when it never claims.
+        await _hostStore.StampLastSeen();
 
         var current = await GetLocked(runId, conn, tx);
         var next = RunFold.Apply(current, ev);
