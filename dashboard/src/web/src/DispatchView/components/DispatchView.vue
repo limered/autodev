@@ -14,6 +14,11 @@ const { issues } = issuesFeed
 const { queue } = queueFeed
 const { host } = hostFeed
 
+const reorderError = ref(null)
+const isReordering = ref(false)
+const draggedId = ref(null)
+const dragOverId = ref(null)
+
 const localQueue = ref([])
 watch(
   queue,
@@ -59,11 +64,6 @@ async function enqueue(issue) {
     isEnqueueing.value = false
   }
 }
-
-const reorderError = ref(null)
-const isReordering = ref(false)
-const draggedId = ref(null)
-const dragOverId = ref(null)
 
 function onDragStart(item, event) {
   draggedId.value = item.id
