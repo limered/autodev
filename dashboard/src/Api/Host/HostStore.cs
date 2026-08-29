@@ -44,7 +44,7 @@ public sealed class HostStore : IHostStore
             return null;
         }
 
-        var lastSeen = (DateTimeOffset)result;
+        var lastSeen = new DateTimeOffset((DateTime)result, TimeSpan.Zero);
         var online = DateTimeOffset.UtcNow - lastSeen <= OnlineThreshold;
         return new HostState(lastSeen, online);
     }
