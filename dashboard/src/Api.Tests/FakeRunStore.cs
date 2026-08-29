@@ -12,6 +12,16 @@ public sealed class FakeRunStore : IRunStore
         return Task.FromResult<IReadOnlyList<RunState>>(runs);
     }
 
+    public Task<IReadOnlyList<RunState>> All(int skip, int take)
+    {
+        var runs = _runs.Values
+            .OrderByDescending(r => r.StartedAt)
+            .Skip(skip)
+            .Take(take)
+            .ToList();
+        return Task.FromResult<IReadOnlyList<RunState>>(runs);
+    }
+
     public Task<IReadOnlyList<RunState>> Active()
     {
         var runs = _runs.Values

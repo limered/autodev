@@ -142,4 +142,43 @@ public sealed class RunStoreIntegrationTests : IClassFixture<PostgresFixture>, I
 
         Assert.Empty(_gitHub.Closed);
     }
+
+    [SkippableFact]
+    public async Task All_SkipTake_ReturnsWindowInStartedAtDescOrder_AndShortFinalPage()
+    {
+        Skip.IfNot(_fixture.IsDockerAvailable, "Docker is not available; skipping RunStore integration tests.");
+
+        // Seed 25 runs, each started 1s apart so started_at DESC ordering is deterministic
+        // (no ties). runIds[0] is oldest, runIds[24] is newest.
+        var baseAt = DateTimeOffset.UtcNow;
+        var runIds = new List<Guid>();
+        for (var i = 0; i < 25; i++)
+        {
+            var id = Guid.NewGuid();
+            runIds.Add(id);
+            await _store.Apply(id, Started(baseAt.AddSeconds(i)));
+        }
+
+        var first = await _store.All(0, 10);
+        var second = await _store.All(10, 10);
+        var third = await _store.All(20, 10);
+
+        // Full pages hold exactly `take` runs; the last page is short.
+        Assert.Equal(10, first.Count);
+        Assert.Equal(10, second.Count);
+        Assert.Equal(5, third.Count);
+
+        // Newest first: page 1 holds the 10 most recent, page 2 the next 10, page 3 the tail.
+        Assert.Equal(runIds[24], first[0].RunId);
+        Assert.Equal(runIds[15], first[9].RunId);
+        Assert.Equal(runIds[14], second[0].RunId);
+        Assert.Equal(runIds[5], second[9].RunId);
+        Assert.Equal(runIds[4], third[0].RunId);
+        Assert.Equal(runIds[0], third[4].RunId);
+
+        // Within each page the runs are strictly ordered by started_at DESC.
+        Assert.True(first[0].StartedAt > first[9].StartedAt);
+        Assert.True(second[0].StartedAt > second[9].StartedAt);
+        Assert.True(third[0].StartedAt > third[4].StartedAt);
+    }
 }
