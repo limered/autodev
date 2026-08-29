@@ -26,7 +26,7 @@ const isEnqueueing = ref(false)
 
 const queuedIssueIds = computed(() => new Set(queue.value.map(q => q.issueId)))
 const eligibleIssues = computed(() =>
-  issues.value.filter(issue => !queuedIssueIds.value.has(issue.githubId))
+  issues.value.filter(issue => !queuedIssueIds.value.has(issue.gitHubId))
 )
 const hasRunningItem = computed(() => queue.value.some(isQueueItemRunning))
 const nextQueueItem = computed(() => localQueue.value[0] ?? null)
@@ -42,7 +42,7 @@ async function enqueue(issue) {
     const res = await fetch('/queue', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ issueId: issue.githubId })
+      body: JSON.stringify({ issueId: issue.gitHubId })
     })
     if (!res.ok) throw new Error(`HTTP ${res.status}`)
 
@@ -204,7 +204,7 @@ async function restart(item) {
         <section v-if="eligibleIssues.length" class="issue-list">
           <article
             v-for="issue in eligibleIssues"
-            :key="issue.githubId"
+            :key="issue.gitHubId"
             class="issue-row"
           >
             <div class="issue-meta">
