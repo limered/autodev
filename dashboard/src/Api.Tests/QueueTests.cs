@@ -139,4 +139,46 @@ public class QueueTests
 
         Assert.Null(claim);
     }
+
+    [Fact]
+    public async Task Restart_ClearsRunIdAndStartRequestedAt()
+    {
+        var store = new FakeQueueStore();
+        var item = await store.Enqueue(42);
+        await store.StartNext(item!.Id);
+        await store.ClaimNext();
+
+        var restarted = await store.Restart(item.Id);
+
+        Assert.NotNull(restarted);
+        Assert.Null(restarted.RunId);
+        Assert.Null(restarted.StartRequestedAt);
+    }
+
+    [Fact]
+    public async Task Restart_MissingItem_ReturnsNull()
+    {
+        var store = new FakeQueueStore();
+
+        var restarted = await store.Restart(999);
+
+        Assert.Null(restarted);
+    }
+
+    [Fact]
+    public async Task Restart_AfterRestart_ItemCanBeClaimedAgain()
+    {
+        var store = new FakeQueueStore();
+        var item = await store.Enqueue(42);
+        await store.StartNext(item!.Id);
+        await store.ClaimNext();
+
+        await store.Restart(item.Id);
+        await store.StartNext(item.Id);
+        var claim = await store.ClaimNext();
+
+        Assert.NotNull(claim);
+        var all = await store.All();
+        Assert.Equal(claim.RunId, all[0].RunId);
+    }
 }

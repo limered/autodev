@@ -13,3 +13,7 @@ export function queueStatusClass(queueItem) {
 export function isQueueItemRunning(queueItem) {
   return Boolean(queueItem.runId && queueItem.runStatus !== 'done' && queueItem.runStatus !== 'failed')
 }
+
+export function isQueueItemFailed(queueItem) {
+  return queueStatus(queueItem) === 'failed'
+}

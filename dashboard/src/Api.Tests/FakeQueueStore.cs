@@ -53,6 +53,19 @@ public sealed class FakeQueueStore : IQueueStore
         return Task.FromResult<QueueListItem?>(_items[idx]);
     }
 
+    public Task<QueueListItem?> Restart(long id)
+    {
+        var item = _items.FirstOrDefault(i => i.Id == id);
+        if (item is null)
+        {
+            return Task.FromResult<QueueListItem?>(null);
+        }
+
+        var idx = _items.IndexOf(item);
+        _items[idx] = item with { RunId = null, StartRequestedAt = null };
+        return Task.FromResult<QueueListItem?>(_items[idx]);
+    }
+
     public Task<ClaimedQueueItem?> ClaimNext()
     {
         var item = _items

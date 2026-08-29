@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { queueStatus, queueStatusClass, isQueueItemRunning } from '../../models/queueView.js'
+import { queueStatus, queueStatusClass, isQueueItemRunning, isQueueItemFailed } from '../../models/queueView.js'
 
 describe('queueStatus', () => {
   it('returns queued when no run is linked', () => {
@@ -49,5 +49,20 @@ describe('isQueueItemRunning', () => {
   it('returns false for terminal run statuses', () => {
     expect(isQueueItemRunning({ runId: 'r1', runStatus: 'done' })).toBe(false)
     expect(isQueueItemRunning({ runId: 'r1', runStatus: 'failed' })).toBe(false)
+  })
+})
+
+describe('isQueueItemFailed', () => {
+  it('returns false when no run is linked', () => {
+    expect(isQueueItemFailed({ runId: null })).toBe(false)
+  })
+
+  it('returns false for non-failed statuses', () => {
+    expect(isQueueItemFailed({ runId: 'r1', runStatus: 'running' })).toBe(false)
+    expect(isQueueItemFailed({ runId: 'r1', runStatus: 'done' })).toBe(false)
+  })
+
+  it('returns true for failed runs', () => {
+    expect(isQueueItemFailed({ runId: 'r1', runStatus: 'failed' })).toBe(true)
   })
 })

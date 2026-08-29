@@ -20,6 +20,12 @@ public static class QueueEndpoints
             return item is null ? Results.NotFound() : Results.Json(item);
         });
 
+        app.MapPost("/queue/{id:long}/restart", async (long id, IQueueStore store) =>
+        {
+            var item = await store.Restart(id);
+            return item is null ? Results.NotFound() : Results.Json(item);
+        });
+
         app.MapPost("/queue/claim-next", async (IQueueStore store, IConfiguration config, HttpRequest req) =>
         {
             var factoryToken = config["FACTORY_TOKEN"];
