@@ -1,7 +1,6 @@
 ---
 description: Authors the pull request title and body from the branch diff and creates the PR.
 mode: primary
-model: opencode-go/deepseek-v4-flash
 permission:
   bash: allow
 ---

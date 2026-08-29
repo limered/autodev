@@ -1,7 +1,6 @@
 ---
 description: Runs the target repo's declared test-harness commands between implement and PR.
 mode: primary
-model: opencode-go/deepseek-v4-flash
 permission:
   bash: allow
 ---

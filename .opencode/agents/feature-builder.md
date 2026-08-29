@@ -1,7 +1,6 @@
 ---
 description: Implements a software feature from a spec issue, commits, and pushes the branch. Does not create the PR.
 mode: primary
-model: opencode-go/deepseek-v4-flash
 permission:
   bash: allow
   edit: allow
