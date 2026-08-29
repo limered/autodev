@@ -21,7 +21,7 @@ public sealed class RunStore : IRunStore
     private readonly IGitHubIssuesClient _gitHub;
 
     private const string RunColumns =
-        "run_id, repo, branch, spec, model, vm_name, status, started_at, finished_at, last_heartbeat_at, pr_url, failure_reason, freeze_captured, freeze_local_path, updated_at, stages";
+        "run_id, repo, branch, spec, model, vm_name, status, started_at, finished_at, last_heartbeat_at, pr_url, failure_reason, freeze_captured, freeze_local_path, updated_at, stages, current_phase";
 
     private static readonly JsonSerializerOptions StagesJsonOptions = new(JsonSerializerDefaults.Web);
 
@@ -225,15 +225,20 @@ public sealed class RunStore : IRunStore
 
     private static async Task UpdateHeartbeat(RunState next, NpgsqlConnection conn, NpgsqlTransaction tx)
     {
+        // currentPhase rides the heartbeat: it advances only at phase transitions,
+        // so it is written on the same cheap path as last_heartbeat_at. The
+        // last_heartbeat_at guard rejects out-of-order heartbeats wholesale.
         await using var cmd = new NpgsqlCommand(
             """
             UPDATE runs
-            SET last_heartbeat_at = @lastHeartbeatAt
+            SET last_heartbeat_at = @lastHeartbeatAt,
+                current_phase = @currentPhase
             WHERE run_id = @id
               AND (last_heartbeat_at IS NULL OR @lastHeartbeatAt > last_heartbeat_at);
             """, conn, tx);
         cmd.Parameters.AddWithValue("id", next.RunId);
         cmd.Parameters.AddWithValue("lastHeartbeatAt", next.LastHeartbeatAt!.Value);
+        cmd.Parameters.AddWithValue("currentPhase", (object?)next.CurrentPhase ?? DBNull.Value);
         await cmd.ExecuteNonQueryAsync();
     }
 
@@ -305,7 +310,8 @@ public sealed class RunStore : IRunStore
             r.GetBoolean(r.GetOrdinal("freeze_captured")),
             GetStringOrNull(r, "freeze_local_path"),
             r.GetFieldValue<DateTimeOffset>(r.GetOrdinal("updated_at")),
-            GetStagesOrNull(r, "stages"));
+            GetStagesOrNull(r, "stages"),
+            GetStringOrNull(r, "current_phase"));
     }
 
     private static string? GetStringOrNull(NpgsqlDataReader r, string column)

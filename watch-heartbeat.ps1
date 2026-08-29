@@ -72,6 +72,23 @@ function Get-HeartbeatEpochSeconds {
     return $null
 }
 
+function Get-VmCurrentPhase {
+    # Reads the in-VM /tmp/current-phase marker written by each agent phase as it
+    # begins. Returns the trimmed phase/agent name, or $null when the marker is
+    # absent (e.g. before the first phase has started). Never throws: a missing or
+    # unreadable marker simply yields no phase on this heartbeat.
+    param([string]$Name)
+    $prev = $ErrorActionPreference
+    $ErrorActionPreference = "Continue"
+    $output = & multipass exec $Name -- cat /tmp/current-phase 2>&1
+    $exitCode = $LASTEXITCODE
+    $ErrorActionPreference = $prev
+    if ($exitCode -eq 0 -and $output) {
+        return ($output.Trim())
+    }
+    return $null
+}
+
 try {
     $vmStartEpoch = $null
     $lastReportedHeartbeat = $null
@@ -81,11 +98,16 @@ try {
         $heartbeatEpoch = Get-HeartbeatEpochSeconds -Name $VmName
 
         # Report a heartbeat only when the marker mtime actually advanced since
-        # last reported — an idle agent simply stops reporting.
+        # last reported — an idle agent simply stops reporting. The current-phase
+        # marker is read alongside it and attached as currentPhase so the phase
+        # name advances through the event stream as the run progresses.
         if ($RunId -and $heartbeatEpoch -ne $null -and $heartbeatEpoch -ne $lastReportedHeartbeat) {
             $lastReportedHeartbeat = $heartbeatEpoch
             $at = [DateTimeOffset]::FromUnixTimeSeconds($heartbeatEpoch).UtcDateTime.ToString("o")
-            Send-FactoryEvent -RunId $RunId -Type "heartbeat" -Fields @{ at = $at }
+            $fields = @{ at = $at }
+            $currentPhase = Get-VmCurrentPhase -Name $VmName
+            if ($currentPhase) { $fields["currentPhase"] = $currentPhase }
+            Send-FactoryEvent -RunId $RunId -Type "heartbeat" -Fields $fields
         }
 
         $referenceEpoch = if ($heartbeatEpoch -ne $null) {
