@@ -94,7 +94,11 @@ function Sync-IssuesToBackend {
             updatedAt = $_.updated_at
         }
     }
-    $body = $snapshot | ConvertTo-Json -Depth 4 -Compress
+    # @(...) forces array output: ConvertTo-Json collapses a single item to a
+    # bare object and an empty set to null, both of which fail the backend's
+    # List<IssueSnapshot> binding (400). Where-Object drops the $null that
+    # ForEach-Object yields for an empty issue list, so zero issues sends [].
+    $body = ConvertTo-Json -InputObject @($snapshot | Where-Object { $_ }) -Depth 4 -Compress
     $uri = "$BackendUrl/issues/$OwnerRepo"
     Invoke-RestMethod -Method Put -Uri $uri -Body $body `
         -ContentType "application/json" `
