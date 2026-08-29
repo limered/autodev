@@ -80,4 +80,31 @@ public class IngestTests
         Assert.Equal("vm-1", state.VmName);
         Assert.Equal(T1, state.UpdatedAt);
     }
+
+    [Fact]
+    public async Task Apply_Start_PersistsStages()
+    {
+        var store = new FakeRunStore();
+        var stages = new[]
+        {
+            new RunStage("feature-builder", "m1"),
+            new RunStage("test-runner", "m2"),
+            new RunStage("pr-author", "m3"),
+        };
+
+        var state = await store.Apply(RunId, E("run-started", T1, e => e with { Repo = "r", Stages = stages }));
+
+        Assert.NotNull(state);
+        Assert.NotNull(state.Stages);
+        Assert.Equal(3, state.Stages.Count);
+        Assert.Equal("feature-builder", state.Stages[0].Agent);
+        Assert.Equal("m1", state.Stages[0].Model);
+
+        var fromStore = await store.Get(RunId);
+        Assert.NotNull(fromStore);
+        Assert.NotNull(fromStore.Stages);
+        Assert.Equal(3, fromStore.Stages.Count);
+        Assert.Equal("pr-author", fromStore.Stages[2].Agent);
+        Assert.Equal("m3", fromStore.Stages[2].Model);
+    }
 }

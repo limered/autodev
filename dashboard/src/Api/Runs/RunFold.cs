@@ -42,7 +42,8 @@ public static class RunFold
             FailureReason: null,
             FreezeCaptured: false,
             FreezeLocalPath: null,
-            UpdatedAt: at);
+            UpdatedAt: at,
+            Stages: ev.Stages);
     }
 
     private static RunState? ApplyAgentStarted(RunState? current, RunEvent ev, DateTimeOffset at)

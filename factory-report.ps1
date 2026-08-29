@@ -60,7 +60,7 @@ function Send-FactoryEvent {
         }
         if ($Fields) { foreach ($k in $Fields.Keys) { $body[$k] = $Fields[$k] } }
 
-        $json = $body | ConvertTo-Json -Compress
+        $json = $body | ConvertTo-Json -Compress -Depth 10
         $uri = "$script:FactoryReportUrl/runs/$RunId/events"
         Invoke-RestMethod -Method Post -Uri $uri -Body $json `
             -ContentType "application/json" `

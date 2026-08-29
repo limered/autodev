@@ -24,9 +24,12 @@ public static class RunsSchema
                 failure_reason    text,
                 freeze_captured   boolean     NOT NULL DEFAULT false,
                 freeze_local_path text,
-                updated_at        timestamptz NOT NULL DEFAULT now()
+                updated_at        timestamptz NOT NULL DEFAULT now(),
+                stages            jsonb
             );
             CREATE INDEX IF NOT EXISTS runs_status_started_idx ON runs (status, started_at DESC);
+            -- Idempotent migration: add the stages JSON column to pre-existing runs tables.
+            ALTER TABLE runs ADD COLUMN IF NOT EXISTS stages jsonb;
             """, conn);
         await cmd.ExecuteNonQueryAsync();
     }

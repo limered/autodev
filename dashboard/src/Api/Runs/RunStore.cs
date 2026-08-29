@@ -1,6 +1,8 @@
 using System.Reflection;
+using System.Text.Json;
 using Api.Issues;
 using Npgsql;
+using NpgsqlTypes;
 
 namespace Api.Runs;
 
@@ -19,7 +21,9 @@ public sealed class RunStore : IRunStore
     private readonly IGitHubIssuesClient _gitHub;
 
     private const string RunColumns =
-        "run_id, repo, branch, spec, model, vm_name, status, started_at, finished_at, last_heartbeat_at, pr_url, failure_reason, freeze_captured, freeze_local_path, updated_at";
+        "run_id, repo, branch, spec, model, vm_name, status, started_at, finished_at, last_heartbeat_at, pr_url, failure_reason, freeze_captured, freeze_local_path, updated_at, stages";
+
+    private static readonly JsonSerializerOptions StagesJsonOptions = new(JsonSerializerDefaults.Web);
 
     private static readonly string[] Columns = RunColumns.Split(',').Select(c => c.Trim()).ToArray();
     private static readonly string SelectSql = $"SELECT {RunColumns} FROM runs";
@@ -177,8 +181,8 @@ public sealed class RunStore : IRunStore
     {
         await using var cmd = new NpgsqlCommand(
             """
-            INSERT INTO runs (run_id, repo, branch, spec, model, status, started_at, updated_at)
-            VALUES (@id, @repo, @branch, @spec, @model, @status, @startedAt, @updatedAt)
+            INSERT INTO runs (run_id, repo, branch, spec, model, status, started_at, updated_at, stages)
+            VALUES (@id, @repo, @branch, @spec, @model, @status, @startedAt, @updatedAt, @stages)
             ON CONFLICT (run_id) DO NOTHING;
             """, conn, tx);
         cmd.Parameters.AddWithValue("id", next.RunId);
@@ -189,7 +193,21 @@ public sealed class RunStore : IRunStore
         cmd.Parameters.AddWithValue("status", next.Status);
         cmd.Parameters.AddWithValue("startedAt", next.StartedAt);
         cmd.Parameters.AddWithValue("updatedAt", next.UpdatedAt);
+        cmd.Parameters.Add(new NpgsqlParameter("stages", NpgsqlDbType.Jsonb)
+        {
+            Value = (object?)SerializeStages(next.Stages) ?? DBNull.Value,
+        });
         await cmd.ExecuteNonQueryAsync();
+    }
+
+    private static string? SerializeStages(IReadOnlyList<RunStage>? stages)
+    {
+        if (stages is null || stages.Count == 0)
+        {
+            return null;
+        }
+
+        return JsonSerializer.Serialize(stages, StagesJsonOptions);
     }
 
     private static bool IsHeartbeatOnly(RunState current, RunState next)
@@ -286,7 +304,8 @@ public sealed class RunStore : IRunStore
             GetStringOrNull(r, "failure_reason"),
             r.GetBoolean(r.GetOrdinal("freeze_captured")),
             GetStringOrNull(r, "freeze_local_path"),
-            r.GetFieldValue<DateTimeOffset>(r.GetOrdinal("updated_at")));
+            r.GetFieldValue<DateTimeOffset>(r.GetOrdinal("updated_at")),
+            GetStagesOrNull(r, "stages"));
     }
 
     private static string? GetStringOrNull(NpgsqlDataReader r, string column)
@@ -299,5 +318,22 @@ public sealed class RunStore : IRunStore
     {
         var ordinal = r.GetOrdinal(column);
         return r.IsDBNull(ordinal) ? null : r.GetFieldValue<DateTimeOffset>(ordinal);
+    }
+
+    private static IReadOnlyList<RunStage>? GetStagesOrNull(NpgsqlDataReader r, string column)
+    {
+        var ordinal = r.GetOrdinal(column);
+        if (r.IsDBNull(ordinal))
+        {
+            return null;
+        }
+
+        var json = r.GetString(ordinal);
+        if (string.IsNullOrWhiteSpace(json))
+        {
+            return null;
+        }
+
+        return JsonSerializer.Deserialize<List<RunStage>>(json, StagesJsonOptions);
     }
 }
