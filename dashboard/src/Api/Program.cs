@@ -1,3 +1,4 @@
+using System.Net.Http.Headers;
 using System.Text.Json;
 using Api.Host;
 using Api.Issues;
@@ -28,7 +29,25 @@ builder.Services.AddSingleton<IIssuesStore, IssuesStore>();
 builder.Services.AddSingleton<IQueueStore, QueueStore>();
 builder.Services.AddSingleton<IHostStore, HostStore>();
 
+var githubPat = ReadGitHubPat(builder.Environment.ContentRootPath);
+builder.Services.AddHttpClient<IGitHubIssuesClient, GitHubIssuesClient>(client =>
+{
+    client.BaseAddress = new Uri("https://api.github.com/");
+    client.DefaultRequestHeaders.Add("Accept", "application/vnd.github.v3+json");
+    client.DefaultRequestHeaders.Add("User-Agent", "autodev-api");
+    if (!string.IsNullOrWhiteSpace(githubPat))
+    {
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", githubPat);
+    }
+});
+
 var app = builder.Build();
+
+if (string.IsNullOrWhiteSpace(githubPat))
+{
+    app.Logger.LogWarning(
+        "GitHub PAT not found at .secrets/github-pat.txt; run-completion will not close issues on GitHub.");
+}
 
 // Verify the DB connection and create the schema idempotently at boot.
 try
@@ -60,3 +79,21 @@ app.MapFallbackToFile("index.html");
 
 app.Run();
 return 0;
+
+static string? ReadGitHubPat(string contentRootPath)
+{
+    try
+    {
+        var path = Path.GetFullPath(Path.Combine(contentRootPath, "..", "..", ".secrets", "github-pat.txt"));
+        if (!File.Exists(path))
+        {
+            return null;
+        }
+
+        return File.ReadAllText(path).Trim();
+    }
+    catch
+    {
+        return null;
+    }
+}
