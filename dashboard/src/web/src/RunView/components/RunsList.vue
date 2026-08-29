@@ -1,54 +1,19 @@
 <script setup>
-import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
+import { computed, onMounted, onUnmounted, ref } from 'vue'
 import { runView } from '../models/runView.js'
 import { usePagedRuns } from '../services/usePagedRuns.js'
 
 const now = ref(Date.now())
 let tickTimer = null
 
-const { runs, error, hasMore, loadNext } = usePagedRuns(() => fetch('/runs'))
+const { runs, error, hasMore, isLoading, loadNext } = usePagedRuns(() => fetch('/runs'))
 
 const displayedRuns = computed(() =>
   runs.value.map(r => ({ run: r, view: runView(r, now.value) }))
 )
 
-// Native IntersectionObserver on a sentinel at the bottom of the list: when it enters
-// the viewport, trigger the next-page load. No scroll-math, no external library. Once
-// a short page marks the end, the observer disconnects so nothing keeps firing.
-const sentinel = ref(null)
-let observer = null
-
-onMounted(() => {
-  tickTimer = setInterval(() => { now.value = Date.now() }, 1000)
-  observer = new IntersectionObserver(entries => {
-    if (entries.some(e => e.isIntersecting)) loadNext()
-  })
-  if (sentinel.value) observer.observe(sentinel.value)
-})
-
-onUnmounted(() => {
-  clearInterval(tickTimer)
-  observer?.disconnect()
-  observer = null
-})
-
-// Stop observing once there are no more pages to load (silent end).
-watch(hasMore, more => {
-  if (!more && observer) {
-    observer.disconnect()
-    observer = null
-  }
-})
-
-// After each page lands and the DOM repositions the sentinel, re-evaluate it. This
-// keeps a still-in-view sentinel loading the next page (e.g. a tall viewport that 10
-// cards don't fill, or the initial callback firing while page 1 was still in flight)
-// without any scroll-math — unobserve/observe queues a fresh intersection callback.
-watch(runs, () => {
-  if (!observer || !hasMore.value || !sentinel.value) return
-  observer.unobserve(sentinel.value)
-  observer.observe(sentinel.value)
-}, { flush: 'post' })
+onMounted(() => { tickTimer = setInterval(() => { now.value = Date.now() }, 1000) })
+onUnmounted(() => clearInterval(tickTimer))
 </script>
 
 <template>
@@ -120,7 +85,7 @@ watch(runs, () => {
             </div>
             <div v-if="r.run.freezeCaptured" class="secondary-row">
               <span class="secondary-label">Freeze</span>
-              <span class="freeze-path mono" title="Local snapshot path">{{ r.run.freezeLocalPath || '—' }}</span>
+              <span class="freeze-path mono" title="Local snapshot path">{{ r.run.freezeLocalPath || 'â€”' }}</span>
             </div>
           </div>
         </div>
@@ -132,10 +97,11 @@ watch(runs, () => {
       <h2>No runs yet</h2>
       <p>The factory is idle. New runs will appear here as they start.</p>
     </section>
-
-    <!-- Sentinel for IntersectionObserver-driven infinite scroll. Always rendered so
-         the observer can attach at mount; it disconnects once hasMore goes false. -->
-    <div ref="sentinel" class="scroll-sentinel" aria-hidden="true"></div>
+    <div v-if="hasMore" class="load-more-row">
+      <button type="button" class="load-more" :disabled="isLoading" @click="loadNext">
+        {{ isLoading ? 'Loading...' : 'Load more' }}
+      </button>
+    </div>
   </div>
 </template>
 
@@ -193,7 +159,10 @@ watch(runs, () => {
 .empty-prompt { font-family: var(--font-mono); font-size: 3rem; color: var(--accent-dim); margin-bottom: 0.5rem; }
 .empty-state h2 { margin: 0 0 0.5rem; color: var(--text); font-size: 1.25rem; }
 .empty-state p { margin: 0 auto; max-width: 24rem; }
-.scroll-sentinel { height: 0; width: 100%; }
+.load-more-row { display: flex; justify-content: center; padding: 1.5rem 0 0.5rem; }
+.load-more { padding: 0.6rem 1.4rem; font-size: 0.9rem; font-weight: 600; color: var(--text); background: var(--surface-2); border: 1px solid var(--border); border-radius: var(--radius); cursor: pointer; transition: border-color 0.2s ease; }
+.load-more:hover:not(:disabled) { border-color: var(--text-dim); }
+.load-more:disabled { opacity: 0.6; cursor: default; }
 .error-banner { margin-bottom: 1.5rem; padding: 1rem 1.25rem; background: rgba(248, 81, 73, 0.12); border: 1px solid rgba(248, 81, 73, 0.35); border-radius: var(--radius); }
 .error-banner strong { display: block; color: var(--red); margin-bottom: 0.25rem; }
 .error-banner p { margin: 0; color: var(--text); }

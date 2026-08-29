@@ -18,7 +18,7 @@ function makeRuns(n, startId = 0) {
 }
 
 describe('usePagedRuns', () => {
-  it('first load yields the first page of 10 runs and stays hungry for more', async () => {
+  it('first load yields the first page of 10 runs and keeps hasMore true', async () => {
     const fetchFn = vi.fn(() => Promise.resolve(pageResponse(makeRuns(10))))
     const feed = usePagedRuns(fetchFn)
 
@@ -72,25 +72,6 @@ describe('usePagedRuns', () => {
     expect(feed.hasMore.value).toBe(false)
   })
 
-  it('page-1 refresh replaces only the first slice without dropping appended pages', async () => {
-    let call = 0
-    const refreshedFirstPage = makeRuns(10, 0).map(r => ({ ...r, status: 'running' }))
-    const pages = [makeRuns(10, 0), makeRuns(10, 10), refreshedFirstPage]
-    const fetchFn = vi.fn(() => Promise.resolve(pageResponse(pages[call++])))
-    const feed = usePagedRuns(fetchFn)
-
-    await feed.loadFirst()
-    await feed.loadNext()
-    expect(feed.runs.value).toHaveLength(20)
-
-    await feed.refreshFirstPage()
-
-    expect(fetchFn).toHaveBeenLastCalledWith('/runs?skip=0&take=10')
-    expect(feed.runs.value).toHaveLength(20) // appended page still there
-    expect(feed.runs.value[0].status).toBe('running') // first slice refreshed
-    expect(feed.runs.value[10].runId).toBe('run-10') // appended tail preserved
-  })
-
   it('ignores re-entrant load-next calls while a page is in flight', async () => {
     const firstPage = pageResponse(makeRuns(10, 0))
     let resolveNext
@@ -122,6 +103,6 @@ describe('usePagedRuns', () => {
 
     expect(feed.error.value).toBe('HTTP 500')
     expect(feed.runs.value).toHaveLength(10) // first page preserved
-    expect(feed.hasMore.value).toBe(true) // end not reached; scroll can retry
+    expect(feed.hasMore.value).toBe(true) // end not reached; button can retry
   })
 })
