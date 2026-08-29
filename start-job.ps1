@@ -55,14 +55,15 @@ if ($RepoUrl -notmatch 'github\.com[:/]([^/]+/[^/]+?)(\.git)?$') {
 }
 $Repo = $Matches[1]
 
-# Default the model to the feature-builder agent's model from the opencode
-# config, so the script tracks a single source of truth instead of a stale
-# hardcoded default.
+# Default the model to the feature-builder agent's model, read from its agent
+# definition frontmatter — the single source of truth opencode headless honors.
+# opencode.json no longer carries per-agent models.
 if (-not $Model) {
     $configPath = Join-Path $RepoRoot ".opencode\opencode.json"
     $agent = (Get-Content -LiteralPath $configPath -Raw | ConvertFrom-Json).default_agent
-    $Model = (Get-Content -LiteralPath $configPath -Raw | ConvertFrom-Json).agent.$agent.model
-    if (-not $Model) { throw "No model found for agent '$agent' in $configPath" }
+    $agentPath = Join-Path $RepoRoot ".opencode\agents\$agent.md"
+    $Model = (Get-Content -LiteralPath $agentPath -Raw | Select-String -Pattern '(?m)^model:\s*(\S+)').Matches.Groups[1].Value
+    if (-not $Model) { throw "No model found in frontmatter of $agentPath" }
 }
 
 # The run id is either supplied by the dispatch client or defaulted above to a

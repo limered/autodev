@@ -3,15 +3,12 @@
   "default_agent": "feature-builder",
   "agent": {
     "feature-builder": {
-      "model": "opencode-go/glm-5.2",
       "mode": "primary"
     },
     "pr-author": {
-      "model": "opencode-go/kimi-k2.7-code",
       "mode": "primary"
     },
     "test-runner": {
-      "model": "opencode-go/kimi-k2.7-code",
       "mode": "primary"
     }
   },
