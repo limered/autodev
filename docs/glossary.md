@@ -8,7 +8,7 @@
 | **opencode** | The headless AI agent CLI used inside the runtime; invoked as `opencode run "prompt"`. |
 | **Orchestrator DB** | Out-of-scope external database that would track job state and health. For the MVP, Git is the source of truth. |
 | **Bot User** | A dedicated GitHub user account used by all jobs to clone repositories and push branches via a shared SSH key. |
-| **GitHub PAT** | Personal Access Token stored in the VM, used by opencode to create pull requests via the GitHub API. |
+| **GitHub PAT** | Personal Access Token stored in the VM, used by opencode to read issues, create pull requests, and update issue bodies via the GitHub API. |
 | **multipass blueprint** | A declarative cloud-init/multipass configuration that defines how the job VM is provisioned. |
 | **autodev repo** | This repository; contains the environment setup, blueprints, and opencode agents/skills used by jobs. |
 | **project repo** | The target repository that a job checks out and modifies. |

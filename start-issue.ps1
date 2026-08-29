@@ -5,16 +5,15 @@
   Launch a factory job for a tracked issue.
 
 .DESCRIPTION
-  Accepts an issue token in the form feature-slug/NN (e.g. vm-phased-agents/04)
-  and a target repo URL. It derives a unique branch name from the issue
-  reference and invokes the existing start-job.ps1 launcher, passing the issue
-  token through as the run spec.
+  Accepts a GitHub issue number (e.g. 8) and a target repo URL. It derives a
+  unique branch name from the issue number and invokes the existing start-job.ps1
+  launcher, passing the issue number through as the run spec.
 
-  The host never reads the issue file content; the token alone crosses into the
-  VM, where the implement agent resolves .scratch/<feature-slug>/issues/<NN>-*.md.
+  The host never reads the issue body; the number alone crosses into the VM,
+  where the feature-builder agent fetches the issue body from the GitHub API.
 
 .PARAMETER Issue
-  Issue token: feature-slug/NN.
+  GitHub issue number, e.g. 8. A bare `#8`, `8`, or a full issue URL is accepted.
 
 .PARAMETER RepoUrl
   Target repo HTTPS URL, e.g. https://github.com/owner/name.git.
@@ -40,15 +39,20 @@ param(
 
 $ErrorActionPreference = "Stop"
 
-if ($Issue -notmatch '^[\w-]+/\d+$') {
-    throw "Issue token must be feature-slug/NN (e.g. vm-phased-agents/04); got: $Issue"
+# Accept a bare number, "#8", or a GitHub issue URL (.../issues/8); extract the number.
+if ($Issue -match '/issues/(\d+)') {
+    $IssueNumber = $Matches[1]
+}
+elseif ($Issue -match '^#?(\d+)$') {
+    $IssueNumber = $Matches[1]
+}
+else {
+    throw "Issue must be a GitHub issue number, '#N', or issue URL (.../issues/N); got: $Issue"
 }
 
-$issueParts = $Issue.Split('/')
-$issueBranchId = "$($issueParts[0])-$($issueParts[1])"
 $timestamp = Get-Date -Format 'yyyyMMdd-HHmmss'
 $randomSuffix = Get-Random -Maximum 9999
-$Branch = "factory/$issueBranchId-$timestamp-$randomSuffix"
+$Branch = "factory/issue-$IssueNumber-$timestamp-$randomSuffix"
 
 $startJob = Join-Path $RepoRoot "start-job.ps1"
 if (-not (Test-Path $startJob)) {
@@ -57,7 +61,7 @@ if (-not (Test-Path $startJob)) {
 
 $invokeArgs = @{
     RepoUrl = $RepoUrl
-    Spec    = $Issue
+    Spec    = $IssueNumber
     Branch  = $Branch
     RepoRoot = $RepoRoot
 }

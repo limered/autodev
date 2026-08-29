@@ -23,7 +23,7 @@ Follow these steps exactly and in order:
 3. **Author the PR**: From the diff and the commit messages, write:
    - a concise title in the imperative mood (about 70 characters max) summarizing the change, and
    - a body explaining what changed and why, grounded in the files and areas actually touched.
-4. **Tick the issue checkboxes**: Read the issue file this branch implemented (`.scratch/<feature-slug>/issues/<NN>-*.md`, derivable from the branch name or the commit messages). For each acceptance-criterion checkbox, tick it (`- [ ]` → `- [x]`) only if the diff genuinely satisfies it; leave unmet or unverifiable criteria (e.g. "end-to-end run") unchecked. If you change the file, stage and commit it on BRANCH before creating the PR so the ticked boxes are part of the PR.
+4. **Tick the issue checkboxes**: Derive the GitHub issue number this branch implemented from the branch name or commit messages (branches are `factory/issue-<N>-...`). Fetch the issue body from the GitHub API (`GET /repos/<REPO>/issues/<N>` with the PAT at `~/.github-pat.txt`). For each acceptance-criterion checkbox, tick it (`- [ ]` → `- [x]`) only if the diff genuinely satisfies it; leave unmet or unverifiable criteria (e.g. "end-to-end run") unchecked. Write the updated body back with `PATCH /repos/<REPO>/issues/<N>` (`{"body": "..."}`). If the issue number cannot be derived, skip this step rather than failing the run.
 5. **Create PR**: Use the GitHub API with the PAT stored at `~/.github-pat.txt` to open a pull request from BRANCH to BASE for the REPO.
    Example curl command (replace placeholders; writing the JSON payload to a temp file and passing `-d @file` avoids shell-quoting problems with multi-line bodies):
    ```
@@ -38,7 +38,7 @@ Follow these steps exactly and in order:
 6. **Finish**: Print the created PR URL. Then exit immediately. Do not wait for user input, do not ask questions, and do not continue the session.
 
 Rules:
-- Do not modify the implementation: no code edits. The only changes you may commit are ticking the issue file's checkboxes (step 4); your only other write is the PR POST.
+- Do not modify the implementation: no code edits. Your only writes are ticking the issue's checkboxes via the GitHub API (step 4) and the PR POST.
 - Do not ask the user for clarification.
 - Do not enter interactive mode.
 - If any step fails, print the error and exit with a non-zero status code.

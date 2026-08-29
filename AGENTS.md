@@ -4,7 +4,7 @@
 
 ### Issue tracker
 
-Issues live as local markdown files under `.scratch/<feature-slug>/issues/`. See `docs/agents/issue-tracker.md`.
+Issues live as GitHub Issues on the `limered/autodev` repo. See `docs/agents/issue-tracker.md`.
 
 ### Triage labels
 

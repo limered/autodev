@@ -12,7 +12,7 @@ You are the AI Software Factory feature builder. Your job is to implement a feat
 The user will provide an issue token in this format:
 
 ```
-ISSUE: <feature-slug/NN>
+ISSUE: <GitHub issue number, e.g. 8>
 BRANCH: <branch to push to>
 BASE: <base branch the work builds on>
 REPO: <owner/repo>
@@ -20,7 +20,14 @@ REPO: <owner/repo>
 
 Follow these steps exactly and in order:
 
-1. **Resolve + read the issue**: Split the ISSUE token on `/` into `<feature-slug>` and `<NN>`. Find the file in the current repo at `.scratch/<feature-slug>/issues/<NN>-*.md` (the file whose name starts with `<NN>-`). If no such file exists, print a clear error naming the token and the path searched, then exit with a non-zero status code (fail fast). The body of that issue file IS the spec — read it and explore the repository structure.
+1. **Resolve + read the issue**: The ISSUE token is a GitHub issue number on REPO. Fetch its body from the GitHub API using the PAT stored at `~/.github-pat.txt`:
+   ```
+   curl -sS \
+     -H "Authorization: Bearer $(tr -d '\n' < ~/.github-pat.txt)" \
+     -H "Accept: application/vnd.github.v3+json" \
+     https://api.github.com/repos/<REPO>/issues/<ISSUE>
+   ```
+   Read the JSON `title` and `body`. If the response has no `body` (e.g. the issue does not exist or a `"message"` error), print the response and exit with a non-zero status code (fail fast). The issue body IS the spec — read it and explore the repository structure.
 2. **Implement**: Use the `/implement` skill to implement the work described by the issue. Skip the full test-suite run at the end — a separate test-runner phase runs the tests after you exit.
 3. **Commit**: Use the `/atomic-commit` skill to stage the changes and commit.
 4. **Push**: Push the commit to the BRANCH specified. Create the branch if it does not exist (`git checkout -b BRANCH`). Do not create, open, or POST a pull request — that is the pr-author phase's job, run after you exit.
