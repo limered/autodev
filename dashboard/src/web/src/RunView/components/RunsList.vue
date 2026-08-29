@@ -1,12 +1,12 @@
 <script setup>
 import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { runView } from '../models/runView.js'
-import { useRunsFeed } from '../services/useRunsFeed.js'
+import { usePollingFeed } from '../../_shared/services/usePollingFeed.js'
 
 const now = ref(Date.now())
 let tickTimer = null
 
-const { runs, error } = useRunsFeed(() => fetch('/runs'))
+const { items: runs, error } = usePollingFeed(() => fetch('/runs'))
 
 const displayedRuns = computed(() =>
   runs.value.map(r => ({ run: r, view: runView(r, now.value) }))
