@@ -10,6 +10,7 @@ namespace Api.Runs;
 public interface IRunStore
 {
     Task<IReadOnlyList<RunState>> All();
+    Task<IReadOnlyList<RunState>> All(int skip, int take);
     Task<IReadOnlyList<RunState>> Active();
     Task<RunState?> Get(Guid runId);
     Task<RunState?> Apply(Guid runId, RunEvent ev);
@@ -56,6 +57,14 @@ public sealed class RunStore : IRunStore
     public async Task<IReadOnlyList<RunState>> All()
     {
         return await Query($"{SelectSql} ORDER BY started_at DESC");
+    }
+
+    public async Task<IReadOnlyList<RunState>> All(int skip, int take)
+    {
+        return await Query(
+            $"{SelectSql} ORDER BY started_at DESC LIMIT @take OFFSET @skip",
+            new NpgsqlParameter("skip", skip),
+            new NpgsqlParameter("take", take));
     }
 
     public async Task<IReadOnlyList<RunState>> Active()
@@ -252,11 +261,15 @@ public sealed class RunStore : IRunStore
         await cmd.ExecuteNonQueryAsync();
     }
 
-    private async Task<IReadOnlyList<RunState>> Query(string sql)
+    private async Task<IReadOnlyList<RunState>> Query(string sql, params NpgsqlParameter[] parameters)
     {
         var runs = new List<RunState>();
         await using var conn = await _dataSource.OpenConnectionAsync();
         await using var cmd = new NpgsqlCommand(sql, conn);
+        foreach (var p in parameters)
+        {
+            cmd.Parameters.Add(p);
+        }
         await using var r = await cmd.ExecuteReaderAsync();
 
         while (await r.ReadAsync())
