@@ -7,6 +7,7 @@ public interface IQueueStore
     Task<IReadOnlyList<QueueListItem>> All();
     Task<QueueListItem?> Enqueue(long issueId);
     Task<QueueListItem?> StartNext(long id);
+    Task<QueueListItem?> Restart(long id);
     Task<ClaimedQueueItem?> ClaimNext();
     Task Reorder(IReadOnlyList<long> ids);
     Task<bool> Delete(long id);
@@ -104,6 +105,27 @@ public sealed class QueueStore : IQueueStore
         }
 
         return await GetById((long)updatedId);
+    }
+
+    public async Task<QueueListItem?> Restart(long id)
+    {
+        await using var conn = await _dataSource.OpenConnectionAsync();
+        await using var tx = await conn.BeginTransactionAsync();
+
+        await using var cmd = new NpgsqlCommand(
+            """
+            UPDATE queue
+            SET run_id = NULL,
+                start_requested_at = NULL
+            WHERE id = @id
+            RETURNING id;
+            """, conn, tx);
+        cmd.Parameters.AddWithValue("id", id);
+
+        await cmd.ExecuteScalarAsync();
+        await tx.CommitAsync();
+
+        return await GetById(id);
     }
 
     public async Task<ClaimedQueueItem?> ClaimNext()
