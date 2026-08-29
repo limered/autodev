@@ -4,7 +4,7 @@ public static class IssuesEndpoints
 {
     public static IEndpointRouteBuilder MapIssuesEndpoints(this IEndpointRouteBuilder app)
     {
-        app.MapPut("/issues/{repo}", async (string repo, List<IssueSnapshot> snapshot, IIssuesStore store, IConfiguration config, HttpRequest req) =>
+        app.MapPut("/issues/{**repo}", async (string repo, List<IssueSnapshot> snapshot, IIssuesStore store, IConfiguration config, HttpRequest req) =>
         {
             var factoryToken = config["FACTORY_TOKEN"];
             if (string.IsNullOrEmpty(factoryToken) || req.Headers["X-Factory-Token"].ToString() != factoryToken)
