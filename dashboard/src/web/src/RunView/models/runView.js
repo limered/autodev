@@ -25,12 +25,26 @@ export function runView(run, nowMs) {
     return new Date(ts).toLocaleString()
   }
 
+  // Design-A badge strip: pending grey, running green, done blue. The backend
+  // derives each stage's status from the seeded stages plus currentPhase.
+  function stageStatusClass(status) {
+    if (status === 'done') return 'stage-done'
+    if (status === 'running') return 'stage-running'
+    return 'stage-pending'
+  }
+
   const secs = secondsSince(run.lastHeartbeatAt)
+  const stages = (run.stages || []).map(s => ({
+    agent: s.agent,
+    model: s.model,
+    statusClass: stageStatusClass(s.status)
+  }))
 
   return {
     lastSeen: lastSeenLabel(secs),
     freshnessClass: freshnessClass(secs),
     statusClass: `status-${run.status}`,
-    started: formatTime(run.startedAt)
+    started: formatTime(run.startedAt),
+    stages
   }
 }
