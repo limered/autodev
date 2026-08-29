@@ -110,7 +110,10 @@ run_agent_phase() {
   local agent="$1"
   local prompt="$2"
   touch /tmp/heartbeat
-  $OPENCODE_BIN run --model "$MODEL" --agent "$agent" --auto --print-logs "$prompt" </dev/null &
+  # No --model: each agent resolves its own model from the unpacked opencode
+  # config (~/.config/opencode), so feature-builder, test-runner and pr-author
+  # can differ. $MODEL is reporting-only.
+  $OPENCODE_BIN run --agent "$agent" --auto --print-logs "$prompt" </dev/null &
   local phase_pid=$!
   ( while kill -0 "$phase_pid" 2>/dev/null; do sleep 30; touch /tmp/heartbeat 2>/dev/null; done ) &
   TICKER_PID=$!
@@ -120,7 +123,7 @@ run_agent_phase() {
   return "$rc"
 }
 
-echo "Running phase 1/3 (implement): OPENCODE_API_KEY=*** $OPENCODE_BIN run --model $MODEL --agent feature-builder --auto --print-logs \"...\""
+echo "Running phase 1/3 (implement): OPENCODE_API_KEY=*** $OPENCODE_BIN run --agent feature-builder --auto --print-logs \"...\""
 if ! run_agent_phase feature-builder "$IMPL_SPEC"; then
   fail "implement phase failed: opencode run exited non-zero (see log above)"
 fi
@@ -152,7 +155,7 @@ TEST_SPEC="BRANCH: $BRANCH
 BASE: $BASE
 REPO: $REPO"
 
-echo "Running phase 2/3 (test): OPENCODE_API_KEY=*** $OPENCODE_BIN run --model $MODEL --agent test-runner --auto --print-logs \"...\""
+echo "Running phase 2/3 (test): OPENCODE_API_KEY=*** $OPENCODE_BIN run --agent test-runner --auto --print-logs \"...\""
 if ! run_agent_phase test-runner "$TEST_SPEC"; then
   fail "test phase failed: a declared harness is red or no harness was declared (see log above)"
 fi
@@ -165,7 +168,7 @@ PR_SPEC="BRANCH: $BRANCH
 BASE: $BASE
 REPO: $REPO"
 
-echo "Running phase 3/3 (PR): OPENCODE_API_KEY=*** $OPENCODE_BIN run --model $MODEL --agent pr-author --auto --print-logs \"...\""
+echo "Running phase 3/3 (PR): OPENCODE_API_KEY=*** $OPENCODE_BIN run --agent pr-author --auto --print-logs \"...\""
 if ! run_agent_phase pr-author "$PR_SPEC"; then
   fail "pr phase failed: opencode run exited non-zero (see log above)"
 fi

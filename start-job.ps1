@@ -18,7 +18,7 @@
   Feature description / spec the agent should implement.
 
 .PARAMETER Model
-  opencode model id. Defaults to opencode-go/kimi-k2.7-code.
+  opencode model id. Defaults to the default_agent's model in .opencode/opencode.json.
 
 .PARAMETER Branch
   Branch the agent should create. A unique default is generated.
@@ -39,7 +39,7 @@
 param(
     [Parameter(Mandatory = $true)][string]$RepoUrl,
     [Parameter(Mandatory = $true)][string]$Spec,
-    [string]$Model = "opencode-go/kimi-k2.7-code",
+    [string]$Model,
     [string]$Branch = "factory/job-$(Get-Date -Format 'yyyyMMdd-HHmmss')-$(Get-Random -Maximum 9999)",
     [string]$VmName = "factory-job-$(Get-Date -Format 'yyyyMMdd-HHmmss')-$(Get-Random -Maximum 9999)",
     [string]$RepoRoot = $PSScriptRoot,
@@ -54,6 +54,16 @@ if ($RepoUrl -notmatch 'github\.com[:/]([^/]+/[^/]+?)(\.git)?$') {
     throw "Cannot parse owner/name from RepoUrl: $RepoUrl"
 }
 $Repo = $Matches[1]
+
+# Default the model to the feature-builder agent's model from the opencode
+# config, so the script tracks a single source of truth instead of a stale
+# hardcoded default.
+if (-not $Model) {
+    $configPath = Join-Path $RepoRoot ".opencode\opencode.json"
+    $agent = (Get-Content -LiteralPath $configPath -Raw | ConvertFrom-Json).default_agent
+    $Model = (Get-Content -LiteralPath $configPath -Raw | ConvertFrom-Json).agent.$agent.model
+    if (-not $Model) { throw "No model found for agent '$agent' in $configPath" }
+}
 
 # The run id is either supplied by the dispatch client or defaulted above to a
 # fresh GUID; it is the identity carried on every dashboard event.
