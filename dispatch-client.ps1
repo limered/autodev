@@ -148,8 +148,8 @@ if (-not $config.backendUrl) { throw "backendUrl is required in $ConfigPath" }
 if (-not $config.repos -or $config.repos.Count -eq 0) { throw "At least one repo is required in $ConfigPath" }
 
 $backendUrl = $config.backendUrl.Trim().TrimEnd('/')
-$syncIntervalSeconds = $config.syncIntervalSeconds ?? 60
-$claimIntervalSeconds = $config.claimIntervalSeconds ?? 5
+$syncIntervalSeconds = if ($config.syncIntervalSeconds) { $config.syncIntervalSeconds } else { 60 }
+$claimIntervalSeconds = if ($config.claimIntervalSeconds) { $config.claimIntervalSeconds } else { 5 }
 
 Write-Host "==> Dispatch client starting" -ForegroundColor Cyan
 Write-Host "    Backend: $backendUrl" -ForegroundColor DarkGray
