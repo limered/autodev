@@ -1,4 +1,5 @@
 using System.Reflection;
+using Api.Issues;
 using Npgsql;
 
 namespace Api.Runs;
@@ -14,6 +15,8 @@ public interface IRunStore
 public sealed class RunStore : IRunStore
 {
     private readonly NpgsqlDataSource _dataSource;
+    private readonly ILogger<RunStore> _logger;
+    private readonly IGitHubIssuesClient _gitHub;
 
     private const string RunColumns =
         "run_id, repo, branch, spec, model, vm_name, status, started_at, finished_at, last_heartbeat_at, pr_url, failure_reason, freeze_captured, freeze_local_path, updated_at";
@@ -34,9 +37,11 @@ public sealed class RunStore : IRunStore
         }
     }
 
-    public RunStore(NpgsqlDataSource dataSource)
+    public RunStore(NpgsqlDataSource dataSource, ILogger<RunStore> logger, IGitHubIssuesClient gitHub)
     {
         _dataSource = dataSource;
+        _logger = logger;
+        _gitHub = gitHub;
     }
 
     public async Task<IReadOnlyList<RunState>> All()
@@ -81,8 +86,11 @@ public sealed class RunStore : IRunStore
 
         await Persist(next, current, conn, tx);
 
+        (string Repo, int Number)? issueToClose = null;
         if (ev.Type == "run-finished")
         {
+            issueToClose = await GetLinkedIssueAsync(runId, conn, tx);
+
             await using var deleteQueueCmd = new NpgsqlCommand(
                 "DELETE FROM queue WHERE run_id = @runId;", conn, tx);
             deleteQueueCmd.Parameters.AddWithValue("runId", runId);
@@ -90,7 +98,48 @@ public sealed class RunStore : IRunStore
         }
 
         await tx.CommitAsync();
+
+        if (issueToClose.HasValue)
+        {
+            try
+            {
+                await _gitHub.CloseIssueAsync(issueToClose.Value.Repo, issueToClose.Value.Number);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(
+                    ex,
+                    "Failed to close GitHub issue {Repo}#{Number} for finished run {RunId}; continuing.",
+                    issueToClose.Value.Repo,
+                    issueToClose.Value.Number,
+                    runId);
+            }
+        }
+
         return next;
+    }
+
+    private static async Task<(string Repo, int Number)?> GetLinkedIssueAsync(
+        Guid runId,
+        NpgsqlConnection conn,
+        NpgsqlTransaction tx)
+    {
+        await using var cmd = new NpgsqlCommand(
+            """
+            SELECT i.repo, i.number
+            FROM queue q
+            JOIN issues i ON i.github_id = q.issue_id
+            WHERE q.run_id = @runId;
+            """, conn, tx);
+        cmd.Parameters.AddWithValue("runId", runId);
+
+        await using var reader = await cmd.ExecuteReaderAsync();
+        if (!await reader.ReadAsync())
+        {
+            return null;
+        }
+
+        return (reader.GetString(0), reader.GetInt32(1));
     }
 
     private async Task<RunState?> GetLocked(Guid runId, NpgsqlConnection conn, NpgsqlTransaction tx)
