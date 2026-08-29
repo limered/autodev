@@ -17,7 +17,7 @@ From the repo root:
 
 ```powershell
 multipass launch 24.04 --name factory-job-01 `
-  --cpus 4 --memory 8G --disk 40G `
+  --cpus 4 --memory 4G --disk 40G `
   --cloud-init infrastructure\multipass\cloud-init.yaml
 ```
 

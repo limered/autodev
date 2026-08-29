@@ -55,7 +55,7 @@ try {
     if (-not (Test-Path $patFile)) { throw "PAT file not found: $patFile" }
 
     Write-Step "Launching VM $VmName"
-    Invoke-Multipass launch 24.04 --name $VmName --cpus 4 --memory 8G --disk 40G --cloud-init $cloudInit
+    Invoke-Multipass launch 24.04 --name $VmName --cpus 4 --memory 4G --disk 40G --cloud-init $cloudInit
     $vmCreated = $true
 
     Write-Step "Waiting for cloud-init provisioning to complete"
