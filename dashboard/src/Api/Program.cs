@@ -25,6 +25,7 @@ builder.Services.ConfigureHttpJsonOptions(options =>
 var dataSource = NpgsqlDataSource.Create(connectionString);
 builder.Services.AddSingleton(dataSource);
 builder.Services.AddSingleton<IRunStore, RunStore>();
+builder.Services.AddSingleton<IRunCompletion, RunCompletion>();
 builder.Services.AddSingleton<IIssuesStore, IssuesStore>();
 builder.Services.AddSingleton<IQueueStore, QueueStore>();
 builder.Services.AddSingleton<IHostStore, HostStore>();
