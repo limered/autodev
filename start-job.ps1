@@ -55,16 +55,32 @@ if ($RepoUrl -notmatch 'github\.com[:/]([^/]+/[^/]+?)(\.git)?$') {
 }
 $Repo = $Matches[1]
 
-# Default the model to the feature-builder agent's model, read from its agent
-# definition frontmatter — the single source of truth opencode headless honors.
+# Read an agent's model from its definition frontmatter (.opencode/agents/<name>.md,
+# the `model:` field) — the single source of truth opencode headless honors.
 # opencode.json no longer carries per-agent models.
+function Get-AgentModel {
+    param([string]$Agent, [string]$RepoRoot)
+    $agentPath = Join-Path $RepoRoot ".opencode\agents\$Agent.md"
+    if (-not (Test-Path -LiteralPath $agentPath)) { throw "Agent definition not found: $agentPath" }
+    $match = (Get-Content -LiteralPath $agentPath -Raw | Select-String -Pattern '(?m)^model:\s*(\S+)')
+    $model = $match.Matches.Groups[1].Value
+    if (-not $model) { throw "No model found in frontmatter of $agentPath" }
+    return $model
+}
+
+# Default the run-level model to the default_agent's model.
 if (-not $Model) {
     $configPath = Join-Path $RepoRoot ".opencode\opencode.json"
-    $agent = (Get-Content -LiteralPath $configPath -Raw | ConvertFrom-Json).default_agent
-    $agentPath = Join-Path $RepoRoot ".opencode\agents\$agent.md"
-    $Model = (Get-Content -LiteralPath $agentPath -Raw | Select-String -Pattern '(?m)^model:\s*(\S+)').Matches.Groups[1].Value
-    if (-not $Model) { throw "No model found in frontmatter of $agentPath" }
+    $defaultAgent = (Get-Content -LiteralPath $configPath -Raw | ConvertFrom-Json).default_agent
+    $Model = Get-AgentModel -Agent $defaultAgent -RepoRoot $RepoRoot
 }
+
+# ponytail: the phase order is hardcoded here and is expected to change under the
+# in-progress agent split/refactor; update this list when the phases settle.
+$phaseOrder = @('feature-builder', 'test-runner', 'pr-author')
+$stages = @(foreach ($agent in $phaseOrder) {
+    [ordered]@{ agent = $agent; model = (Get-AgentModel -Agent $agent -RepoRoot $RepoRoot) }
+})
 
 # The run id is either supplied by the dispatch client or defaulted above to a
 # fresh GUID; it is the identity carried on every dashboard event.
@@ -77,6 +93,7 @@ Send-FactoryEvent -RunId $RunId -Type "run-started" -Fields @{
     branch = $Branch
     spec   = $Spec
     model  = $Model
+    stages = $stages
 }
 
 $cloudInit = Join-Path $RepoRoot "infrastructure\multipass\cloud-init.yaml"

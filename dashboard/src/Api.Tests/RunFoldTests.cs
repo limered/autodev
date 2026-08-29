@@ -17,7 +17,7 @@ public class RunFoldTests
     }
 
     private static RunState State(string status = "launching", DateTimeOffset? updatedAt = null, DateTimeOffset? lastHeartbeatAt = null) =>
-        new(RunId, "repo", "branch", "spec", "model", null, status, T0, null, lastHeartbeatAt, null, null, false, null, updatedAt ?? T0);
+        new(RunId, "repo", "branch", "spec", "model", null, status, T0, null, lastHeartbeatAt, null, null, false, null, updatedAt ?? T0, null);
 
     [Fact]
     public void RunStarted_CreatesNewRun()
@@ -40,6 +40,30 @@ public class RunFoldTests
         Assert.Null(next.FailureReason);
         Assert.False(next.FreezeCaptured);
         Assert.Null(next.FreezeLocalPath);
+        Assert.Null(next.Stages);
+    }
+
+    [Fact]
+    public void RunStarted_CarriesStages()
+    {
+        var stages = new[]
+        {
+            new RunStage("feature-builder", "opencode-go/glm-5.2"),
+            new RunStage("test-runner", "opencode-go/kimi-k2.7-code"),
+            new RunStage("pr-author", "opencode-go/kimi-k2.7-code"),
+        };
+
+        var next = RunFold.Apply(null, E("run-started", T1, e => e with { Repo = "r", Stages = stages }));
+
+        Assert.NotNull(next);
+        Assert.NotNull(next.Stages);
+        Assert.Equal(3, next.Stages.Count);
+        Assert.Equal("feature-builder", next.Stages[0].Agent);
+        Assert.Equal("opencode-go/glm-5.2", next.Stages[0].Model);
+        Assert.Equal("test-runner", next.Stages[1].Agent);
+        Assert.Equal("opencode-go/kimi-k2.7-code", next.Stages[1].Model);
+        Assert.Equal("pr-author", next.Stages[2].Agent);
+        Assert.Equal("opencode-go/kimi-k2.7-code", next.Stages[2].Model);
     }
 
     [Fact]

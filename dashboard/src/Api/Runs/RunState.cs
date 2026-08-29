@@ -15,4 +15,5 @@ public record RunState(
     string? FailureReason,
     bool FreezeCaptured,
     string? FreezeLocalPath,
-    DateTimeOffset UpdatedAt);
+    DateTimeOffset UpdatedAt,
+    IReadOnlyList<RunStage>? Stages);
