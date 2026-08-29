@@ -16,8 +16,10 @@ public static class RunsEndpoints
             return Results.Accepted();
         });
 
-        app.MapGet("/runs", async (IRunStore store) => Results.Json(await store.All()));
-        app.MapGet("/runs/active", async (IRunStore store) => Results.Json(await store.Active()));
+        app.MapGet("/runs", async (IRunStore store) =>
+            Results.Json((await store.All()).Select(RunResponse.From).ToArray()));
+        app.MapGet("/runs/active", async (IRunStore store) =>
+            Results.Json((await store.Active()).Select(RunResponse.From).ToArray()));
 
         return app;
     }

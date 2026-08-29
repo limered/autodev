@@ -37,9 +37,17 @@ onUnmounted(() => clearInterval(tickTimer))
               <span class="sep">/</span>
               <span class="branch mono">{{ r.run.branch }}</span>
             </div>
-            <ul v-if="r.run.stages && r.run.stages.length" class="stage-strip">
-              <li v-for="stage in r.run.stages" :key="stage.agent" class="stage-badge">
-                <span class="stage-agent">{{ stage.agent }}</span>
+            <ul v-if="r.view.stages.length" class="stage-strip">
+              <li
+                v-for="stage in r.view.stages"
+                :key="stage.agent"
+                class="stage-badge"
+                :class="stage.statusClass"
+              >
+                <span class="stage-head">
+                  <span class="stage-indicator"></span>
+                  <span class="stage-agent">{{ stage.agent }}</span>
+                </span>
                 <span class="stage-model mono">{{ stage.model }}</span>
               </li>
             </ul>
@@ -103,9 +111,19 @@ onUnmounted(() => clearInterval(tickTimer))
 .sep { color: var(--text-dim); }
 .branch { color: var(--cyan); }
 .stage-strip { display: flex; flex-wrap: wrap; gap: 0.4rem; margin-top: 0.4rem; padding: 0; list-style: none; }
-.stage-badge { display: flex; flex-direction: column; gap: 0.1rem; padding: 0.3rem 0.55rem; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); line-height: 1.2; }
+.stage-badge { display: flex; flex-direction: column; gap: 0.15rem; padding: 0.3rem 0.55rem; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); line-height: 1.2; }
+.stage-head { display: flex; align-items: center; gap: 0.3rem; }
+.stage-indicator { width: 0.45rem; height: 0.45rem; border-radius: 50%; background: var(--text-dim); flex-shrink: 0; }
 .stage-agent { font-size: 0.78rem; font-weight: 600; color: var(--text); }
 .stage-model { font-size: 0.7rem; color: var(--text-muted); }
+.stage-pending .stage-indicator { background: var(--text-dim); }
+.stage-pending .stage-agent { color: var(--text-muted); }
+.stage-running { border-color: var(--green); }
+.stage-running .stage-indicator { background: var(--green); animation: blink 1.4s infinite; }
+.stage-running .stage-agent { color: var(--green); }
+.stage-done { border-color: var(--blue); }
+.stage-done .stage-indicator { background: var(--blue); }
+.stage-done .stage-agent { color: var(--blue); }
 .status-badge { display: inline-flex; align-items: center; gap: 0.4rem; flex-shrink: 0; padding: 0.35rem 0.7rem; border-radius: 999px; font-size: 0.8rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em; background: var(--surface); border: 1px solid currentColor; }
 .status-indicator { width: 0.5rem; height: 0.5rem; border-radius: 50%; background: currentColor; }
 .status-launching { color: var(--cyan); }

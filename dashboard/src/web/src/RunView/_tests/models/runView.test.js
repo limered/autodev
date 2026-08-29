@@ -109,4 +109,37 @@ describe('runView', () => {
 
     expect(runView(run, nowMs).started).toBe('—')
   })
+
+  describe('stages', () => {
+    const stages = [
+      { agent: 'feature-builder', model: 'm1', status: 'done' },
+      { agent: 'test-runner', model: 'm2', status: 'running' },
+      { agent: 'pr-author', model: 'm3', status: 'pending' }
+    ]
+
+    it('maps each stage status to a design-A color class', () => {
+      const run = { ...baseRun, stages }
+
+      const view = runView(run, nowMs)
+
+      expect(view.stages).toHaveLength(3)
+      expect(view.stages[0]).toEqual({ agent: 'feature-builder', model: 'm1', statusClass: 'stage-done' })
+      expect(view.stages[1]).toEqual({ agent: 'test-runner', model: 'm2', statusClass: 'stage-running' })
+      expect(view.stages[2]).toEqual({ agent: 'pr-author', model: 'm3', statusClass: 'stage-pending' })
+    })
+
+    it('defaults a stage with no status to pending', () => {
+      const run = { ...baseRun, stages: [{ agent: 'feature-builder', model: 'm1' }] }
+
+      const view = runView(run, nowMs)
+
+      expect(view.stages[0].statusClass).toBe('stage-pending')
+    })
+
+    it('returns an empty stage list when the run has no stages', () => {
+      const view = runView(baseRun, nowMs)
+
+      expect(view.stages).toEqual([])
+    })
+  })
 })
