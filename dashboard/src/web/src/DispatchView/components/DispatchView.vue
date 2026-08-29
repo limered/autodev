@@ -494,7 +494,8 @@ h2 {
 
 .issue-list,
 .queue-list {
-  display: grid;
+  display: flex;
+  flex-direction: column;
   gap: 0.5rem;
 }
 
@@ -568,6 +569,7 @@ h2 {
 .queue-row {
   display: flex;
   align-items: center;
+  min-width: 0;
   gap: 0.75rem;
   padding: 0.75rem 1rem;
   background: var(--surface);
