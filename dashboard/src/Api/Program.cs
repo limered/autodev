@@ -46,7 +46,7 @@ var app = builder.Build();
 if (string.IsNullOrWhiteSpace(githubPat))
 {
     app.Logger.LogWarning(
-        "GitHub PAT not found at .secrets/github-pat.txt; run-completion will not close issues on GitHub.");
+        "GitHub PAT not found (GITHUB_PAT env var, /etc/secrets/github-pat.txt, or .secrets/github-pat.txt); run-completion will not close issues on GitHub.");
 }
 
 // Verify the DB connection and create the schema idempotently at boot.
@@ -82,15 +82,21 @@ return 0;
 
 static string? ReadGitHubPat(string contentRootPath)
 {
+    var fromEnv = Environment.GetEnvironmentVariable("GITHUB_PAT");
+    if (!string.IsNullOrWhiteSpace(fromEnv))
+    {
+        return fromEnv.Trim();
+    }
+
     try
     {
-        var path = Path.GetFullPath(Path.Combine(contentRootPath, "..", "..", ".secrets", "github-pat.txt"));
-        if (!File.Exists(path))
-        {
-            return null;
-        }
-
-        return File.ReadAllText(path).Trim();
+        string[] paths =
+        [
+            "/etc/secrets/github-pat.txt",
+            Path.GetFullPath(Path.Combine(contentRootPath, "..", "..", ".secrets", "github-pat.txt")),
+        ];
+        var path = paths.FirstOrDefault(File.Exists);
+        return path is null ? null : File.ReadAllText(path).Trim();
     }
     catch
     {
