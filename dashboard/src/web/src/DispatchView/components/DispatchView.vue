@@ -2,6 +2,7 @@
 import { computed, ref, watch } from 'vue'
 import { usePollingFeed } from '../../_shared/services/usePollingFeed.js'
 import { useQueueActions } from '../services/useQueueActions.js'
+import { useDragReorder } from '../services/useDragReorder.js'
 import { queueStatus, queueStatusClass, isQueueItemRunning, isQueueItemFailed } from '../models/queueView.js'
 import { hostView } from '../models/hostView.js'
 
@@ -22,10 +23,19 @@ const {
   restartError, isRestarting
 } = actions
 
-const draggedId = ref(null)
-const dragOverId = ref(null)
-
 const localQueue = ref([])
+
+const {
+  draggedId, dragOverId,
+  onDragStart, onDragOver, onDragLeave, onDragEnd, onDrop
+} = useDragReorder({
+  items: localQueue,
+  onReorder: async (ids) => {
+    await actions.reorder(ids)
+    await queueFeed.load()
+  }
+})
+
 watch(
   queue,
   (newQueue) => {
@@ -51,46 +61,6 @@ async function enqueue(issue) {
   if (await actions.enqueue(issue.gitHubId)) {
     await Promise.all([issuesFeed.load(), queueFeed.load()])
   }
-}
-
-function onDragStart(item, event) {
-  draggedId.value = item.id
-  event.dataTransfer.effectAllowed = 'move'
-  event.dataTransfer.setData('text/plain', String(item.id))
-}
-
-function onDragOver(event, id) {
-  event.preventDefault()
-  dragOverId.value = id
-}
-
-function onDragLeave() {
-  dragOverId.value = null
-}
-
-function onDragEnd() {
-  draggedId.value = null
-  dragOverId.value = null
-}
-
-async function onDrop(targetId) {
-  dragOverId.value = null
-  const sourceId = draggedId.value
-  draggedId.value = null
-
-  if (sourceId === null || sourceId === targetId) return
-
-  const fromIndex = localQueue.value.findIndex(i => i.id === sourceId)
-  const toIndex = localQueue.value.findIndex(i => i.id === targetId)
-  if (fromIndex < 0 || toIndex < 0) return
-
-  const reordered = [...localQueue.value]
-  const [moved] = reordered.splice(fromIndex, 1)
-  reordered.splice(toIndex, 0, moved)
-  localQueue.value = reordered
-
-  await actions.reorder(localQueue.value.map(i => i.id))
-  await queueFeed.load()
 }
 
 async function remove(item) {
