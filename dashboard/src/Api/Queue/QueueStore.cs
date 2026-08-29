@@ -28,7 +28,7 @@ public sealed class QueueStore : IQueueStore
     {
         var items = new List<QueueListItem>();
         await using var conn = await _dataSource.OpenConnectionAsync();
-        await using var cmd = new NpgsqlCommand(SelectQueueSql, conn);
+        await using var cmd = new NpgsqlCommand($"{SelectQueueSql} ORDER BY q.rank", conn);
         await using var reader = await cmd.ExecuteReaderAsync();
 
         while (await reader.ReadAsync())
@@ -243,7 +243,6 @@ public sealed class QueueStore : IQueueStore
         FROM queue q
         LEFT JOIN issues i ON i.github_id = q.issue_id
         LEFT JOIN runs r ON r.run_id = q.run_id
-        ORDER BY q.rank
         """;
 
     private static QueueListItem Map(NpgsqlDataReader r)
