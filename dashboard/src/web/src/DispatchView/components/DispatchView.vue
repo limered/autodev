@@ -1,6 +1,7 @@
 <script setup>
 import { computed, ref, watch } from 'vue'
 import { usePollingFeed } from '../../_shared/services/usePollingFeed.js'
+import ErrorBanner from '../../_shared/components/ErrorBanner.vue'
 import { useQueueActions } from '../services/useQueueActions.js'
 import { useDragReorder } from '../services/useDragReorder.js'
 import { queueStatus, queueStatusClass, isQueueItemRunning, isQueueItemFailed } from '../models/queueView.js'
@@ -109,15 +110,13 @@ async function restart(item) {
           <h2><span class="prompt">&gt;</span> Eligible Issues</h2>
         </header>
 
-        <section v-if="issuesFeed.error.value" class="error-banner" role="alert">
-          <strong>Sync failed</strong>
-          <p>Failed to load eligible issues: {{ issuesFeed.error.value }}</p>
-        </section>
+        <ErrorBanner
+          v-if="issuesFeed.error.value"
+          title="Sync failed"
+          :message="`Failed to load eligible issues: ${issuesFeed.error.value}`"
+        />
 
-        <section v-if="enqueueError" class="error-banner" role="alert">
-          <strong>Enqueue failed</strong>
-          <p>{{ enqueueError }}</p>
-        </section>
+        <ErrorBanner v-if="enqueueError" title="Enqueue failed" :message="enqueueError" />
 
         <section v-if="eligibleIssues.length" class="issue-list">
           <article
@@ -154,30 +153,19 @@ async function restart(item) {
           <span v-if="isSaving" class="queue-saving">saving…</span>
         </header>
 
-        <section v-if="queueFeed.error.value" class="error-banner" role="alert">
-          <strong>Sync failed</strong>
-          <p>Failed to load run queue: {{ queueFeed.error.value }}</p>
-        </section>
+        <ErrorBanner
+          v-if="queueFeed.error.value"
+          title="Sync failed"
+          :message="`Failed to load run queue: ${queueFeed.error.value}`"
+        />
 
-        <section v-if="reorderError" class="error-banner" role="alert">
-          <strong>Reorder failed</strong>
-          <p>{{ reorderError }}</p>
-        </section>
+        <ErrorBanner v-if="reorderError" title="Reorder failed" :message="reorderError" />
 
-        <section v-if="removeError" class="error-banner" role="alert">
-          <strong>Remove failed</strong>
-          <p>{{ removeError }}</p>
-        </section>
+        <ErrorBanner v-if="removeError" title="Remove failed" :message="removeError" />
 
-        <section v-if="startNextError" class="error-banner" role="alert">
-          <strong>Start failed</strong>
-          <p>{{ startNextError }}</p>
-        </section>
+        <ErrorBanner v-if="startNextError" title="Start failed" :message="startNextError" />
 
-        <section v-if="restartError" class="error-banner" role="alert">
-          <strong>Restart failed</strong>
-          <p>{{ restartError }}</p>
-        </section>
+        <ErrorBanner v-if="restartError" title="Restart failed" :message="restartError" />
 
         <button
           class="start-next-button"
@@ -372,24 +360,12 @@ h2 {
   background: var(--accent);
 }
 
+/* Skin lives in _shared/components/ErrorBanner.vue; these are this view's
+   compact in-column geometry. */
 .error-banner {
   margin-bottom: 1rem;
   padding: 0.75rem 1rem;
-  background: rgba(248, 81, 73, 0.12);
-  border: 1px solid rgba(248, 81, 73, 0.35);
-  border-radius: var(--radius);
   font-size: 0.9rem;
-}
-
-.error-banner strong {
-  display: block;
-  color: var(--red);
-  margin-bottom: 0.25rem;
-}
-
-.error-banner p {
-  margin: 0;
-  color: var(--text);
 }
 
 .issue-list,
