@@ -9,7 +9,7 @@ Blocked by: 05, 06, 07
 Sequence the steps in the job flow:
 
 ```
-implement → test-runner → loop ≤3×[ static-analysis → fix ] → agentic-review → PR
+implement → test-runner → loop ≤3×[ static-analysis → fix] → test-runner → agentic-review → PR
 ```
 
 - Where the ≤3× loop and the stop condition (3 iterations / no findings / all-HITL) live in `start-job.ps1` / job orchestration.
