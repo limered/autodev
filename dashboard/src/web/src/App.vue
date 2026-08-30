@@ -60,6 +60,14 @@ onUnmounted(() => window.removeEventListener('keydown', onKey))
   --red: #f85149;
   --green: #3fb950;
   --blue: #58a6ff;
+  /* Repo identity palette: hues chosen to stay legible on the dark surface
+     and clear of the status colors above (accent/green, cyan, blue, red, amber). */
+  --repo-violet: #a371f7;
+  --repo-lilac: #d2a8ff;
+  --repo-magenta: #db61a2;
+  --repo-pink: #f778ba;
+  --repo-orange: #ffa657;
+  --repo-yellow: #f7dd6e;
   --radius: 0.75rem;
   --shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
   --font-sans: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
