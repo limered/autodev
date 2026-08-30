@@ -1,5 +1,6 @@
 <script setup>
 import { computed, onMounted, onUnmounted, ref } from 'vue'
+import ErrorBanner from '../../_shared/components/ErrorBanner.vue'
 import { runView } from '../models/runView.js'
 import { usePagedRuns } from '../services/usePagedRuns.js'
 
@@ -18,10 +19,11 @@ onUnmounted(() => clearInterval(tickTimer))
 
 <template>
   <div>
-    <section v-if="error" class="error-banner" role="alert">
-      <strong>Connection lost</strong>
-      <p>Failed to load runs: {{ error }}</p>
-    </section>
+    <ErrorBanner
+      v-if="error"
+      title="Connection lost"
+      :message="`Failed to load runs: ${error}`"
+    />
 
     <section v-if="displayedRuns.length" class="run-list">
       <article
@@ -163,8 +165,8 @@ onUnmounted(() => clearInterval(tickTimer))
 .load-more { padding: 0.6rem 1.4rem; font-size: 0.9rem; font-weight: 600; color: var(--text); background: var(--surface-2); border: 1px solid var(--border); border-radius: var(--radius); cursor: pointer; transition: border-color 0.2s ease; }
 .load-more:hover:not(:disabled) { border-color: var(--text-dim); }
 .load-more:disabled { opacity: 0.6; cursor: default; }
-.error-banner { margin-bottom: 1.5rem; padding: 1rem 1.25rem; background: rgba(248, 81, 73, 0.12); border: 1px solid rgba(248, 81, 73, 0.35); border-radius: var(--radius); }
-.error-banner strong { display: block; color: var(--red); margin-bottom: 0.25rem; }
-.error-banner p { margin: 0; color: var(--text); }
+/* Skin lives in _shared/components/ErrorBanner.vue; these are this view's
+   page-level geometry. */
+.error-banner { margin-bottom: 1.5rem; padding: 1rem 1.25rem; }
 .mono { font-family: var(--font-mono); }
 </style>
