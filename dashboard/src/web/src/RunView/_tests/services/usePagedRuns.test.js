@@ -105,4 +105,84 @@ describe('usePagedRuns', () => {
     expect(feed.runs.value).toHaveLength(10) // first page preserved
     expect(feed.hasMore.value).toBe(true) // end not reached; button can retry
   })
+
+  it('refreshFirst re-fetches the first page once and leaves appended pages untouched', async () => {
+    let call = 0
+    // Poll 3 is a first-page refresh after the server gained newer runs.
+    const pages = [makeRuns(10, 0), makeRuns(10, 10), makeRuns(10, 100)]
+    const fetchFn = vi.fn(() => Promise.resolve(pageResponse(pages[call++])))
+    const feed = usePagedRuns(fetchFn)
+
+    await feed.loadFirst()
+    await feed.loadNext()
+    await feed.refreshFirst()
+
+    expect(fetchFn).toHaveBeenNthCalledWith(3, '/runs?skip=0&take=10')
+    expect(fetchFn).toHaveBeenCalledTimes(3) // one refresh fetch, nothing else
+    expect(feed.runs.value.slice(0, 10)).toEqual(makeRuns(10, 100)) // fresh first page
+    expect(feed.runs.value.slice(10)).toEqual(makeRuns(10, 10)) // appended page kept as loaded
+    expect(feed.error.value).toBeNull()
+  })
+
+  it('refreshFirst with a short page drops stale appended rows and marks the end', async () => {
+    let call = 0
+    const pages = [makeRuns(10, 0), makeRuns(10, 10), makeRuns(3, 100)] // short refresh
+    const fetchFn = vi.fn(() => Promise.resolve(pageResponse(pages[call++])))
+    const feed = usePagedRuns(fetchFn)
+
+    await feed.loadFirst()
+    await feed.loadNext()
+    await feed.refreshFirst()
+
+    expect(feed.runs.value).toEqual(makeRuns(3, 100))
+    expect(feed.hasMore.value).toBe(false)
+  })
+
+  it('loadNext after a refresh continues from the loaded length', async () => {
+    let call = 0
+    const pages = [makeRuns(10, 0), makeRuns(10, 10), makeRuns(10, 100), makeRuns(10, 20)]
+    const fetchFn = vi.fn(() => Promise.resolve(pageResponse(pages[call++])))
+    const feed = usePagedRuns(fetchFn)
+
+    await feed.loadFirst()
+    await feed.loadNext()
+    await feed.refreshFirst()
+    await feed.loadNext()
+
+    expect(fetchFn).toHaveBeenNthCalledWith(4, '/runs?skip=20&take=10')
+    expect(feed.runs.value).toHaveLength(30)
+  })
+
+  it('a failed refresh records the error and keeps the loaded runs', async () => {
+    let call = 0
+    const fetchFn = vi.fn(() => {
+      call++
+      if (call === 2) return Promise.resolve({ ok: false, status: 500 })
+      return Promise.resolve(pageResponse(makeRuns(10)))
+    })
+    const feed = usePagedRuns(fetchFn)
+
+    await feed.loadFirst()
+    await feed.refreshFirst() // 500
+
+    expect(feed.error.value).toBe('HTTP 500')
+    expect(feed.runs.value).toHaveLength(10) // loaded page preserved
+  })
+
+  it('a refresh after the end was reached does not resurrect Load more', async () => {
+    let call = 0
+    // Second page is short → end reached with 13 rows loaded; the refresh page
+    // is full but appended rows exist, so the end must stand.
+    const pages = [makeRuns(10, 0), makeRuns(3, 10), makeRuns(10, 100)]
+    const fetchFn = vi.fn(() => Promise.resolve(pageResponse(pages[call++])))
+    const feed = usePagedRuns(fetchFn)
+
+    await feed.loadFirst()
+    await feed.loadNext()
+    await feed.refreshFirst()
+
+    expect(feed.hasMore.value).toBe(false)
+    expect(feed.runs.value.slice(0, 10)).toEqual(makeRuns(10, 100)) // fresh first page
+    expect(feed.runs.value.slice(10)).toEqual(makeRuns(3, 10)) // appended rows kept
+  })
 })
