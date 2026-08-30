@@ -204,13 +204,6 @@ async function restart(item) {
               <span class="status-indicator"></span>
               {{ queueStatus(item) }}
             </span>
-            <a
-              v-if="item.runId"
-              :href="`/#run-${item.runId}`"
-              class="run-link mono"
-            >
-              Run ↗
-            </a>
             <button
               v-if="isQueueItemFailed(item)"
               class="restart-button"
@@ -553,17 +546,6 @@ h2 {
 .start-next-button:disabled {
   opacity: 0.6;
   cursor: not-allowed;
-}
-
-.run-link {
-  flex-shrink: 0;
-  font-size: 0.8rem;
-  color: var(--accent);
-  text-decoration: none;
-}
-
-.run-link:hover {
-  text-decoration: underline;
 }
 
 .remove-button {
