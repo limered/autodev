@@ -4,18 +4,18 @@ Labels: `wayfinder:map`
 
 ## Destination
 
-The monolithic factory agent is broken into **single-responsibility steps/agents** that the job orchestration sequences, each independently optimisable. The proving ground for the decomposition is the quality + architecture pipeline:
+The monolithic factory agent is broken into **single-responsibility steps/agents** that the job orchestration sequences, each independently optimisable. The proving ground for the decomposition is the static-analysis + agentic-review pipeline:
 
 ```
 implement issue (tdd: write test, run that one test/file)
   → test-runner (full tests)
-  → loop ≤3×: [ quality scan (static analysis) → fix AFK findings ]
+  → loop ≤3×: [ static-analysis scan → fix AFK findings ]
       stop when: 3 iterations, OR no findings, OR all remaining findings are HITL
-  → architecture scan → write HITL findings to tracker (no fix)
+  → agentic-review scan → write HITL findings to tracker (no fix)
   → create PR
 ```
 
-Reached when: the factory flow is composed of named steps with concrete, separate responsibilities; quality findings are classified per-finding AFK vs HITL and AFK ones self-fix in the same VM run; architecture findings land in the tracker for later grilling. Config lives in `AGENTS.md`.
+Reached when: the factory flow is composed of named steps with concrete, separate responsibilities; static-analysis findings are classified per-finding AFK vs HITL and AFK ones self-fix in the same VM run; agentic-review findings land in the tracker for later grilling. Config lives in `AGENTS.md`.
 
 ## Notes
 
@@ -24,7 +24,7 @@ Reached when: the factory flow is composed of named steps with concrete, separat
 - **Reuse, don't rebuild**: `implement`, `tdd`, `test-runner` (exists), `code-review`, `improve-codebase-architecture`, `triage`, `atomic-commit`. New construction only where a gap is proven.
 - **Skills every session should consult**: `/grilling`, `/domain-modeling`, `/codebase-design` (for the extraction/deepening work).
 - **Standing preference**: laziest thing that works. A step that duplicates an existing skill should not be born.
-- **Generic**: quality scan runs the *repo's own* configured analysers (discover, don't hardcode ESLint/Vue/dotnet).
+- **Generic**: static-analysis scan runs the *repo's own* configured analysers (discover, don't hardcode ESLint/Vue/dotnet).
 - Many "needs testing" answers here are **prototype/research tickets** — they resolve a threshold or a safe/unsafe boundary that can't be reasoned into existence.
 
 ## Decisions so far
@@ -38,6 +38,7 @@ Reached when: the factory flow is composed of named steps with concrete, separat
 - [03 — Complexity thresholds](issues/03-complexity-thresholds.md) — leave-it ≤30 CRAP/≤10 comp, fix-AFK ≤60/≤15, HITL above; never autofix under 0.5 coverage; in-class-vs-cross-class by dry-run patch shape. ([findings](issues/03-findings.md))
 - [01 — Step contract](issues/01-step-contract.md) — a step = a primary opencode agent, one-shot, shared clone, commits+exit-code downstream; AFK→commits, HITL→tracker issues via PAT (Q1a); ≤3× loop owned by bash orchestrator (Q2a); implement shrinks to impl+test-run, /code-review moves into quality agent (Q3); two new agents (quality, architecture), security deferred (Q4).
 - [04 — Safe-AFK refactorings](issues/04-safe-afk-refactorings.md) — AFK/HITL/CONDITIONAL table ([findings](issues/04-findings.md)); declared kind = fast filter, patch-shape gate = ground truth; unclassifiable→HITL, public rename→HITL for v1, table lives as a doc the quality agent reads.
+- [05 — Extract the implement / test-runner boundary](issues/05-extract-implement-testrunner.md) — inline `/implement` into feature-builder step 2 (drop the code-review branch + full-test line); the `/implement` skill and test-runner stay untouched. `/code-review` relocates to the agentic-review step (07), running AFK and filing `ready-for-human` findings. **Renames**: quality step → static-analysis step (06); architecture step → agentic-review step (07, covering architecture + `/code-review`).
 
 ## Not yet specified
 
@@ -46,7 +47,7 @@ Reached when: the factory flow is composed of named steps with concrete, separat
 - How the orchestration loop is expressed (where the ≤3× loop and the AFK/HITL branch physically live in `start-job.ps1` / job flow) — graduates once the step boundaries are settled.
 - The `AGENTS.md` config schema for per-step thresholds and tool selection — graduates once we know which thresholds exist to configure.
 - Post-implementation "improve" pass and verify-time instant-fix — likely just the first iteration of the quality loop; confirm it's not built twice once the loop shape is settled.
-- Additional quality check families beyond lint + complexity (security scanning, dependency updates) — each is its own tool-discovery + AFK/HITL-threshold ticket, graduates once the quality-step contract exists. Security specifically is now scoped (ticket 01/Q4) as HITL-advisory, same shape as the architecture step — clone `architecture.md` once ticket 07 lands. Graduates to a ticket after v1 proves the machine.
+- Additional quality check families beyond lint + complexity (security scanning, dependency updates) — each is its own tool-discovery + AFK/HITL-threshold ticket, graduates once the static-analysis-step contract exists. Security specifically is now scoped (ticket 01/Q4) as HITL-advisory, same shape as the agentic-review step — clone `agentic-review.md` once ticket 07 lands. Graduates to a ticket after v1 proves the machine.
 
 ## Out of scope
 
