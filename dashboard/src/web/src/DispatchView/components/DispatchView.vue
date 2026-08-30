@@ -2,6 +2,7 @@
 import { computed, ref, watch } from 'vue'
 import { usePollingFeed } from '../../_shared/services/usePollingFeed.js'
 import ErrorBanner from '../../_shared/components/ErrorBanner.vue'
+import { repoColor } from '../../_shared/models/repoColor.js'
 import { useQueueActions } from '../services/useQueueActions.js'
 import { useDragReorder } from '../services/useDragReorder.js'
 import { queueStatus, queueStatusClass, isQueueItemRunning, isQueueItemFailed } from '../models/queueView.js'
@@ -128,7 +129,9 @@ async function restart(item) {
               <a :href="issue.htmlUrl" target="_blank" rel="noopener" class="issue-title">
                 {{ issue.title }}
               </a>
-              <span class="issue-ref mono">{{ issue.repo }}#{{ issue.number }}</span>
+              <span class="issue-ref mono">
+                <span class="issue-repo" :style="{ color: repoColor(issue.repo) }">{{ issue.repo }}</span>#{{ issue.number }}
+              </span>
             </div>
             <button
               class="enqueue-button"
@@ -194,7 +197,9 @@ async function restart(item) {
                 <a :href="item.htmlUrl" target="_blank" rel="noopener" class="issue-title">
                   {{ item.title }}
                 </a>
-                <span class="issue-ref mono">{{ item.repo }}#{{ item.number }}</span>
+                <span class="issue-ref mono">
+                  <span class="issue-repo" :style="{ color: repoColor(item.repo) }">{{ item.repo }}</span>#{{ item.number }}
+                </span>
               </template>
               <template v-else>
                 <span class="missing-issue">no longer eligible</span>
