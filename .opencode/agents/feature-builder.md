@@ -28,7 +28,7 @@ Follow these steps exactly and in order:
      https://api.github.com/repos/<REPO>/issues/<ISSUE>
    ```
    Read the JSON `title` and `body`. If the response has no `body` (e.g. the issue does not exist or a `"message"` error), print the response and exit with a non-zero status code (fail fast). The issue body IS the spec — read it and explore the repository structure.
-2. **Implement**: Use the `/implement` skill to implement the work described by the issue. Skip the full test-suite run at the end — a separate test-runner phase runs the tests after you exit.
+2. **Implement**: Implement the work described by the issue. Use `/tdd` where possible, at pre-agreed seams. Run typechecking regularly and single test files regularly as you work. Do not run the full test suite and do not review the work — a separate test-runner phase runs the tests, and a separate agentic-review phase reviews, after you exit.
 3. **Commit**: Use the `/atomic-commit` skill to stage the changes and commit.
 4. **Push**: Push the commit to the BRANCH specified. Create the branch if it does not exist (`git checkout -b BRANCH`). Do not create, open, or POST a pull request — that is the pr-author phase's job, run after you exit.
 5. **Finish**: Print a one-line summary of what was implemented. Then exit immediately. Do not wait for user input, do not ask questions, and do not continue the session.
