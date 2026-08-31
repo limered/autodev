@@ -1,9 +1,17 @@
 import { secondsSince, lastSeenLabel } from '../../_shared/models/time.js'
+import { isTerminalRun } from './runStatus.js'
 
 export function runView(run, nowMs) {
+  // Terminal runs are no longer "seen": instead of a live relative label that
+  // ticks upward forever, they show a fixed Completed timestamp derived from
+  // the run's own stored times (finishedAt, falling back to lastHeartbeatAt),
+  // so the value is stable across the 1s clock tick. Active runs keep the
+  // live "Last seen" behaviour.
+  const terminal = isTerminalRun(run)
+
   function freshnessClass(secs) {
     if (secs === null) return 'unknown'
-    if (run.status === 'failed' || run.status === 'done') return 'settled'
+    if (terminal) return 'settled'
     if (run.status === 'stalled') return 'stale-warn'
     if (secs > 120) return 'stale-danger'
     if (secs > 30) return 'stale-warn'
@@ -31,7 +39,9 @@ export function runView(run, nowMs) {
   }))
 
   return {
-    lastSeen: lastSeenLabel(secs),
+    timeLabel: terminal ? 'Completed' : 'Last seen',
+    lastSeen: terminal ? null : lastSeenLabel(secs),
+    completed: terminal ? formatTime(run.finishedAt ?? run.lastHeartbeatAt) : null,
     freshnessClass: freshnessClass(secs),
     statusClass: `status-${run.status}`,
     started: formatTime(run.startedAt),

@@ -110,6 +110,85 @@ describe('runView', () => {
     expect(runView(run, nowMs).started).toBe('—')
   })
 
+  describe('time display: terminal runs show a fixed Completed timestamp', () => {
+    // The heartbeat sits minutes before the finish so a wrong derivation
+    // (lastHeartbeatAt instead of finishedAt) would produce a different string.
+    const finishedAt = new Date(nowMs - 30 * 1000).toISOString()
+    const heartbeatAt = new Date(nowMs - 300 * 1000).toISOString()
+
+    it('shows a done run as Completed with an absolute timestamp that does not tick', () => {
+      const run = {
+        ...baseRun,
+        status: 'done',
+        finishedAt,
+        lastHeartbeatAt: heartbeatAt
+      }
+
+      const first = runView(run, nowMs)
+      const later = runView(run, nowMs + 60 * 1000) // a minute of clock ticks
+
+      expect(first.completed).toBe(new Date(finishedAt).toLocaleString())
+      expect(later.completed).toBe(first.completed)
+      expect(first.lastSeen).toBeNull()
+      expect(first.timeLabel).toBe('Completed')
+    })
+
+    it('shows a failed run as Completed with an absolute timestamp that does not tick', () => {
+      const run = {
+        ...baseRun,
+        status: 'failed',
+        finishedAt,
+        lastHeartbeatAt: heartbeatAt
+      }
+
+      const first = runView(run, nowMs)
+      const later = runView(run, nowMs + 60 * 1000)
+
+      expect(first.completed).toBe(new Date(finishedAt).toLocaleString())
+      expect(later.completed).toBe(first.completed)
+      expect(first.lastSeen).toBeNull()
+      expect(first.timeLabel).toBe('Completed')
+    })
+
+    it('falls back to the last heartbeat when a terminal run has no finishedAt', () => {
+      const run = {
+        ...baseRun,
+        status: 'done',
+        finishedAt: null,
+        lastHeartbeatAt: heartbeatAt
+      }
+
+      const view = runView(run, nowMs)
+
+      expect(view.completed).toBe(new Date(heartbeatAt).toLocaleString())
+      expect(view.timeLabel).toBe('Completed')
+    })
+
+    it('keeps the live relative Last seen for active runs, ticking with nowMs', () => {
+      const run = {
+        ...baseRun,
+        status: 'running',
+        lastHeartbeatAt: new Date(nowMs - 10 * 1000).toISOString()
+      }
+
+      const first = runView(run, nowMs)
+      const later = runView(run, nowMs + 5 * 1000)
+
+      expect(first.lastSeen).toBe('10s ago')
+      expect(later.lastSeen).toBe('15s ago')
+      expect(first.completed).toBeNull()
+      expect(first.timeLabel).toBe('Last seen')
+    })
+
+    it('keeps freshness settled for terminal runs', () => {
+      const doneRun = { ...baseRun, status: 'done', finishedAt, lastHeartbeatAt: heartbeatAt }
+      const failedRun = { ...baseRun, status: 'failed', finishedAt, lastHeartbeatAt: heartbeatAt }
+
+      expect(runView(doneRun, nowMs).freshnessClass).toBe('settled')
+      expect(runView(failedRun, nowMs).freshnessClass).toBe('settled')
+    })
+  })
+
   describe('stages', () => {
     const stages = [
       { agent: 'feature-builder', model: 'm1', status: 'done' },
