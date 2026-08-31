@@ -47,8 +47,10 @@ const view = computed(() => runView(props.run, props.now))
     <div class="card-body">
       <div class="primary-stats">
         <div class="stat">
-          <span class="stat-label">Last seen</span>
-          <span class="stat-value mono" :class="view.freshnessClass">{{ view.lastSeen }}</span>
+          <!-- Terminal runs show a fixed Completed timestamp (runView leaves
+               lastSeen null); active runs show the live Last seen label. -->
+          <span class="stat-label">{{ view.timeLabel }}</span>
+          <span class="stat-value mono" :class="view.freshnessClass">{{ view.completed ?? view.lastSeen }}</span>
         </div>
         <div class="stat">
           <span class="stat-label">Started</span>
