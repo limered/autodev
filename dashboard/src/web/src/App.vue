@@ -29,11 +29,11 @@ onUnmounted(() => window.removeEventListener('keydown', onKey))
       <div class="prompt-line mono">
         <span class="prompt">factory</span><span class="colon">:</span><span class="path">~/{{ currentTitle }}</span><span class="cursor">$</span>
       </div>
-      <nav class="segmented mono" role="tablist">
+      <nav class="segmented mono">
         <RouterLink
           v-for="p in pages" :key="p.path"
           class="seg" :to="p.path"
-          role="tab" :aria-selected="route.path === p.path"
+          :aria-current="route.path === p.path ? 'page' : null"
         >
           <span class="seg-key">[{{ p.hotkey }}]</span> {{ p.title }}
         </RouterLink>
