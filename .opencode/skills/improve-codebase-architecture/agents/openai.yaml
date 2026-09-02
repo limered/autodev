@@ -1,0 +1,5 @@
+interface:
+  display_name: "Improve Codebase Architecture"
+  short_description: "Find architecture deepening candidates (read-only)"
+policy:
+  allow_implicit_invocation: false
