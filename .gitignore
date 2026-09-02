@@ -1,3 +1,4 @@
 .secrets/
 .scratch/freezes/
 dispatch-client.config.json
+.factory/

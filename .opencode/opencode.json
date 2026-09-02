@@ -10,6 +10,9 @@
     },
     "test-runner": {
       "mode": "primary"
+    },
+    "static-analysis": {
+      "mode": "primary"
     }
   },
   "permission": {
