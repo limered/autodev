@@ -2,6 +2,7 @@
 import ErrorBanner from "../../_shared/components/ErrorBanner.vue";
 import RunCard from "./RunCard.vue";
 import { useActiveRuns } from "../services/useActiveRuns.js";
+import { useRunActions } from "../services/useRunActions.js";
 import { useNowTicker } from "../services/useNowTicker.js";
 
 const emit = defineEmits(["set-change"]);
@@ -11,9 +12,19 @@ const { now } = useNowTicker();
 // Polls the active set every ~5s (issue #52). The set-change event — a run
 // started or finished — is the only signal sent upward: the container uses it
 // to sync history's first page once and does nothing on ordinary polls.
-const { runs, error } = useActiveRuns((url) => fetch(url), {
+const { runs, error, load } = useActiveRuns((url) => fetch(url), {
   onSetChange: () => emit("set-change"),
 });
+
+// Delete a stuck run (e.g. wedged in "launching"), then re-poll so it drops out
+// of the list and history stays in sync via set-change.
+const { deleteRun, deleteError } = useRunActions();
+async function onDelete(runId) {
+  if (await deleteRun(runId)) {
+    await load();
+    emit("set-change");
+  }
+}
 </script>
 
 <template>
@@ -24,6 +35,12 @@ const { runs, error } = useActiveRuns((url) => fetch(url), {
       :message="`Failed to load active runs: ${error}`"
     />
 
+    <ErrorBanner
+      v-if="deleteError"
+      title="Delete failed"
+      :message="`Could not delete run: ${deleteError}`"
+    />
+
     <!-- Hidden entirely while the factory is idle; history's empty state tells
          the "nothing has happened yet" story. -->
     <section v-if="runs.length" class="active-runs" aria-label="Active runs">
@@ -31,7 +48,14 @@ const { runs, error } = useActiveRuns((url) => fetch(url), {
         <h2><span class="prompt">&gt;</span> Active</h2>
       </header>
       <div class="run-list">
-        <RunCard v-for="r in runs" :key="r.runId" :run="r" :now="now" />
+        <RunCard
+          v-for="r in runs"
+          :key="r.runId"
+          :run="r"
+          :now="now"
+          deletable
+          @delete="onDelete"
+        />
       </div>
     </section>
   </div>

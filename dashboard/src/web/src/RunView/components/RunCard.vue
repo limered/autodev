@@ -9,7 +9,12 @@ import { runView } from "../models/runView.js";
 const props = defineProps({
   run: { type: Object, required: true },
   now: { type: Number, required: true },
+  // Active-runs list opts in to the delete control; history runs are terminal
+  // and left read-only.
+  deletable: { type: Boolean, default: false },
 });
+
+defineEmits(["delete"]);
 
 const view = computed(() => runView(props.run, props.now));
 </script>
@@ -42,6 +47,15 @@ const view = computed(() => runView(props.run, props.now));
         <span class="status-indicator"></span>
         {{ run.status }}
       </div>
+      <button
+        v-if="deletable"
+        type="button"
+        class="delete-run"
+        title="Delete this run"
+        @click="$emit('delete', run.runId)"
+      >
+        Delete
+      </button>
     </div>
 
     <div class="card-body">
@@ -216,6 +230,22 @@ const view = computed(() => runView(props.run, props.now));
 }
 .status-running {
   color: var(--green);
+}
+.delete-run {
+  flex-shrink: 0;
+  align-self: flex-start;
+  padding: 0.3rem 0.7rem;
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--red);
+  background: var(--surface);
+  border: 1px solid var(--red);
+  border-radius: var(--radius);
+  cursor: pointer;
+}
+.delete-run:hover {
+  background: var(--red);
+  color: var(--surface);
 }
 .status-running .status-indicator {
   animation: blink 1.4s infinite;
