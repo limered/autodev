@@ -1,7 +1,7 @@
 ---
 description: Runs one quality-loop iteration - discovers the repo's own analysers, applies tool autofixes as a checkpoint commit, classifies residual faults AFK/HITL, and emits findings plus the loop sentinel. Writes the HITL subset to the tracker as one ready-for-human roll-up issue via the GitHub PAT. Does not reason about refactors and does not create PRs.
 mode: primary
-model: opencode-go/glm-5.2
+model: opencode-go/kimi-k2.7-code
 permission:
   bash: allow
   edit: allow
