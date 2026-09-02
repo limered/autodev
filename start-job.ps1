@@ -77,7 +77,7 @@ if (-not $Model) {
 
 # ponytail: the phase order is hardcoded here and is expected to change under the
 # in-progress agent split/refactor; update this list when the phases settle.
-$phaseOrder = @('feature-builder', 'test-runner', 'static-analysis', 'pr-author')
+$phaseOrder = @('feature-builder', 'test-runner', 'static-analysis', 'agentic-review', 'pr-author')
 $stages = @(foreach ($agent in $phaseOrder) {
     [ordered]@{ agent = $agent; model = (Get-AgentModel -Agent $agent -RepoRoot $RepoRoot) }
 })
