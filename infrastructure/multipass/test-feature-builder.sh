@@ -1,10 +1,12 @@
 #!/usr/bin/env bash
 # End-to-end feature-builder test for the AI Software Factory job VM.
 # Sets up the GitHub PAT, opencode API key, clones the project
-# repo, injects the .opencode agent configuration, then runs two opencode
+# repo, injects the .opencode agent configuration, then runs the opencode
 # phases headlessly in the same clone: implement (feature-builder agent:
-# issue token in, implemented branch pushed) and - after a gate plus a hook
-# point - PR (pr-author agent: PR authored from the branch diff and POSTed).
+# issue token in, implemented branch pushed), test (test-runner agent),
+# static-analysis, agentic-review (review findings filed as ready-for-human
+# tracker issues) and - after a gate plus a hook point - PR (pr-author
+# agent: PR authored from the branch diff and POSTed).
 # The calling PowerShell harness verifies the resulting branch/PR.
 set -euo pipefail
 
@@ -75,7 +77,7 @@ pass "opencode binary: $OPENCODE_BIN"
 
 # 9. Phase 1 - implement: run the feature-builder agent headlessly against the
 #    issue token. It implements, commits, and pushes the branch. It does NOT
-#    create the PR; that is phase 2's job.
+#    create the PR; that is the PR phase's job.
 cd "$WORK_DIR"
 BASE="${BASE:-main}"
 BASE_REF="origin/$BASE"
@@ -118,7 +120,8 @@ run_agent_phase() {
   touch /tmp/heartbeat
   # No --model: each agent resolves its own model from the unpacked opencode
   # config (~/.config/opencode), so feature-builder, test-runner,
-  # static-analysis and pr-author can differ. $MODEL is reporting-only.
+  # static-analysis, agentic-review and pr-author can differ. $MODEL is
+  # reporting-only.
   $OPENCODE_BIN run --agent "$agent" --auto --print-logs "$prompt" </dev/null &
   local phase_pid=$!
   ( while kill -0 "$phase_pid" 2>/dev/null; do sleep 30; touch /tmp/heartbeat 2>/dev/null; done ) &
@@ -129,7 +132,7 @@ run_agent_phase() {
   return "$rc"
 }
 
-echo "Running phase 1/4 (implement): OPENCODE_API_KEY=*** $OPENCODE_BIN run --agent feature-builder --auto --print-logs \"...\""
+echo "Running phase 1/5 (implement): OPENCODE_API_KEY=*** $OPENCODE_BIN run --agent feature-builder --auto --print-logs \"...\""
 if ! run_agent_phase feature-builder "$IMPL_SPEC"; then
   fail "implement phase failed: opencode run exited non-zero (see log above)"
 fi
@@ -161,7 +164,7 @@ TEST_SPEC="BRANCH: $BRANCH
 BASE: $BASE
 REPO: $REPO"
 
-echo "Running phase 2/4 (test): OPENCODE_API_KEY=*** $OPENCODE_BIN run --agent test-runner --auto --print-logs \"...\""
+echo "Running phase 2/5 (test): OPENCODE_API_KEY=*** $OPENCODE_BIN run --agent test-runner --auto --print-logs \"...\""
 if ! run_agent_phase test-runner "$TEST_SPEC"; then
   fail "test phase failed: a declared harness is red or no harness was declared (see log above)"
 fi
@@ -178,20 +181,38 @@ SA_SPEC="BRANCH: $BRANCH
 BASE: $BASE
 REPO: $REPO"
 
-echo "Running phase 3/4 (static-analysis): OPENCODE_API_KEY=*** $OPENCODE_BIN run --agent static-analysis --auto --print-logs \"...\""
+echo "Running phase 3/5 (static-analysis): OPENCODE_API_KEY=*** $OPENCODE_BIN run --agent static-analysis --auto --print-logs \"...\""
 if ! run_agent_phase static-analysis "$SA_SPEC"; then
   fail "static-analysis phase failed: opencode run exited non-zero (operational failure, see log above)"
 fi
 pass "static-analysis phase completed (static-analysis exited 0)"
 
-# 13. Phase 4 - PR: run the pr-author agent as a distinct opencode run in the
+# 13. Phase 4 - agentic-review: run the agentic-review agent in the same clone,
+#     after static-analysis and before the PR phase. It runs the two review
+#     skills headless (/code-review on the BASE...HEAD diff against the issue,
+#     improve-codebase-architecture explore-only) and files each skill's
+#     findings as one ready-for-human tracker issue. It never fixes and never
+#     fails the run for findings - a non-zero exit here means an operational
+#     failure (PAT missing, tracker unreachable), not review findings.
+AR_SPEC="ISSUE: $ISSUE
+BRANCH: $BRANCH
+BASE: $BASE
+REPO: $REPO"
+
+echo "Running phase 4/5 (agentic-review): OPENCODE_API_KEY=*** $OPENCODE_BIN run --agent agentic-review --auto --print-logs \"...\""
+if ! run_agent_phase agentic-review "$AR_SPEC"; then
+  fail "agentic-review phase failed: opencode run exited non-zero (operational failure, see log above)"
+fi
+pass "agentic-review phase completed (agentic-review exited 0)"
+
+# 14. Phase 5 - PR: run the pr-author agent as a distinct opencode run in the
 #     same clone. It authors the PR title and body from the branch diff and
 #     POSTs the pull request.
 PR_SPEC="BRANCH: $BRANCH
 BASE: $BASE
 REPO: $REPO"
 
-echo "Running phase 4/4 (PR): OPENCODE_API_KEY=*** $OPENCODE_BIN run --agent pr-author --auto --print-logs \"...\""
+echo "Running phase 5/5 (PR): OPENCODE_API_KEY=*** $OPENCODE_BIN run --agent pr-author --auto --print-logs \"...\""
 if ! run_agent_phase pr-author "$PR_SPEC"; then
   fail "pr phase failed: opencode run exited non-zero (see log above)"
 fi
