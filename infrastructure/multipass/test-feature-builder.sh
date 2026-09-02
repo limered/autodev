@@ -117,8 +117,8 @@ run_agent_phase() {
   printf '%s' "$agent" > /tmp/current-phase
   touch /tmp/heartbeat
   # No --model: each agent resolves its own model from the unpacked opencode
-  # config (~/.config/opencode), so feature-builder, test-runner and pr-author
-  # can differ. $MODEL is reporting-only.
+  # config (~/.config/opencode), so feature-builder, test-runner,
+  # static-analysis and pr-author can differ. $MODEL is reporting-only.
   $OPENCODE_BIN run --agent "$agent" --auto --print-logs "$prompt" </dev/null &
   local phase_pid=$!
   ( while kill -0 "$phase_pid" 2>/dev/null; do sleep 30; touch /tmp/heartbeat 2>/dev/null; done ) &
@@ -129,7 +129,7 @@ run_agent_phase() {
   return "$rc"
 }
 
-echo "Running phase 1/3 (implement): OPENCODE_API_KEY=*** $OPENCODE_BIN run --agent feature-builder --auto --print-logs \"...\""
+echo "Running phase 1/4 (implement): OPENCODE_API_KEY=*** $OPENCODE_BIN run --agent feature-builder --auto --print-logs \"...\""
 if ! run_agent_phase feature-builder "$IMPL_SPEC"; then
   fail "implement phase failed: opencode run exited non-zero (see log above)"
 fi
@@ -161,20 +161,37 @@ TEST_SPEC="BRANCH: $BRANCH
 BASE: $BASE
 REPO: $REPO"
 
-echo "Running phase 2/3 (test): OPENCODE_API_KEY=*** $OPENCODE_BIN run --agent test-runner --auto --print-logs \"...\""
+echo "Running phase 2/4 (test): OPENCODE_API_KEY=*** $OPENCODE_BIN run --agent test-runner --auto --print-logs \"...\""
 if ! run_agent_phase test-runner "$TEST_SPEC"; then
   fail "test phase failed: a declared harness is red or no harness was declared (see log above)"
 fi
 pass "test phase completed (test-runner exited 0, every harness green)"
 
-# 12. Phase 3 - PR: run the pr-author agent as a distinct opencode run in the
+# 12. Phase 3 - static-analysis: run the static-analysis agent in the same clone.
+#     It discovers the repo's own analysers, applies tool autofixes as a
+#     checkpoint commit, classifies residual faults, and files a HITL roll-up
+#     issue. It never fails the run - findings are data, not a red gate - so a
+#     non-zero exit here means an operational failure, not findings.
+#     ponytail: single linear pass; the <=3x quality loop and fix-findings
+#     re-scan (issue 08 orchestration-loop) are not wired here yet.
+SA_SPEC="BRANCH: $BRANCH
+BASE: $BASE
+REPO: $REPO"
+
+echo "Running phase 3/4 (static-analysis): OPENCODE_API_KEY=*** $OPENCODE_BIN run --agent static-analysis --auto --print-logs \"...\""
+if ! run_agent_phase static-analysis "$SA_SPEC"; then
+  fail "static-analysis phase failed: opencode run exited non-zero (operational failure, see log above)"
+fi
+pass "static-analysis phase completed (static-analysis exited 0)"
+
+# 13. Phase 4 - PR: run the pr-author agent as a distinct opencode run in the
 #     same clone. It authors the PR title and body from the branch diff and
 #     POSTs the pull request.
 PR_SPEC="BRANCH: $BRANCH
 BASE: $BASE
 REPO: $REPO"
 
-echo "Running phase 3/3 (PR): OPENCODE_API_KEY=*** $OPENCODE_BIN run --agent pr-author --auto --print-logs \"...\""
+echo "Running phase 4/4 (PR): OPENCODE_API_KEY=*** $OPENCODE_BIN run --agent pr-author --auto --print-logs \"...\""
 if ! run_agent_phase pr-author "$PR_SPEC"; then
   fail "pr phase failed: opencode run exited non-zero (see log above)"
 fi
