@@ -48,4 +48,9 @@ public sealed class FakeRunStore : IRunStore
 
         return Task.FromResult(current);
     }
+
+    public Task<bool> Delete(Guid runId)
+    {
+        return Task.FromResult(_runs.Remove(runId));
+    }
 }

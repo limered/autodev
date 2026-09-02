@@ -50,6 +50,20 @@ public sealed class RunStoreIntegrationTests : IClassFixture<PostgresFixture>, I
     }
 
     [SkippableFact]
+    public async Task Delete_RemovesRow_AndReportsWhetherItExisted()
+    {
+        Skip.IfNot(_fixture.IsDockerAvailable, "Docker is not available; skipping RunStore integration tests.");
+        var runId = Guid.NewGuid();
+        await _store.Apply(runId, Started(DateTimeOffset.UtcNow));
+
+        var deleted = await _store.Delete(runId);
+
+        Assert.True(deleted);
+        Assert.Null(await _fixture.GetRunAsync(runId));
+        Assert.False(await _store.Delete(runId)); // second delete finds nothing
+    }
+
+    [SkippableFact]
     public async Task Heartbeat_WritesHeartbeatAndPhase_WithoutBumpingUpdatedAt()
     {
         Skip.IfNot(_fixture.IsDockerAvailable, "Docker is not available; skipping RunStore integration tests.");

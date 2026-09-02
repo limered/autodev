@@ -30,6 +30,11 @@ public static class RunsEndpoints
         app.MapGet("/runs/active", async (IRunStore store) =>
             Results.Json((await store.Active()).Select(RunResponse.From).ToArray()));
 
+        app.MapDelete("/runs/{runId:guid}", async (Guid runId, IRunStore store) =>
+            await store.Delete(runId)
+                ? Results.NoContent()
+                : Results.NotFound());
+
         return app;
     }
 }

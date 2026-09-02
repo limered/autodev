@@ -14,6 +14,7 @@ public interface IRunStore
     Task<IReadOnlyList<RunState>> Active();
     Task<RunState?> Get(Guid runId);
     Task<RunState?> Apply(Guid runId, RunEvent ev);
+    Task<bool> Delete(Guid runId);
 }
 
 public sealed class RunStore : IRunStore
@@ -134,6 +135,29 @@ public sealed class RunStore : IRunStore
         }
 
         return next;
+    }
+
+    // Hard-delete a run and release any queue slot still linked to it, atomically.
+    // Used by the dashboard to clear stuck runs (e.g. a "launching" row whose VM
+    // never sent another event). The queue delete mirrors RunCompletion.OnFinished
+    // so a deleted run leaves no orphaned queue row.
+    public async Task<bool> Delete(Guid runId)
+    {
+        await using var conn = await _dataSource.OpenConnectionAsync();
+        await using var tx = await conn.BeginTransactionAsync();
+
+        await using var deleteQueueCmd = new NpgsqlCommand(
+            "DELETE FROM queue WHERE run_id = @runId;", conn, tx);
+        deleteQueueCmd.Parameters.AddWithValue("runId", runId);
+        await deleteQueueCmd.ExecuteNonQueryAsync();
+
+        await using var deleteRunCmd = new NpgsqlCommand(
+            "DELETE FROM runs WHERE run_id = @runId;", conn, tx);
+        deleteRunCmd.Parameters.AddWithValue("runId", runId);
+        var rows = await deleteRunCmd.ExecuteNonQueryAsync();
+
+        await tx.CommitAsync();
+        return rows == 1;
     }
 
     private async Task<RunState?> GetLocked(Guid runId, NpgsqlConnection conn, NpgsqlTransaction tx)
