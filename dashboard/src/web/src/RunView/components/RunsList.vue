@@ -12,14 +12,14 @@
 // run started or finished) history's first page is refreshed once so the run
 // appears/updates there. Active polling otherwise never touches history, which
 // keeps the offset paging stable (issue #46).
-import { ref } from 'vue'
-import ActiveRunsList from './ActiveRunsList.vue'
-import RunsHistoryList from './RunsHistoryList.vue'
+import { ref } from "vue";
+import ActiveRunsList from "./ActiveRunsList.vue";
+import RunsHistoryList from "./RunsHistoryList.vue";
 
-const history = ref(null)
+const history = ref(null);
 
 function onActiveSetChange() {
-  history.value?.refreshFirst()
+  history.value?.refreshFirst();
 }
 </script>
 
@@ -31,5 +31,8 @@ function onActiveSetChange() {
 </template>
 
 <style scoped>
-.runs-page { display: flex; flex-direction: column; }
+.runs-page {
+  display: flex;
+  flex-direction: column;
+}
 </style>

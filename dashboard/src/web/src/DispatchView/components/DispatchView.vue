@@ -1,87 +1,95 @@
 <script setup>
-import { computed, ref, watch } from 'vue'
-import { usePollingFeed } from '../../_shared/services/usePollingFeed.js'
-import ErrorBanner from '../../_shared/components/ErrorBanner.vue'
-import { repoColor } from '../../_shared/models/repoColor.js'
-import { useQueueActions } from '../services/useQueueActions.js'
-import { useDragReorder } from '../services/useDragReorder.js'
-import { queueStatus, queueStatusClass, isQueueItemRunning, isQueueItemFailed } from '../models/queueView.js'
-import { hostView } from '../models/hostView.js'
+import { computed, ref, watch } from "vue";
+import { usePollingFeed } from "../../_shared/services/usePollingFeed.js";
+import ErrorBanner from "../../_shared/components/ErrorBanner.vue";
+import { repoColor } from "../../_shared/models/repoColor.js";
+import { useQueueActions } from "../services/useQueueActions.js";
+import { useDragReorder } from "../services/useDragReorder.js";
+import {
+  queueStatus,
+  queueStatusClass,
+  isQueueItemRunning,
+  isQueueItemFailed,
+} from "../models/queueView.js";
+import { hostView } from "../models/hostView.js";
 
-const issuesFeed = usePollingFeed(() => fetch('/issues'))
-const queueFeed = usePollingFeed(() => fetch('/queue'))
-const hostFeed = usePollingFeed(() => fetch('/host'))
+const issuesFeed = usePollingFeed(() => fetch("/issues"));
+const queueFeed = usePollingFeed(() => fetch("/queue"));
+const hostFeed = usePollingFeed(() => fetch("/host"));
 
-const { items: issues } = issuesFeed
-const { items: queue } = queueFeed
-const { items: host } = hostFeed
+const { items: issues } = issuesFeed;
+const { items: queue } = queueFeed;
+const { items: host } = hostFeed;
 
-const actions = useQueueActions()
+const actions = useQueueActions();
 const {
-  enqueueError, isEnqueueing,
-  reorderError, isReordering,
-  removeError, isRemoving,
-  startNextError, isStartingNext,
-  restartError, isRestarting
-} = actions
+  enqueueError,
+  isEnqueueing,
+  reorderError,
+  isReordering,
+  removeError,
+  isRemoving,
+  startNextError,
+  isStartingNext,
+  restartError,
+  isRestarting,
+} = actions;
 
-const localQueue = ref([])
+const localQueue = ref([]);
 
-const {
-  draggedId, dragOverId,
-  onDragStart, onDragOver, onDragLeave, onDragEnd, onDrop
-} = useDragReorder({
-  items: localQueue,
-  onReorder: async (ids) => {
-    await actions.reorder(ids)
-    await queueFeed.load()
-  }
-})
+const { draggedId, dragOverId, onDragStart, onDragOver, onDragLeave, onDragEnd, onDrop } =
+  useDragReorder({
+    items: localQueue,
+    onReorder: async (ids) => {
+      await actions.reorder(ids);
+      await queueFeed.load();
+    },
+  });
 
 watch(
   queue,
   (newQueue) => {
     if (!isReordering.value && draggedId.value === null) {
-      localQueue.value = [...newQueue]
+      localQueue.value = [...newQueue];
     }
   },
-  { immediate: true }
-)
+  { immediate: true },
+);
 
-const queuedIssueIds = computed(() => new Set(queue.value.map(q => q.issueId)))
+const queuedIssueIds = computed(() => new Set(queue.value.map((q) => q.issueId)));
 const eligibleIssues = computed(() =>
-  issues.value.filter(issue => !queuedIssueIds.value.has(issue.gitHubId))
-)
-const hasRunningItem = computed(() => queue.value.some(isQueueItemRunning))
-const nextQueueItem = computed(() => localQueue.value[0] ?? null)
-const isSaving = computed(() => isReordering.value || isRemoving.value || isRestarting.value)
-const connectionError = computed(() => issuesFeed.error.value || queueFeed.error.value)
-const isPollingLoading = computed(() => issuesFeed.isLoading.value || queueFeed.isLoading.value)
-const hostBadge = computed(() => hostView(host.value, Date.now()))
+  issues.value.filter((issue) => !queuedIssueIds.value.has(issue.gitHubId)),
+);
+const hasRunningItem = computed(() => queue.value.some(isQueueItemRunning));
+const nextQueueItem = computed(() => localQueue.value[0] ?? null);
+const isSaving = computed(() => isReordering.value || isRemoving.value || isRestarting.value);
+const connectionError = computed(() => issuesFeed.error.value || queueFeed.error.value);
+const isPollingLoading = computed(() => issuesFeed.isLoading.value || queueFeed.isLoading.value);
+const hostBadge = computed(() => hostView(host.value, Date.now()));
 
 async function enqueue(issue) {
   if (await actions.enqueue(issue.gitHubId)) {
-    await Promise.all([issuesFeed.load(), queueFeed.load()])
+    await Promise.all([issuesFeed.load(), queueFeed.load()]);
   }
 }
 
 async function remove(item) {
   if (await actions.remove(item.id)) {
-    await Promise.all([issuesFeed.load(), queueFeed.load()])
+    await Promise.all([issuesFeed.load(), queueFeed.load()]);
   }
 }
 
 async function startNext() {
-  const item = nextQueueItem.value
-  if (!item || hasRunningItem.value) return
+  const item = nextQueueItem.value;
+  if (!item || hasRunningItem.value) return;
   if (await actions.startNext(item.id)) {
-    await queueFeed.load()
+    await queueFeed.load();
   }
 }
 
 async function restart(item) {
   if (await actions.restart(item.id)) {
-    await queueFeed.load()
+    await queueFeed.load();
   }
 }
 </script>
@@ -100,7 +108,9 @@ async function restart(item) {
         <div class="connection host-badge" :class="hostBadge.freshnessClass">
           <span class="connection-dot"></span>
           <span>{{ hostBadge.label }}</span>
-          <span v-if="!hostBadge.online" class="host-last-seen">(last seen {{ hostBadge.lastSeen }})</span>
+          <span v-if="!hostBadge.online" class="host-last-seen"
+            >(last seen {{ hostBadge.lastSeen }})</span
+          >
         </div>
       </div>
     </header>
@@ -120,24 +130,19 @@ async function restart(item) {
         <ErrorBanner v-if="enqueueError" title="Enqueue failed" :message="enqueueError" />
 
         <section v-if="eligibleIssues.length" class="issue-list">
-          <article
-            v-for="issue in eligibleIssues"
-            :key="issue.gitHubId"
-            class="issue-row"
-          >
+          <article v-for="issue in eligibleIssues" :key="issue.gitHubId" class="issue-row">
             <div class="issue-meta">
               <a :href="issue.htmlUrl" target="_blank" rel="noopener" class="issue-title">
                 {{ issue.title }}
               </a>
               <span class="issue-ref mono">
-                <span class="issue-repo" :style="{ color: repoColor(issue.repo) }">{{ issue.repo }}</span>#{{ issue.number }}
+                <span class="issue-repo" :style="{ color: repoColor(issue.repo) }">{{
+                  issue.repo
+                }}</span
+                >#{{ issue.number }}
               </span>
             </div>
-            <button
-              class="enqueue-button"
-              :disabled="isEnqueueing"
-              @click="enqueue(issue)"
-            >
+            <button class="enqueue-button" :disabled="isEnqueueing" @click="enqueue(issue)">
               Enqueue →
             </button>
           </article>
@@ -175,7 +180,7 @@ async function restart(item) {
           :disabled="!nextQueueItem || hasRunningItem || isStartingNext"
           @click="startNext"
         >
-          {{ isStartingNext ? 'Starting…' : 'Start next' }}
+          {{ isStartingNext ? "Starting…" : "Start next" }}
         </button>
 
         <section v-if="localQueue.length" class="queue-list">
@@ -198,7 +203,10 @@ async function restart(item) {
                   {{ item.title }}
                 </a>
                 <span class="issue-ref mono">
-                  <span class="issue-repo" :style="{ color: repoColor(item.repo) }">{{ item.repo }}</span>#{{ item.number }}
+                  <span class="issue-repo" :style="{ color: repoColor(item.repo) }">{{
+                    item.repo
+                  }}</span
+                  >#{{ item.number }}
                 </span>
               </template>
               <template v-else>
@@ -217,11 +225,7 @@ async function restart(item) {
             >
               Restart
             </button>
-            <button
-              class="remove-button"
-              :disabled="isRemoving"
-              @click="remove(item)"
-            >
+            <button class="remove-button" :disabled="isRemoving" @click="remove(item)">
               Remove
             </button>
           </article>
@@ -427,7 +431,9 @@ h2 {
   font-size: 0.8rem;
   font-weight: 600;
   cursor: pointer;
-  transition: background 0.15s ease, border-color 0.15s ease;
+  transition:
+    background 0.15s ease,
+    border-color 0.15s ease;
 }
 
 .enqueue-button:hover:not(:disabled) {
@@ -450,7 +456,9 @@ h2 {
   border: 1px solid var(--border);
   border-radius: var(--radius);
   cursor: grab;
-  transition: border-color 0.15s ease, opacity 0.15s ease;
+  transition:
+    border-color 0.15s ease,
+    opacity 0.15s ease;
 }
 
 .queue-row:hover {
@@ -521,13 +529,27 @@ h2 {
   background: currentColor;
 }
 
-.status-queued { color: var(--text-muted); }
-.status-starting { color: var(--cyan); }
-.status-starting .status-indicator { animation: blink 1.4s infinite; }
-.status-running { color: var(--green); }
-.status-running .status-indicator { animation: blink 1.4s infinite; }
-.status-done { color: var(--blue); }
-.status-failed { color: var(--red); }
+.status-queued {
+  color: var(--text-muted);
+}
+.status-starting {
+  color: var(--cyan);
+}
+.status-starting .status-indicator {
+  animation: blink 1.4s infinite;
+}
+.status-running {
+  color: var(--green);
+}
+.status-running .status-indicator {
+  animation: blink 1.4s infinite;
+}
+.status-done {
+  color: var(--blue);
+}
+.status-failed {
+  color: var(--red);
+}
 
 .start-next-button {
   width: 100%;
@@ -540,7 +562,9 @@ h2 {
   font-size: 0.9rem;
   font-weight: 600;
   cursor: pointer;
-  transition: background 0.15s ease, color 0.15s ease;
+  transition:
+    background 0.15s ease,
+    color 0.15s ease;
 }
 
 .start-next-button:hover:not(:disabled) {
@@ -563,7 +587,10 @@ h2 {
   font-size: 0.75rem;
   font-weight: 600;
   cursor: pointer;
-  transition: background 0.15s ease, border-color 0.15s ease, color 0.15s ease;
+  transition:
+    background 0.15s ease,
+    border-color 0.15s ease,
+    color 0.15s ease;
 }
 
 .remove-button:hover:not(:disabled) {
@@ -587,7 +614,10 @@ h2 {
   font-size: 0.75rem;
   font-weight: 600;
   cursor: pointer;
-  transition: background 0.15s ease, border-color 0.15s ease, color 0.15s ease;
+  transition:
+    background 0.15s ease,
+    border-color 0.15s ease,
+    color 0.15s ease;
 }
 
 .restart-button:hover:not(:disabled) {
@@ -602,13 +632,23 @@ h2 {
 }
 
 @keyframes blink {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0.35; }
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.35;
+  }
 }
 
 @keyframes pulse {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0.6; }
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.6;
+  }
 }
 
 @media (max-width: 640px) {

@@ -1,38 +1,45 @@
 <script setup>
-import { computed, onMounted, onUnmounted } from 'vue'
-import { useRoute, useRouter } from 'vue-router'
+import { computed, onMounted, onUnmounted } from "vue";
+import { useRoute, useRouter } from "vue-router";
 
-const route = useRoute()
-const router = useRouter()
+const route = useRoute();
+const router = useRouter();
 
-const pages = router.options.routes.map(r => ({
+const pages = router.options.routes.map((r) => ({
   path: r.path,
   title: r.meta.title,
   hotkey: r.meta.hotkey,
-}))
+}));
 
-const currentTitle = computed(() => route.meta.title ?? '')
+const currentTitle = computed(() => route.meta.title ?? "");
 
 function onKey(e) {
-  const t = e.target
-  if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)) return
-  const hit = pages.find(p => p.hotkey === e.key)
-  if (hit) { router.push(hit.path); e.preventDefault() }
+  const t = e.target;
+  if (t && (t.tagName === "INPUT" || t.tagName === "TEXTAREA" || t.isContentEditable)) return;
+  const hit = pages.find((p) => p.hotkey === e.key);
+  if (hit) {
+    router.push(hit.path);
+    e.preventDefault();
+  }
 }
-onMounted(() => window.addEventListener('keydown', onKey))
-onUnmounted(() => window.removeEventListener('keydown', onKey))
+onMounted(() => window.addEventListener("keydown", onKey));
+onUnmounted(() => window.removeEventListener("keydown", onKey));
 </script>
 
 <template>
   <main class="dashboard">
     <header class="page-header">
       <div class="prompt-line mono">
-        <span class="prompt">factory</span><span class="colon">:</span><span class="path">~/{{ currentTitle }}</span><span class="cursor">$</span>
+        <span class="prompt">factory</span><span class="colon">:</span
+        ><span class="path">~/{{ currentTitle }}</span
+        ><span class="cursor">$</span>
       </div>
       <nav class="segmented mono">
         <RouterLink
-          v-for="p in pages" :key="p.path"
-          class="seg" :to="p.path"
+          v-for="p in pages"
+          :key="p.path"
+          class="seg"
+          :to="p.path"
           :aria-current="route.path === p.path ? 'page' : null"
         >
           <span class="seg-key">[{{ p.hotkey }}]</span> {{ p.title }}
@@ -71,7 +78,8 @@ onUnmounted(() => window.removeEventListener('keydown', onKey))
   --radius: 0.75rem;
   --shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
   --font-sans: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-  --font-mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, "Liberation Mono", monospace;
+  --font-mono:
+    ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, "Liberation Mono", monospace;
 }
 
 * {
@@ -105,12 +113,29 @@ body {
   border-bottom: 1px solid var(--border);
 }
 
-.prompt-line { font-size: 1.1rem; }
-.prompt { color: var(--accent); font-weight: 700; }
-.colon { color: var(--text-dim); }
-.path { color: var(--cyan); }
-.cursor { color: var(--text); margin-left: 0.25rem; animation: blink 1.1s step-end infinite; }
-@keyframes blink { 50% { opacity: 0; } }
+.prompt-line {
+  font-size: 1.1rem;
+}
+.prompt {
+  color: var(--accent);
+  font-weight: 700;
+}
+.colon {
+  color: var(--text-dim);
+}
+.path {
+  color: var(--cyan);
+}
+.cursor {
+  color: var(--text);
+  margin-left: 0.25rem;
+  animation: blink 1.1s step-end infinite;
+}
+@keyframes blink {
+  50% {
+    opacity: 0;
+  }
+}
 
 .segmented {
   display: inline-flex;
@@ -128,10 +153,22 @@ body {
   text-decoration: none;
   border-right: 1px solid var(--border);
 }
-.seg:last-child { border-right: none; }
-.seg:hover { color: var(--text); background: var(--surface-2); }
-.seg.router-link-exact-active { color: var(--bg); background: var(--accent); }
-.seg-key { opacity: 0.7; }
+.seg:last-child {
+  border-right: none;
+}
+.seg:hover {
+  color: var(--text);
+  background: var(--surface-2);
+}
+.seg.router-link-exact-active {
+  color: var(--bg);
+  background: var(--accent);
+}
+.seg-key {
+  opacity: 0.7;
+}
 
-.mono { font-family: var(--font-mono); }
+.mono {
+  font-family: var(--font-mono);
+}
 </style>
