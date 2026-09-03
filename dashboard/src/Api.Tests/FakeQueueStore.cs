@@ -15,17 +15,18 @@ public sealed class FakeQueueStore : IQueueStore
 
     public Task<QueueListItem?> Enqueue(long issueId)
     {
-        var existing = _items.FirstOrDefault(i => i.IssueId == issueId);
+        // Rank/dedup derivation is QueueRules', shared with the real SQL store; only
+        // the storage here is fake.
+        var existing = QueueRules.ExistingForIssue(_items, issueId);
         if (existing is not null)
         {
             return Task.FromResult<QueueListItem?>(existing);
         }
 
-        var nextRank = _items.Any() ? _items.Max(i => i.Rank) + 1 : 1;
         var item = new QueueListItem(
             _nextId++,
             issueId,
-            nextRank,
+            QueueRules.NextRank(_items.Select(i => i.Rank)),
             null,
             null,
             null,
@@ -68,10 +69,7 @@ public sealed class FakeQueueStore : IQueueStore
 
     public Task<ClaimedQueueItem?> ClaimNext()
     {
-        var item = _items
-            .Where(i => i.StartRequestedAt.HasValue && i.RunId is null)
-            .OrderBy(i => i.Rank)
-            .FirstOrDefault();
+        var item = QueueRules.NextClaimable(_items);
 
         if (item is null)
         {

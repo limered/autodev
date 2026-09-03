@@ -7,9 +7,10 @@ namespace Api.Tests;
 /// Integration tests that exercise the <em>real</em> <see cref="QueueStore"/> SQL against a
 /// real Postgres container (via <see cref="PostgresFixture"/>). They re-run the
 /// meaningful behaviours <see cref="QueueTests"/> asserts against <c>FakeQueueStore</c>,
-/// but through actual SQL so the bugs a fake cannot catch (reader-open-during-commit in
-/// <see cref="QueueStore.ClaimNext"/>, a WHERE appended after ORDER BY in the shared select,
-/// and an Int32&rarr;long unbox on MAX(rank)) fail in CI instead of on Render.
+/// but through actual SQL so the SQL-shaped bugs a fake cannot catch (a reader held open
+/// across a commit, a WHERE appended after an ORDER BY in the shared select, an aggregate
+/// unboxed to the wrong integer type) fail in CI instead of on Render. The shared
+/// decisions themselves are pinned once in <see cref="QueueRulesTests"/>.
 /// </summary>
 public sealed class QueueStoreIntegrationTests : IClassFixture<PostgresFixture>, IAsyncLifetime
 {
