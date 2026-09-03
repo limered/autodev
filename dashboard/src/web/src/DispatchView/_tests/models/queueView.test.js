@@ -4,6 +4,7 @@ import {
   queueStatusClass,
   isQueueItemRunning,
   isQueueItemFailed,
+  resolveLocalQueue,
 } from "../../models/queueView.js";
 
 describe("queueStatus", () => {
@@ -69,5 +70,28 @@ describe("isQueueItemFailed", () => {
 
   it("returns true for failed runs", () => {
     expect(isQueueItemFailed({ runId: "r1", runStatus: "failed" })).toBe(true);
+  });
+});
+
+// Table-tested with no DOM and no fake fetch: this is the pure half of the
+// localQueue convergence policy; the ref/watch plumbing in RunQueueColumn
+// calls it (issue #75).
+describe("resolveLocalQueue", () => {
+  const feed = [{ id: "q1" }, { id: "q2" }];
+  const local = [{ id: "q2" }, { id: "q1" }];
+
+  it("takes the feed while idle", () => {
+    const resolved = resolveLocalQueue(feed, local, { isSaving: false, isDragging: false });
+
+    expect(resolved).toEqual(feed);
+    expect(resolved).not.toBe(feed); // copied: the shadow never aliases the feed array
+  });
+
+  it("keeps the local order when the feed changes mid-drag", () => {
+    expect(resolveLocalQueue(feed, local, { isSaving: false, isDragging: true })).toBe(local);
+  });
+
+  it("keeps the local order while a save is in flight", () => {
+    expect(resolveLocalQueue(feed, local, { isSaving: true, isDragging: false })).toBe(local);
   });
 });
