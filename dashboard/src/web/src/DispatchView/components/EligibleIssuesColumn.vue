@@ -2,6 +2,7 @@
 import { computed } from "vue";
 import ErrorBanner from "../../_shared/components/ErrorBanner.vue";
 import { repoColor } from "../../_shared/models/repoColor.js";
+import { eligibleIssues } from "../models/issuesView.js";
 import { useQueueActions } from "../services/useQueueActions.js";
 
 // The eligible-issues column of the DispatchView split: renders the synced
@@ -26,9 +27,10 @@ const props = defineProps({
 
 const { enqueue, enqueueError, isEnqueueing } = useQueueActions();
 
-const eligibleIssues = computed(() =>
-  props.issues.filter((issue) => !props.queuedIssueIds.has(issue.gitHubId)),
-);
+// Which synced issues count as eligible is pure view logic, so it lives in
+// models/issuesView.js (table-tested there); this computed just re-derives
+// it when either feed moves.
+const eligible = computed(() => eligibleIssues(props.issues, props.queuedIssueIds));
 
 // The Enqueue button's write-then-resync: run the write, then refresh both
 // feeds it affects — the queue gains a row and the synced issue set may
@@ -55,8 +57,8 @@ async function onEnqueue(issue) {
 
     <ErrorBanner v-if="enqueueError" title="Enqueue failed" :message="enqueueError" />
 
-    <section v-if="eligibleIssues.length" class="issue-list">
-      <article v-for="issue in eligibleIssues" :key="issue.gitHubId" class="issue-row">
+    <section v-if="eligible.length" class="issue-list">
+      <article v-for="issue in eligible" :key="issue.gitHubId" class="issue-row">
         <div class="issue-meta">
           <a :href="issue.htmlUrl" target="_blank" rel="noopener" class="issue-title">
             {{ issue.title }}
