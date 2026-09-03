@@ -12,7 +12,7 @@ public interface IRunStore
     Task<IReadOnlyList<RunState>> All();
     Task<IReadOnlyList<RunState>> All(int skip, int take);
     Task<IReadOnlyList<RunState>> Active();
-    Task<RunState?> Get(Guid runId);
+    Task<RunState?> GetRun(Guid runId);
     Task<RunState?> Apply(Guid runId, RunEvent ev);
     Task<bool> Delete(Guid runId);
 }
@@ -73,7 +73,7 @@ public sealed class RunStore : IRunStore
         return await Query($"{SelectSql} WHERE status IN ('launching', 'running', 'stalled') ORDER BY started_at DESC");
     }
 
-    public async Task<RunState?> Get(Guid runId)
+    public async Task<RunState?> GetRun(Guid runId)
     {
         await using var conn = await _dataSource.OpenConnectionAsync();
         await using var cmd = new NpgsqlCommand($"{SelectSql} WHERE run_id = @id", conn);
@@ -160,7 +160,7 @@ public sealed class RunStore : IRunStore
         return rows == 1;
     }
 
-    private async Task<RunState?> GetLocked(Guid runId, NpgsqlConnection conn, NpgsqlTransaction tx)
+    private static async Task<RunState?> GetLocked(Guid runId, NpgsqlConnection conn, NpgsqlTransaction tx)
     {
         await using var cmd = new NpgsqlCommand($"{SelectSql} WHERE run_id = @id FOR UPDATE", conn, tx);
         cmd.Parameters.AddWithValue("id", runId);
@@ -344,7 +344,7 @@ public sealed class RunStore : IRunStore
         return r.IsDBNull(ordinal) ? null : r.GetFieldValue<DateTimeOffset>(ordinal);
     }
 
-    private static IReadOnlyList<RunStage>? GetStagesOrNull(NpgsqlDataReader r, string column)
+    private static List<RunStage>? GetStagesOrNull(NpgsqlDataReader r, string column)
     {
         var ordinal = r.GetOrdinal(column);
         if (r.IsDBNull(ordinal))

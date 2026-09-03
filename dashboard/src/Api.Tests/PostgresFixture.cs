@@ -86,7 +86,7 @@ public sealed class PostgresFixture : IAsyncLifetime
     public async Task<RunState?> GetRunAsync(Guid runId)
     {
         var (store, _) = CreateRunStore();
-        return await store.Get(runId);
+        return await store.GetRun(runId);
     }
 
     public async Task InitializeAsync()
