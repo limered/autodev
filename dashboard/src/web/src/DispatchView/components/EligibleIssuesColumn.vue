@@ -1,9 +1,9 @@
 <script setup>
 import { computed } from "vue";
 import ErrorBanner from "../../_shared/components/ErrorBanner.vue";
-import { repoColor } from "../../_shared/models/repoColor.js";
 import { eligibleIssues } from "../models/issuesView.js";
 import { useQueueActions } from "../services/useQueueActions.js";
+import IssueRef from "./IssueRef.vue";
 
 // The eligible-issues column of the DispatchView split: renders the synced
 // open issues that are not already queued and owns what its button does —
@@ -60,15 +60,12 @@ async function onEnqueue(issue) {
     <section v-if="eligible.length" class="issue-list">
       <article v-for="issue in eligible" :key="issue.gitHubId" class="issue-row">
         <div class="issue-meta">
-          <a :href="issue.htmlUrl" target="_blank" rel="noopener" class="issue-title">
-            {{ issue.title }}
-          </a>
-          <span class="issue-ref mono">
-            <span class="issue-repo" :style="{ color: repoColor(issue.repo) }">{{
-              issue.repo
-            }}</span
-            >#{{ issue.number }}
-          </span>
+          <IssueRef
+            :html-url="issue.htmlUrl"
+            :title="issue.title"
+            :repo="issue.repo"
+            :number="issue.number"
+          />
         </div>
         <button class="enqueue-button" :disabled="isEnqueueing" @click="onEnqueue(issue)">
           Enqueue →
@@ -150,27 +147,6 @@ h2 {
   gap: 0.15rem;
 }
 
-.issue-title {
-  color: var(--text);
-  text-decoration: none;
-  font-weight: 500;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.issue-title:hover {
-  text-decoration: underline;
-}
-
-.issue-ref {
-  font-size: 0.8rem;
-  color: var(--text-muted);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
 .enqueue-button {
   flex-shrink: 0;
   padding: 0.4rem 0.75rem;
@@ -213,10 +189,6 @@ h2 {
   margin: 0;
 }
 
-.mono {
-  font-family: var(--font-mono);
-}
-
 @media (max-width: 640px) {
   .issue-row {
     flex-direction: column;
@@ -224,7 +196,10 @@ h2 {
     gap: 0.5rem;
   }
 
-  .issue-title {
+  /* The title link lives in IssueRef now, so reaching it needs :deep();
+     this column's mobile behaviour is to let the wrapped row's title wrap
+     instead of ellipsizing. */
+  :deep(.issue-title) {
     white-space: normal;
   }
 }
