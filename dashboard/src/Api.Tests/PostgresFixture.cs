@@ -44,9 +44,10 @@ public sealed class PostgresFixture : IAsyncLifetime
     public QueueStore CreateStore() => new(_dataSource, _hostStore);
 
     /// <summary>
-    /// Constructs a real <see cref="RunStore"/> wired with a real <see cref="RunCompletion"/>
-    /// and a <see cref="RecordingGitHubIssuesClient"/> so tests can assert the finish path
-    /// resolved and closed the linked issue. Only valid when <see cref="IsDockerAvailable"/>.
+    /// Constructs a real <see cref="RunStore"/> (queue release + linked-issue resolve
+    /// inlined in Apply) and a <see cref="RecordingGitHubIssuesClient"/> so tests can
+    /// assert the finish path resolved and closed the linked issue. Only valid when
+    /// <see cref="IsDockerAvailable"/>.
     /// </summary>
     public (RunStore Store, RecordingGitHubIssuesClient GitHub) CreateRunStore()
     {
@@ -55,8 +56,7 @@ public sealed class PostgresFixture : IAsyncLifetime
             _dataSource,
             NullLogger<RunStore>.Instance,
             gitHub,
-            _hostStore,
-            new RunCompletion());
+            _hostStore);
         return (store, gitHub);
     }
 

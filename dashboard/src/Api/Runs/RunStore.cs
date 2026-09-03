@@ -23,7 +23,6 @@ public sealed class RunStore : IRunStore
     private readonly ILogger<RunStore> _logger;
     private readonly IGitHubIssuesClient _gitHub;
     private readonly IHostStore _hostStore;
-    private readonly IRunCompletion _completion;
 
     private const string RunColumns =
         "run_id, repo, branch, spec, model, vm_name, status, started_at, finished_at, last_heartbeat_at, pr_url, failure_reason, freeze_captured, freeze_local_path, updated_at, stages, current_phase";
@@ -46,13 +45,12 @@ public sealed class RunStore : IRunStore
         }
     }
 
-    public RunStore(NpgsqlDataSource dataSource, ILogger<RunStore> logger, IGitHubIssuesClient gitHub, IHostStore hostStore, IRunCompletion completion)
+    public RunStore(NpgsqlDataSource dataSource, ILogger<RunStore> logger, IGitHubIssuesClient gitHub, IHostStore hostStore)
     {
         _dataSource = dataSource;
         _logger = logger;
         _gitHub = gitHub;
         _hostStore = hostStore;
-        _completion = completion;
     }
 
     public async Task<IReadOnlyList<RunState>> All()
@@ -112,7 +110,12 @@ public sealed class RunStore : IRunStore
         (string Repo, int Number)? issueToClose = null;
         if (ev.Type == "run-finished")
         {
-            issueToClose = await _completion.OnFinished(runId, conn, tx);
+            // ponytail: the linked-issue resolve and the queue-row delete live here in
+            // Apply deliberately, inlined rather than abstracted. They only make sense
+            // inside this transaction, so the old conn/tx-passing IRunCompletion seam
+            // (one implementation, zero abstracted behaviour) was deleted, not kept.
+            issueToClose = await GetLinkedIssue(runId, conn, tx);
+            await ReleaseQueueSlot(runId, conn, tx);
         }
 
         await tx.CommitAsync();
@@ -139,17 +142,14 @@ public sealed class RunStore : IRunStore
 
     // Hard-delete a run and release any queue slot still linked to it, atomically.
     // Used by the dashboard to clear stuck runs (e.g. a "launching" row whose VM
-    // never sent another event). The queue delete mirrors RunCompletion.OnFinished
-    // so a deleted run leaves no orphaned queue row.
+    // never sent another event). The queue delete mirrors the run-finished release in
+    // Apply so a deleted run leaves no orphaned queue row.
     public async Task<bool> Delete(Guid runId)
     {
         await using var conn = await _dataSource.OpenConnectionAsync();
         await using var tx = await conn.BeginTransactionAsync();
 
-        await using var deleteQueueCmd = new NpgsqlCommand(
-            "DELETE FROM queue WHERE run_id = @runId;", conn, tx);
-        deleteQueueCmd.Parameters.AddWithValue("runId", runId);
-        await deleteQueueCmd.ExecuteNonQueryAsync();
+        await ReleaseQueueSlot(runId, conn, tx);
 
         await using var deleteRunCmd = new NpgsqlCommand(
             "DELETE FROM runs WHERE run_id = @runId;", conn, tx);
@@ -172,6 +172,39 @@ public sealed class RunStore : IRunStore
         }
 
         return MapRun(r);
+    }
+
+    /// <summary>The GitHub issue linked to a run via its queue row, or none.</summary>
+    private static async Task<(string Repo, int Number)?> GetLinkedIssue(
+        Guid runId,
+        NpgsqlConnection conn,
+        NpgsqlTransaction tx)
+    {
+        await using var cmd = new NpgsqlCommand(
+            """
+            SELECT i.repo, i.number
+            FROM queue q
+            JOIN issues i ON i.github_id = q.issue_id
+            WHERE q.run_id = @runId;
+            """, conn, tx);
+        cmd.Parameters.AddWithValue("runId", runId);
+
+        await using var reader = await cmd.ExecuteReaderAsync();
+        if (!await reader.ReadAsync())
+        {
+            return null;
+        }
+
+        return (reader.GetString(0), reader.GetInt32(1));
+    }
+
+    /// <summary>Releases the run's queue slot (if any) within the caller's transaction.</summary>
+    private static async Task ReleaseQueueSlot(Guid runId, NpgsqlConnection conn, NpgsqlTransaction tx)
+    {
+        await using var cmd = new NpgsqlCommand(
+            "DELETE FROM queue WHERE run_id = @runId;", conn, tx);
+        cmd.Parameters.AddWithValue("runId", runId);
+        await cmd.ExecuteNonQueryAsync();
     }
 
     private static async Task Persist(RunState next, RunState? current, NpgsqlConnection conn, NpgsqlTransaction tx)
