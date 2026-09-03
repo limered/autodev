@@ -2,16 +2,16 @@
 import { computed } from "vue";
 import { usePollingFeed } from "../../_shared/services/usePollingFeed.js";
 import { hostView } from "../models/hostView.js";
-import { useQueueActions } from "../services/useQueueActions.js";
 import EligibleIssuesColumn from "./EligibleIssuesColumn.vue";
 import RunQueueColumn from "./RunQueueColumn.vue";
 
-// Composition layer for the dispatch split: owns the three feeds and the
-// queue write actions (useQueueActions), and wires them into the two
-// columns. The eligible column owns the eligibility filter; the queue
-// column owns the drag-reorder interaction and its localQueue shadow copy.
-// The columns share almost no state, so each keeps its own test surface
-// (enqueue vs drag-reorder, covered in _tests/components/).
+// Read composition layer for the dispatch split: owns the three feeds and
+// the cross-feed wiring — the header indicators and the queued-issue ids the
+// eligible column filters by. Each column owns its own write actions and
+// re-syncs (useQueueActions lives in the columns now), so only read state
+// and the feed loads flow down: no action state or handler passes through.
+// A write in flight surfaces where it belongs — the queue column's
+// "saving…" chip and the eligible column's disabled enqueue buttons.
 const issuesFeed = usePollingFeed(() => fetch("/issues"));
 const queueFeed = usePollingFeed(() => fetch("/queue"));
 const hostFeed = usePollingFeed(() => fetch("/host"));
@@ -20,59 +20,12 @@ const { items: issues } = issuesFeed;
 const { items: queue } = queueFeed;
 const { items: host } = hostFeed;
 
-const actions = useQueueActions();
-const {
-  enqueueError,
-  isEnqueueing,
-  reorderError,
-  isReordering,
-  removeError,
-  isRemoving,
-  startNextError,
-  isStartingNext,
-  restartError,
-  isRestarting,
-} = actions;
-
 // The eligible column's filter input: which synced issues are already queued.
 const queuedIssueIds = computed(() => new Set(queue.value.map((q) => q.issueId)));
 
-const isSaving = computed(() => isReordering.value || isRemoving.value || isRestarting.value);
 const connectionError = computed(() => issuesFeed.error.value || queueFeed.error.value);
 const isPollingLoading = computed(() => issuesFeed.isLoading.value || queueFeed.isLoading.value);
 const hostBadge = computed(() => hostView(host.value, Date.now()));
-
-// Column events land here: run the write action, then refresh whichever
-// feeds show its effect. Reorder re-syncs the queue unconditionally so the
-// column's shadow copy converges on server truth even when the persist failed.
-async function enqueue(issue) {
-  if (await actions.enqueue(issue.gitHubId)) {
-    await Promise.all([issuesFeed.load(), queueFeed.load()]);
-  }
-}
-
-async function remove(item) {
-  if (await actions.remove(item.id)) {
-    await Promise.all([issuesFeed.load(), queueFeed.load()]);
-  }
-}
-
-async function startNext(item) {
-  if (await actions.startNext(item.id)) {
-    await queueFeed.load();
-  }
-}
-
-async function restart(item) {
-  if (await actions.restart(item.id)) {
-    await queueFeed.load();
-  }
-}
-
-async function reorder(ids) {
-  await actions.reorder(ids);
-  await queueFeed.load();
-}
 </script>
 
 <template>
@@ -80,10 +33,9 @@ async function reorder(ids) {
     <header class="dispatch-header">
       <h2><span class="prompt">&gt;</span> Dispatch</h2>
       <div class="dispatch-indicators">
-        <div class="connection" :class="{ loading: isPollingLoading || isSaving }">
+        <div class="connection" :class="{ loading: isPollingLoading }">
           <span class="connection-dot"></span>
           <span v-if="connectionError">sync error</span>
-          <span v-else-if="isSaving">saving</span>
           <span v-else>live</span>
         </div>
         <div class="connection host-badge" :class="hostBadge.freshnessClass">
@@ -101,26 +53,15 @@ async function reorder(ids) {
         :issues="issues"
         :queued-issue-ids="queuedIssueIds"
         :sync-error="issuesFeed.error.value"
-        :enqueue-error="enqueueError"
-        :is-enqueueing="isEnqueueing"
-        @enqueue="enqueue"
+        :reload-issues="issuesFeed.load"
+        :reload-queue="queueFeed.load"
       />
 
       <RunQueueColumn
         :queue="queue"
         :sync-error="queueFeed.error.value"
-        :reorder-error="reorderError"
-        :remove-error="removeError"
-        :start-next-error="startNextError"
-        :restart-error="restartError"
-        :is-reordering="isReordering"
-        :is-removing="isRemoving"
-        :is-starting-next="isStartingNext"
-        :is-restarting="isRestarting"
-        @reorder="reorder"
-        @remove="remove"
-        @restart="restart"
-        @start-next="startNext"
+        :reload-issues="issuesFeed.load"
+        :reload-queue="queueFeed.load"
       />
     </div>
   </section>

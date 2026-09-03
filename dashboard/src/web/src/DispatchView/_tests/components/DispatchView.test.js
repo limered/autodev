@@ -7,7 +7,8 @@ import DispatchView from "../../components/DispatchView.vue";
 // contract can be asserted without a DOM. Feeds only load on mount, which SSR
 // never runs, so the orchestrator renders deterministically with empty feeds:
 // both columns composed, each telling its empty-state story, plus the panel
-// header with its host badge.
+// header with its host badge. The write actions live in the columns now
+// (issue #75); what's asserted here is the read wiring that remains.
 async function renderView() {
   const app = createSSRApp({ render: () => h(DispatchView) });
   return renderToString(app);
