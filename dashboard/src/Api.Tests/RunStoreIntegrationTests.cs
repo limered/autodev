@@ -32,6 +32,15 @@ public sealed class RunStoreIntegrationTests : IClassFixture<PostgresFixture>, I
         null, null, null, null,
         Stages: new[] { new RunStage("build", "gpt-x") });
 
+    // Postgres timestamptz keeps microsecond precision while DateTimeOffset keeps 100ns
+    // ticks, so a UtcNow with a sub-microsecond tail never round-trips exactly. Seed the
+    // clock reading with the tail trimmed so exact-equality assertions are deterministic.
+    private static DateTimeOffset UtcNowAtMicrosecondPrecision()
+    {
+        var now = DateTimeOffset.UtcNow;
+        return now.AddTicks(-(now.Ticks % 10));
+    }
+
     [SkippableFact]
     public async Task RunStarted_InsertsRow()
     {
@@ -68,7 +77,7 @@ public sealed class RunStoreIntegrationTests : IClassFixture<PostgresFixture>, I
     {
         Skip.IfNot(_fixture.IsDockerAvailable, "Docker is not available; skipping RunStore integration tests.");
         var runId = Guid.NewGuid();
-        var started = DateTimeOffset.UtcNow;
+        var started = UtcNowAtMicrosecondPrecision();
         await _store.Apply(runId, Started(started));
         var before = await _fixture.GetRunAsync(runId);
 
@@ -88,7 +97,7 @@ public sealed class RunStoreIntegrationTests : IClassFixture<PostgresFixture>, I
     {
         Skip.IfNot(_fixture.IsDockerAvailable, "Docker is not available; skipping RunStore integration tests.");
         var runId = Guid.NewGuid();
-        var started = DateTimeOffset.UtcNow;
+        var started = UtcNowAtMicrosecondPrecision();
         await _store.Apply(runId, Started(started));
 
         var at = started.AddSeconds(3);
