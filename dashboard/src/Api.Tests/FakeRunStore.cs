@@ -31,7 +31,7 @@ public sealed class FakeRunStore : IRunStore
         return Task.FromResult<IReadOnlyList<RunState>>(runs);
     }
 
-    public Task<RunState?> Get(Guid runId)
+    public Task<RunState?> GetRun(Guid runId)
     {
         return Task.FromResult(_runs.TryGetValue(runId, out var state) ? state : null);
     }

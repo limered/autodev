@@ -9,10 +9,7 @@ public sealed class GitHubIssuesClient(HttpClient httpClient, ILogger<GitHubIssu
     public async Task CloseIssueAsync(string repo, int issueNumber, CancellationToken cancellationToken = default)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(repo);
-        if (issueNumber <= 0)
-        {
-            throw new ArgumentOutOfRangeException(nameof(issueNumber));
-        }
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(issueNumber);
 
         await RemoveLabelAsync(repo, issueNumber, ReadyForAgentLabel, cancellationToken);
         await CloseAsync(repo, issueNumber, cancellationToken);

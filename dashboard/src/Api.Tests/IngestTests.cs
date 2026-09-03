@@ -33,7 +33,7 @@ public class IngestTests
         Assert.Equal(T1, state.StartedAt);
         Assert.Equal(T1, state.UpdatedAt);
 
-        var fromStore = await store.Get(RunId);
+        var fromStore = await store.GetRun(RunId);
         Assert.NotNull(fromStore);
         Assert.Equal(state, fromStore);
     }
@@ -100,7 +100,7 @@ public class IngestTests
         Assert.Equal("feature-builder", state.Stages[0].Agent);
         Assert.Equal("m1", state.Stages[0].Model);
 
-        var fromStore = await store.Get(RunId);
+        var fromStore = await store.GetRun(RunId);
         Assert.NotNull(fromStore);
         Assert.NotNull(fromStore.Stages);
         Assert.Equal(3, fromStore.Stages.Count);
@@ -120,7 +120,7 @@ public class IngestTests
         Assert.Equal("feature-builder", state.CurrentPhase);
         Assert.Equal(T1, state.LastHeartbeatAt);
 
-        var fromStore = await store.Get(RunId);
+        var fromStore = await store.GetRun(RunId);
         Assert.NotNull(fromStore);
         Assert.Equal("feature-builder", fromStore.CurrentPhase);
     }
@@ -137,7 +137,7 @@ public class IngestTests
         Assert.NotNull(state);
         Assert.Equal("test-runner", state.CurrentPhase);
 
-        var fromStore = await store.Get(RunId);
+        var fromStore = await store.GetRun(RunId);
         Assert.NotNull(fromStore);
         Assert.Equal("test-runner", fromStore.CurrentPhase);
     }
