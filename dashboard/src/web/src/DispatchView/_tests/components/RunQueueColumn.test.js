@@ -1,14 +1,21 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi } from "vitest";
 import { createSSRApp, h } from "vue";
 import { renderToString } from "vue/server-renderer";
 import RunQueueColumn from "../../components/RunQueueColumn.vue";
+import { useQueueActions } from "../../services/useQueueActions.js";
 
 // Rendered via SSR (mirroring ErrorBanner's test) so the column's markup
 // contract can be asserted without a DOM: row order, status badges, the
 // restart/remove controls, Start-next gating, banners, and the empty state.
-// The drag-reorder math itself is covered at the useDragReorder seam.
+// The drag-reorder math is covered at the useDragReorder seam; the write
+// actions and their busy/error state live inside the column now (issue #75),
+// so their markup (busy labels, action-error banners) is beyond this
+// harness — the write-then-resync contract is covered at the composable seam
+// in the describe below.
 async function renderColumn(props) {
-  const app = createSSRApp({ render: () => h(RunQueueColumn, props) });
+  const app = createSSRApp({
+    render: () => h(RunQueueColumn, { reloadIssues: vi.fn(), reloadQueue: vi.fn(), ...props }),
+  });
   return renderToString(app);
 }
 
@@ -86,45 +93,132 @@ describe("RunQueueColumn", () => {
     expect(startNextButton(empty)).toContain("disabled");
   });
 
-  it("labels Start next as busy and does not call it a save while starting", async () => {
-    const html = await renderColumn({
-      queue: [queued("q1", 1, "First task")],
-      isStartingNext: true,
-    });
-
-    expect(html).toContain("Starting…");
-    expect(html).not.toContain("saving…");
-  });
-
-  it("shows the saving indicator while a queue save is in flight", async () => {
-    const reordering = await renderColumn({
-      queue: [queued("q1", 1, "First task")],
-      isReordering: true,
-    });
-
-    expect(reordering).toContain("saving…");
-  });
-
-  it("shows a banner per queue error", async () => {
-    const html = await renderColumn({
-      queue: [],
-      syncError: "HTTP 500",
-      reorderError: "HTTP 501",
-      removeError: "HTTP 502",
-      startNextError: "HTTP 503",
-      restartError: "HTTP 504",
-    });
+  it("shows the sync error banner", async () => {
+    const html = await renderColumn({ queue: [], syncError: "HTTP 500" });
 
     expect(html).toContain("Failed to load run queue: HTTP 500");
-    expect(html).toContain("Reorder failed");
-    expect(html).toContain("Remove failed");
-    expect(html).toContain("Start failed");
-    expect(html).toContain("Restart failed");
   });
 
   it("shows the empty state when the queue is empty", async () => {
     const html = await renderColumn({ queue: [] });
 
     expect(html).toContain("The queue is empty.");
+  });
+});
+
+// The column's four handlers compose useQueueActions with the two feed loads
+// exactly as wired in RunQueueColumn.vue. Buttons need a DOM event lifecycle
+// this SSR harness doesn't have, so the write-then-resync contract — run the
+// write, then refresh the feeds that show its effect — is exercised here at
+// the composable seam with a fake fetch and fake loads (mirroring
+// RunsList.test.js's makeWiredLists). Keep this wiring in lockstep with the
+// component's onRemove/onStartNext/onRestart/persistReorder.
+function makeWiredColumn({ writeFetch, reloadIssues, reloadQueue }) {
+  const actions = useQueueActions(writeFetch);
+  return {
+    actions,
+    remove: async (item) => {
+      if (await actions.remove(item.id)) {
+        await Promise.all([reloadIssues(), reloadQueue()]);
+      }
+    },
+    startNext: async (item) => {
+      if (await actions.startNext(item.id)) await reloadQueue();
+    },
+    restart: async (item) => {
+      if (await actions.restart(item.id)) await reloadQueue();
+    },
+    reorder: async (ids) => {
+      await actions.reorder(ids);
+      await reloadQueue();
+    },
+  };
+}
+
+function makeReloads() {
+  return { reloadIssues: vi.fn(), reloadQueue: vi.fn() };
+}
+
+describe("RunQueueColumn write-then-resync", () => {
+  it("reloads both feeds after a successful remove", async () => {
+    const reloads = makeReloads();
+    const { remove } = makeWiredColumn({
+      writeFetch: vi.fn(() => Promise.resolve({ ok: true, status: 200 })),
+      ...reloads,
+    });
+
+    await remove({ id: "q1" });
+
+    expect(reloads.reloadIssues).toHaveBeenCalledTimes(1);
+    expect(reloads.reloadQueue).toHaveBeenCalledTimes(1);
+  });
+
+  it("reloads nothing and records the error when a remove fails", async () => {
+    const reloads = makeReloads();
+    const { actions, remove } = makeWiredColumn({
+      writeFetch: vi.fn(() => Promise.resolve({ ok: false, status: 500 })),
+      ...reloads,
+    });
+
+    await remove({ id: "q1" });
+
+    expect(reloads.reloadIssues).not.toHaveBeenCalled();
+    expect(reloads.reloadQueue).not.toHaveBeenCalled();
+    expect(actions.removeError.value).toBe("HTTP 500");
+  });
+
+  it("reloads only the queue after a successful start-next", async () => {
+    const reloads = makeReloads();
+    const { startNext } = makeWiredColumn({
+      writeFetch: vi.fn(() => Promise.resolve({ ok: true, status: 200 })),
+      ...reloads,
+    });
+
+    await startNext({ id: "q1" });
+
+    expect(reloads.reloadQueue).toHaveBeenCalledTimes(1);
+    expect(reloads.reloadIssues).not.toHaveBeenCalled();
+  });
+
+  it("reloads only the queue after a successful restart", async () => {
+    const reloads = makeReloads();
+    const { restart } = makeWiredColumn({
+      writeFetch: vi.fn(() => Promise.resolve({ ok: true, status: 200 })),
+      ...reloads,
+    });
+
+    await restart({ id: "q2" });
+
+    expect(reloads.reloadQueue).toHaveBeenCalledTimes(1);
+    expect(reloads.reloadIssues).not.toHaveBeenCalled();
+  });
+
+  it("reloads the queue after a successful reorder", async () => {
+    const reloads = makeReloads();
+    const { reorder } = makeWiredColumn({
+      writeFetch: vi.fn(() => Promise.resolve({ ok: true, status: 200 })),
+      ...reloads,
+    });
+
+    await reorder(["q2", "q1"]);
+
+    expect(reloads.reloadQueue).toHaveBeenCalledTimes(1);
+    expect(reloads.reloadIssues).not.toHaveBeenCalled();
+  });
+
+  it("still re-syncs the queue after a failed reorder persist", async () => {
+    const reloads = makeReloads();
+    const { actions, reorder } = makeWiredColumn({
+      writeFetch: vi.fn(() => Promise.resolve({ ok: false, status: 500 })),
+      ...reloads,
+    });
+
+    await reorder(["q2", "q1"]);
+
+    // Unconditional re-sync: the shadow copy must converge on server truth
+    // even when the persist failed, so the queue reload still fires.
+    expect(reloads.reloadQueue).toHaveBeenCalledTimes(1);
+    expect(reloads.reloadIssues).not.toHaveBeenCalled();
+    expect(actions.reorderError.value).toBe("HTTP 500");
   });
 });

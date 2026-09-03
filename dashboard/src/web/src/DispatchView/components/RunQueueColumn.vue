@@ -3,75 +3,103 @@ import { computed, ref, watch } from "vue";
 import ErrorBanner from "../../_shared/components/ErrorBanner.vue";
 import { repoColor } from "../../_shared/models/repoColor.js";
 import { useDragReorder } from "../services/useDragReorder.js";
+import { useQueueActions } from "../services/useQueueActions.js";
 import {
   queueStatus,
   queueStatusClass,
   isQueueItemRunning,
   isQueueItemFailed,
+  resolveLocalQueue,
 } from "../models/queueView.js";
 
-// The run-queue column of the DispatchView split: owns the drag-to-reorder
-// interaction and the `localQueue` shadow copy of the feed, so a drop is
-// reflected instantly while the persist + re-sync round-trip runs in the
-// orchestrator. Props are the feed and the per-action state wired down from
-// DispatchView; everything drag-related stays local to this column.
+// The run-queue column of the DispatchView split: owns everything its
+// buttons do — the queue write actions (useQueueActions), each action's
+// run()-then-load() re-sync, the drag-reorder interaction, and the
+// `localQueue` shadow copy of the feed. What still arrives as props is read
+// state (the feed's items and sync error) plus the two feed loads the
+// re-syncs need; no action state or handler passes through DispatchView.
 const props = defineProps({
   // Array of queue items from the /queue feed, in server order.
   queue: { type: Array, required: true },
   // String error message from the /queue feed, or null while in sync.
   syncError: { type: String, default: null },
-  // String error message from the last reorder attempt, or null.
-  reorderError: { type: String, default: null },
-  // String error message from the last remove attempt, or null.
-  removeError: { type: String, default: null },
-  // String error message from the last start-next attempt, or null.
-  startNextError: { type: String, default: null },
-  // String error message from the last restart attempt, or null.
-  restartError: { type: String, default: null },
-  // True while a reorder request is in flight.
-  isReordering: { type: Boolean, default: false },
-  // True while a remove request is in flight.
-  isRemoving: { type: Boolean, default: false },
-  // True while a start-next request is in flight.
-  isStartingNext: { type: Boolean, default: false },
-  // True while a restart request is in flight.
-  isRestarting: { type: Boolean, default: false },
+  // Loads the /issues feed; a remove re-syncs it too, since the issue
+  // becomes eligible again.
+  reloadIssues: { type: Function, required: true },
+  // Loads the /queue feed; every queue write re-syncs it.
+  reloadQueue: { type: Function, required: true },
 });
 
-// `reorder` carries the new id order to persist; `remove` and `restart`
-// carry the affected queue item; `start-next` carries the queue head to
-// start. The orchestrator owns the requests and the feed refresh.
-const emit = defineEmits(["reorder", "remove", "restart", "start-next"]);
+const {
+  reorder,
+  reorderError,
+  isReordering,
+  remove,
+  removeError,
+  isRemoving,
+  startNext,
+  startNextError,
+  isStartingNext,
+  restart,
+  restartError,
+  isRestarting,
+} = useQueueActions();
 
 // Shadow copy of the feed queue: drops land here first for instant
 // feedback, and the feed only overwrites it while no save or drag is in
-// flight, so a polling sync never yanks rows out from under the pointer.
+// flight (resolveLocalQueue), so a polling sync never yanks rows out from
+// under the pointer.
 const localQueue = ref([]);
 
+const isSaving = computed(() => isReordering.value || isRemoving.value || isRestarting.value);
+
+// A drop persists optimistically (useDragReorder already moved the rows),
+// then re-syncs the queue unconditionally — even when the persist failed —
+// so the shadow copy converges on server truth.
+async function persistReorder(ids) {
+  await reorder(ids);
+  await props.reloadQueue();
+}
+
 const { draggedId, dragOverId, onDragStart, onDragOver, onDragLeave, onDragEnd, onDrop } =
-  useDragReorder({
-    items: localQueue,
-    onReorder: (ids) => emit("reorder", ids),
-  });
+  useDragReorder({ items: localQueue, onReorder: persistReorder });
 
 watch(
   () => props.queue,
   (newQueue) => {
-    if (!props.isReordering && draggedId.value === null) {
-      localQueue.value = [...newQueue];
-    }
+    localQueue.value = resolveLocalQueue(newQueue, localQueue.value, {
+      isSaving: isSaving.value,
+      isDragging: draggedId.value !== null,
+    });
   },
   { immediate: true },
 );
 
 const nextQueueItem = computed(() => localQueue.value[0] ?? null);
 const hasRunningItem = computed(() => props.queue.some(isQueueItemRunning));
-const isSaving = computed(() => props.isReordering || props.isRemoving || props.isRestarting);
 
-function onStartNext() {
+// Each button's write-then-resync: run the action, then refresh the feeds
+// that show its effect — both feeds for a remove (the issue is eligible
+// again), the queue alone for start-next and restart. Mirror of the
+// write-then-resync seam tests in _tests/components/RunQueueColumn.test.js.
+async function onRemove(item) {
+  if (await remove(item.id)) {
+    await Promise.all([props.reloadIssues(), props.reloadQueue()]);
+  }
+}
+
+async function onStartNext() {
   const item = nextQueueItem.value;
   if (!item || hasRunningItem.value) return;
-  emit("start-next", item);
+  if (await startNext(item.id)) {
+    await props.reloadQueue();
+  }
+}
+
+async function onRestart(item) {
+  if (await restart(item.id)) {
+    await props.reloadQueue();
+  }
 }
 </script>
 
@@ -142,13 +170,11 @@ function onStartNext() {
           v-if="isQueueItemFailed(item)"
           class="restart-button"
           :disabled="isRestarting"
-          @click="emit('restart', item)"
+          @click="onRestart(item)"
         >
           Restart
         </button>
-        <button class="remove-button" :disabled="isRemoving" @click="emit('remove', item)">
-          Remove
-        </button>
+        <button class="remove-button" :disabled="isRemoving" @click="onRemove(item)">Remove</button>
       </article>
     </section>
 

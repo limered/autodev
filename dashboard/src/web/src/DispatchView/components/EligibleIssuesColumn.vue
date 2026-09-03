@@ -2,13 +2,15 @@
 import { computed } from "vue";
 import ErrorBanner from "../../_shared/components/ErrorBanner.vue";
 import { repoColor } from "../../_shared/models/repoColor.js";
+import { useQueueActions } from "../services/useQueueActions.js";
 
 // The eligible-issues column of the DispatchView split: renders the synced
-// open issues that are not already queued, each with its Enqueue control.
-// The orchestrator (DispatchView.vue) wires the raw feeds in — `issues` is
-// the whole synced set and `queuedIssueIds` the ids already in the run
-// queue — so the eligibility filter (this column's own state) lives here
-// while cross-feed wiring stays in the composition layer.
+// open issues that are not already queued and owns what its button does —
+// the enqueue write (useQueueActions) and its run()-then-load() re-sync.
+// Read state still arrives as props (`issues` is the whole synced set and
+// `queuedIssueIds` the ids already in the run queue, wired cross-feed by the
+// orchestrator) plus the two feed loads the re-sync needs; no action state
+// or handler passes through DispatchView.
 const props = defineProps({
   // Array of open issues from the /issues feed.
   issues: { type: Array, required: true },
@@ -16,19 +18,27 @@ const props = defineProps({
   queuedIssueIds: { type: Set, default: () => new Set() },
   // String error message from the /issues feed, or null while in sync.
   syncError: { type: String, default: null },
-  // String error message from the last enqueue attempt, or null.
-  enqueueError: { type: String, default: null },
-  // True while an enqueue request is in flight (disables the buttons).
-  isEnqueueing: { type: Boolean, default: false },
+  // Loads the /issues feed, for the re-sync after an enqueue.
+  reloadIssues: { type: Function, required: true },
+  // Loads the /queue feed, for the re-sync after an enqueue (the queued ids change).
+  reloadQueue: { type: Function, required: true },
 });
 
-// Emitted with the issue object when its Enqueue button is clicked; the
-// orchestrator owns the POST and the feed refresh.
-const emit = defineEmits(["enqueue"]);
+const { enqueue, enqueueError, isEnqueueing } = useQueueActions();
 
 const eligibleIssues = computed(() =>
   props.issues.filter((issue) => !props.queuedIssueIds.has(issue.gitHubId)),
 );
+
+// The Enqueue button's write-then-resync: run the write, then refresh both
+// feeds it affects — the queue gains a row and the synced issue set may
+// move. Mirror of the write-then-resync seam tests in
+// _tests/components/EligibleIssuesColumn.test.js.
+async function onEnqueue(issue) {
+  if (await enqueue(issue.gitHubId)) {
+    await Promise.all([props.reloadIssues(), props.reloadQueue()]);
+  }
+}
 </script>
 
 <template>
@@ -58,7 +68,7 @@ const eligibleIssues = computed(() =>
             >#{{ issue.number }}
           </span>
         </div>
-        <button class="enqueue-button" :disabled="isEnqueueing" @click="emit('enqueue', issue)">
+        <button class="enqueue-button" :disabled="isEnqueueing" @click="onEnqueue(issue)">
           Enqueue →
         </button>
       </article>
