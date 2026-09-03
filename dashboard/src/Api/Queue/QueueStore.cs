@@ -29,16 +29,8 @@ public sealed class QueueStore : IQueueStore
 
     public async Task<IReadOnlyList<QueueListItem>> All()
     {
-        var items = new List<QueueListItem>();
         await using var conn = await _dataSource.OpenConnectionAsync();
-        await using var cmd = new NpgsqlCommand($"{SelectQueueSql} ORDER BY q.rank", conn);
-        await using var reader = await cmd.ExecuteReaderAsync();
-
-        while (await reader.ReadAsync())
-        {
-            items.Add(Map(reader));
-        }
-
+        var items = await QueryItems($"{SelectQueueSql} ORDER BY q.rank", conn);
         return items;
     }
 
@@ -47,27 +39,18 @@ public sealed class QueueStore : IQueueStore
         await using var conn = await _dataSource.OpenConnectionAsync();
         await using var tx = await conn.BeginTransactionAsync();
 
-        QueueListItem? existing = null;
-        {
-            await using var existingCmd = new NpgsqlCommand(
-                $"{SelectQueueSql} WHERE q.issue_id = @issueId", conn, tx);
-            existingCmd.Parameters.AddWithValue("issueId", issueId);
-            await using var reader = await existingCmd.ExecuteReaderAsync();
-            if (await reader.ReadAsync())
-            {
-                existing = Map(reader);
-            }
-        }
+        // Mechanical read of the queue inside the transaction; QueueRules makes the
+        // dedup and next-rank decisions so they live once, shared with the fake.
+        var items = await QueryItems(SelectQueueSql, conn, tx);
 
+        var existing = QueueRules.ExistingForIssue(items, issueId);
         if (existing is not null)
         {
             await tx.CommitAsync();
             return existing;
         }
 
-        await using var rankCmd = new NpgsqlCommand(
-            "SELECT COALESCE(MAX(rank), 0) FROM queue;", conn, tx);
-        var maxRank = (int)(await rankCmd.ExecuteScalarAsync() ?? 0);
+        var rank = QueueRules.NextRank(items.Select(i => i.Rank));
 
         await using var insertCmd = new NpgsqlCommand(
             """
@@ -76,7 +59,7 @@ public sealed class QueueStore : IQueueStore
             RETURNING id;
             """, conn, tx);
         insertCmd.Parameters.AddWithValue("issueId", issueId);
-        insertCmd.Parameters.AddWithValue("rank", maxRank + 1);
+        insertCmd.Parameters.AddWithValue("rank", rank);
         var id = (long)(await insertCmd.ExecuteScalarAsync() ?? 0L);
 
         await tx.CommitAsync();
@@ -138,47 +121,78 @@ public sealed class QueueStore : IQueueStore
 
         var runId = Guid.NewGuid();
 
-        await using var cmd = new NpgsqlCommand(
-            """
-            WITH next_item AS (
-                SELECT q.id
-                FROM queue q
-                WHERE q.start_requested_at IS NOT NULL
-                  AND q.run_id IS NULL
-                ORDER BY q.rank
-                FOR UPDATE SKIP LOCKED
-                LIMIT 1
-            )
-            UPDATE queue q
-            SET run_id = @runId
-            FROM next_item, issues i
-            WHERE q.id = next_item.id
-              AND i.github_id = q.issue_id
-            RETURNING q.run_id, i.repo, i.body, i.title;
-            """, conn, tx);
-        cmd.Parameters.AddWithValue("runId", runId);
+        // Mechanical snapshot; QueueRules decides which rows are claimable and in what
+        // order, shared with the fake so the predicate and ordering cannot drift.
+        var items = await QueryItems(SelectQueueSql, conn, tx);
 
-        await using var reader = await cmd.ExecuteReaderAsync();
-        if (!await reader.ReadAsync())
+        QueueListItem? claimed = null;
+        foreach (var candidate in QueueRules.ClaimableInRankOrder(items))
         {
-            await reader.DisposeAsync();
-            await tx.CommitAsync();
-            await _hostStore.StampLastSeen();
+            claimed = await TryLockClaimable(candidate.Id, conn, tx);
+            if (claimed is not null)
+            {
+                break;
+            }
+        }
+
+        // The claim used to be one statement that inner-joined issues: a queue row
+        // whose issue has no issues row matched nothing and claimed nothing. Keep that.
+        string? repo = null;
+        string? body = null;
+        string? title = null;
+        if (claimed is not null)
+        {
+            await using var issueCmd = new NpgsqlCommand(
+                "SELECT i.repo, i.body, i.title FROM issues i WHERE i.github_id = @issueId;", conn, tx);
+            issueCmd.Parameters.AddWithValue("issueId", claimed.IssueId);
+            await using var reader = await issueCmd.ExecuteReaderAsync();
+            if (await reader.ReadAsync())
+            {
+                repo = reader.GetString(0);
+                body = reader.IsDBNull(1) ? null : reader.GetString(1);
+                title = reader.IsDBNull(2) ? null : reader.GetString(2);
+            }
+        }
+
+        if (claimed is not null && repo is not null)
+        {
+            await using var updateCmd = new NpgsqlCommand(
+                "UPDATE queue SET run_id = @runId WHERE id = @id;", conn, tx);
+            updateCmd.Parameters.AddWithValue("runId", runId);
+            updateCmd.Parameters.AddWithValue("id", claimed.Id);
+            await updateCmd.ExecuteNonQueryAsync();
+        }
+
+        await tx.CommitAsync();
+        await _hostStore.StampLastSeen();
+
+        if (claimed is null || repo is null)
+        {
             return null;
         }
 
-        var claimedRunId = reader.GetGuid(0);
-        var repo = reader.GetString(1);
-        var body = reader.IsDBNull(2) ? null : reader.GetString(2);
-        var title = reader.IsDBNull(3) ? null : reader.GetString(3);
-        await reader.DisposeAsync();
-        await tx.CommitAsync();
-
-        await _hostStore.StampLastSeen();
-
         var repoUrl = $"https://github.com/{repo}.git";
         var spec = !string.IsNullOrWhiteSpace(body) ? body.Trim() : title ?? repo;
-        return new ClaimedQueueItem(claimedRunId, repoUrl, spec);
+        return new ClaimedQueueItem(runId, repoUrl, spec);
+    }
+
+    private static async Task<QueueListItem?> TryLockClaimable(long id, NpgsqlConnection conn, NpgsqlTransaction tx)
+    {
+        // Lock exactly one candidate row. SKIP LOCKED keeps a row mid-claim by a
+        // concurrent transaction invisible — the guarantee the old single-statement
+        // claim had — so the caller falls through to the next candidate, never waits.
+        var rows = await QueryItems(
+            $"{SelectQueueSql} WHERE q.id = @id FOR UPDATE OF q SKIP LOCKED",
+            conn, tx, new NpgsqlParameter("id", id));
+        var locked = rows.SingleOrDefault();
+        if (locked is null)
+        {
+            return null;
+        }
+
+        // The snapshot may be stale (a concurrent claimer won the race and committed);
+        // re-apply the shared rule against the row's current state under the lock.
+        return QueueRules.IsClaimable(locked) ? locked : null;
     }
 
     public async Task Reorder(IReadOnlyList<long> ids)
@@ -219,16 +233,30 @@ public sealed class QueueStore : IQueueStore
     private async Task<QueueListItem?> GetById(long id)
     {
         await using var conn = await _dataSource.OpenConnectionAsync();
-        await using var cmd = new NpgsqlCommand($"{SelectQueueSql} WHERE q.id = @id", conn);
-        cmd.Parameters.AddWithValue("id", id);
-        await using var reader = await cmd.ExecuteReaderAsync();
+        var items = await QueryItems($"{SelectQueueSql} WHERE q.id = @id", conn, parameters: new NpgsqlParameter("id", id));
+        return items.SingleOrDefault();
+    }
 
-        if (!await reader.ReadAsync())
+    private static async Task<List<QueueListItem>> QueryItems(
+        string sql,
+        NpgsqlConnection conn,
+        NpgsqlTransaction? tx = null,
+        params NpgsqlParameter[] parameters)
+    {
+        var items = new List<QueueListItem>();
+        await using var cmd = tx is null ? new NpgsqlCommand(sql, conn) : new NpgsqlCommand(sql, conn, tx);
+        foreach (var p in parameters)
         {
-            return null;
+            cmd.Parameters.Add(p);
         }
 
-        return Map(reader);
+        await using var reader = await cmd.ExecuteReaderAsync();
+        while (await reader.ReadAsync())
+        {
+            items.Add(Map(reader));
+        }
+
+        return items;
     }
 
     private const string SelectQueueSql =
