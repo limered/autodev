@@ -1,7 +1,6 @@
 <script setup>
 import { computed, ref, watch } from "vue";
 import ErrorBanner from "../../_shared/components/ErrorBanner.vue";
-import { repoColor } from "../../_shared/models/repoColor.js";
 import { useDragReorder } from "../services/useDragReorder.js";
 import { useQueueActions } from "../services/useQueueActions.js";
 import {
@@ -11,6 +10,7 @@ import {
   isQueueItemFailed,
   resolveLocalQueue,
 } from "../models/queueView.js";
+import IssueRef from "./IssueRef.vue";
 
 // The run-queue column of the DispatchView split: owns everything its
 // buttons do — the queue write actions (useQueueActions), each action's
@@ -147,17 +147,13 @@ async function onRestart(item) {
       >
         <span class="queue-rank mono">#{{ item.rank }}</span>
         <div class="queue-meta">
-          <template v-if="item.issuePresent">
-            <a :href="item.htmlUrl" target="_blank" rel="noopener" class="issue-title">
-              {{ item.title }}
-            </a>
-            <span class="issue-ref mono">
-              <span class="issue-repo" :style="{ color: repoColor(item.repo) }">{{
-                item.repo
-              }}</span
-              >#{{ item.number }}
-            </span>
-          </template>
+          <IssueRef
+            v-if="item.issuePresent"
+            :html-url="item.htmlUrl"
+            :title="item.title"
+            :repo="item.repo"
+            :number="item.number"
+          />
           <template v-else>
             <span class="missing-issue">no longer eligible</span>
           </template>
@@ -275,27 +271,6 @@ h2 {
   flex-direction: column;
   min-width: 0;
   gap: 0.15rem;
-}
-
-.issue-title {
-  color: var(--text);
-  text-decoration: none;
-  font-weight: 500;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.issue-title:hover {
-  text-decoration: underline;
-}
-
-.issue-ref {
-  font-size: 0.8rem;
-  color: var(--text-muted);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 
 .missing-issue {
@@ -445,6 +420,8 @@ h2 {
   margin: 0;
 }
 
+/* The issue-ref's mono font lives in IssueRef.vue now; this rule stays
+   because .queue-rank still wears the .mono class. */
 .mono {
   font-family: var(--font-mono);
 }
