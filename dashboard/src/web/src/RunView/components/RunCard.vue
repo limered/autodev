@@ -21,42 +21,48 @@ const view = computed(() => runView(props.run, props.now));
 
 <template>
   <article class="run-card" :class="view.statusClass">
+    <!-- Variant C header (issue #99): the meta line — status pill ·
+         repo/branch · abort — is the whole header, with the pill and the
+         abort control fixed at the ends and repo/branch flexing to fill.
+         The stage strip is deliberately NOT in here: it renders as its own
+         full-width band below the header divider, so wrapping stages can
+         never push the pill or the abort control around. -->
     <div class="card-header">
-      <div class="identity">
-        <div class="repo-branch">
-          <span class="repo">{{ run.repo }}</span>
-          <span class="sep">/</span>
-          <span class="branch mono">{{ run.branch }}</span>
-        </div>
-        <ul v-if="view.stages.length" class="stage-strip">
-          <li
-            v-for="stage in view.stages"
-            :key="stage.agent"
-            class="stage-badge"
-            :class="stage.statusClass"
-          >
-            <span class="stage-head">
-              <span class="stage-indicator"></span>
-              <span class="stage-agent">{{ stage.agent }}</span>
-            </span>
-            <span class="stage-model mono">{{ stage.model }}</span>
-          </li>
-        </ul>
-      </div>
       <div class="status-badge" :class="view.statusClass">
         <span class="status-indicator"></span>
         {{ run.status }}
+      </div>
+      <div class="repo-branch">
+        <span class="repo">{{ run.repo }}</span>
+        <span class="sep">/</span>
+        <span class="branch mono">{{ run.branch }}</span>
       </div>
       <button
         v-if="deletable"
         type="button"
         class="delete-run"
         title="Delete this run"
+        aria-label="Delete this run"
         @click="$emit('delete', run.runId)"
       >
-        Delete
+        ×
       </button>
     </div>
+
+    <ul v-if="view.stages.length" class="stage-strip">
+      <li
+        v-for="stage in view.stages"
+        :key="stage.agent"
+        class="stage-badge"
+        :class="stage.statusClass"
+      >
+        <span class="stage-head">
+          <span class="stage-indicator"></span>
+          <span class="stage-agent">{{ stage.agent }}</span>
+        </span>
+        <span class="stage-model mono">{{ stage.model }}</span>
+      </li>
+    </ul>
 
     <div class="card-body">
       <div class="primary-stats">
@@ -114,18 +120,19 @@ const view = computed(() => runView(props.run, props.now));
 }
 .card-header {
   display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 1rem;
+  align-items: center;
+  gap: 0.75rem;
   padding: 1rem 1.25rem;
   background: var(--surface-2);
   border-bottom: 1px solid var(--border);
 }
-.identity {
-  min-width: 0;
-}
 .repo-branch {
+  /* Flexes to fill the space between the fixed-size pill and the abort
+     control; may shrink (and wrap its own spans) so long repo/branch names
+     never push the end controls out. */
   display: flex;
+  flex: 1;
+  min-width: 0;
   flex-wrap: wrap;
   align-items: baseline;
   gap: 0.35rem;
@@ -142,12 +149,16 @@ const view = computed(() => runView(props.run, props.now));
   color: var(--cyan);
 }
 .stage-strip {
+  /* Full-width band below the header divider (issue #99 Variant C): its own
+     row, so it wraps freely without sharing a flex row with the pills. */
   display: flex;
   flex-wrap: wrap;
   gap: 0.4rem;
-  margin-top: 0.4rem;
-  padding: 0;
+  margin: 0;
+  padding: 0.6rem 1.25rem;
   list-style: none;
+  background: var(--surface-2);
+  border-bottom: 1px solid var(--border);
 }
 .stage-badge {
   display: flex;
@@ -232,20 +243,28 @@ const view = computed(() => runView(props.run, props.now));
   color: var(--green);
 }
 .delete-run {
+  /* Borderless × (issue #99 Variant C): quiet at rest — no border, no
+     background — and reddens with a subtle tint only on hover. */
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   flex-shrink: 0;
-  align-self: flex-start;
-  padding: 0.3rem 0.7rem;
-  font-size: 0.75rem;
+  width: 1.75rem;
+  height: 1.75rem;
+  padding: 0;
+  font-size: 1.25rem;
   font-weight: 600;
-  color: var(--red);
-  background: var(--surface);
-  border: 1px solid var(--red);
+  line-height: 1;
+  color: var(--text-muted);
+  background: transparent;
+  border: none;
   border-radius: var(--radius);
   cursor: pointer;
 }
-.delete-run:hover {
-  background: var(--red);
-  color: var(--surface);
+.delete-run:hover,
+.delete-run:focus-visible {
+  color: var(--red);
+  background: rgba(248, 81, 73, 0.1);
 }
 .status-running .status-indicator {
   animation: blink 1.4s infinite;
