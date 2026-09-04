@@ -7,10 +7,10 @@ import RunQueueColumn from "./RunQueueColumn.vue";
 
 // Read composition layer for the dispatch split: owns the three feeds and
 // the cross-feed wiring — the header indicators and the queued-issue ids the
-// eligible column filters by. Each column owns its own write actions and
-// re-syncs (useQueueActions lives in the columns now), so only read state
-// and the feed loads flow down: no action state or handler passes through.
-// A write in flight surfaces where it belongs — the queue column's
+// eligible column filters by. Each column owns its own writes and re-syncs
+// (wired through the shared useQueueHandlers composable, Block A), so only
+// read state and the feed loads flow down: no action state or handler passes
+// through. A write in flight surfaces where it belongs — the queue column's
 // "saving…" chip and the eligible column's disabled enqueue buttons.
 const issuesFeed = usePollingFeed(() => fetch("/issues"));
 const queueFeed = usePollingFeed(() => fetch("/queue"));

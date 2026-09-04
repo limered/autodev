@@ -2,16 +2,17 @@
 import { computed } from "vue";
 import ErrorBanner from "../../_shared/components/ErrorBanner.vue";
 import { eligibleIssues } from "../models/issuesView.js";
-import { useQueueActions } from "../services/useQueueActions.js";
+import { useQueueHandlers } from "../services/useQueueHandlers.js";
 import IssueRef from "./IssueRef.vue";
 
 // The eligible-issues column of the DispatchView split: renders the synced
 // open issues that are not already queued and owns what its button does —
-// the enqueue write (useQueueActions) and its run()-then-load() re-sync.
-// Read state still arrives as props (`issues` is the whole synced set and
-// `queuedIssueIds` the ids already in the run queue, wired cross-feed by the
-// orchestrator) plus the two feed loads the re-sync needs; no action state
-// or handler passes through DispatchView.
+// the enqueue write and its run()-then-load() re-sync, both wired once in
+// the shared useQueueHandlers composable. Read state still arrives as props
+// (`issues` is the whole synced set and `queuedIssueIds` the ids already in
+// the run queue, wired cross-feed by the orchestrator) plus the two feed
+// loads the re-sync needs; no action state or handler passes through
+// DispatchView.
 const props = defineProps({
   // Array of open issues from the /issues feed.
   issues: { type: Array, required: true },
@@ -25,22 +26,20 @@ const props = defineProps({
   reloadQueue: { type: Function, required: true },
 });
 
-const { enqueue, enqueueError, isEnqueueing } = useQueueActions();
+// The Enqueue button's write-then-resync: run the write, then refresh both
+// feeds it affects. The wiring lives in the composable (Block A), so the
+// template binds `enqueue(issue)` directly and the busy/error refs below
+// drive the disabled state and banner; the same contract is tested against
+// the same composable in _tests/components/EligibleIssuesColumn.test.js.
+const { enqueue, enqueueError, isEnqueueing } = useQueueHandlers({
+  reloadIssues: props.reloadIssues,
+  reloadQueue: props.reloadQueue,
+});
 
 // Which synced issues count as eligible is pure view logic, so it lives in
 // models/issuesView.js (table-tested there); this computed just re-derives
 // it when either feed moves.
 const eligible = computed(() => eligibleIssues(props.issues, props.queuedIssueIds));
-
-// The Enqueue button's write-then-resync: run the write, then refresh both
-// feeds it affects — the queue gains a row and the synced issue set may
-// move. Mirror of the write-then-resync seam tests in
-// _tests/components/EligibleIssuesColumn.test.js.
-async function onEnqueue(issue) {
-  if (await enqueue(issue.gitHubId)) {
-    await Promise.all([props.reloadIssues(), props.reloadQueue()]);
-  }
-}
 </script>
 
 <template>
@@ -67,7 +66,7 @@ async function onEnqueue(issue) {
             :number="issue.number"
           />
         </div>
-        <button class="enqueue-button" :disabled="isEnqueueing" @click="onEnqueue(issue)">
+        <button class="enqueue-button" :disabled="isEnqueueing" @click="enqueue(issue)">
           Enqueue →
         </button>
       </article>

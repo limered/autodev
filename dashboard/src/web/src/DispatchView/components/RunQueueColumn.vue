@@ -3,15 +3,16 @@ import { computed, ref, watch } from "vue";
 import ErrorBanner from "../../_shared/components/ErrorBanner.vue";
 import { queueRowView, resolveLocalQueue } from "../models/queueView.js";
 import { useDragReorder } from "../services/useDragReorder.js";
-import { useQueueActions } from "../services/useQueueActions.js";
+import { useQueueHandlers } from "../services/useQueueHandlers.js";
 import IssueRef from "./IssueRef.vue";
 
 // The run-queue column of the DispatchView split: owns everything its
-// buttons do — the queue write actions (useQueueActions), each action's
-// run()-then-load() re-sync, the drag-reorder interaction, and the
-// `localQueue` shadow copy of the feed. What still arrives as props is read
-// state (the feed's items and sync error) plus the two feed loads the
-// re-syncs need; no action state or handler passes through DispatchView.
+// buttons do — the queue write actions and each action's run()-then-load()
+// re-sync, wired once in the shared useQueueHandlers composable (Block A) —
+// plus the drag-reorder interaction and the `localQueue` shadow copy of the
+// feed. What still arrives as props is read state (the feed's items and sync
+// error) plus the two feed loads the re-syncs need; no action state or
+// handler passes through DispatchView.
 const props = defineProps({
   // Array of queue items from the /queue feed, in server order.
   queue: { type: Array, required: true },
@@ -24,6 +25,11 @@ const props = defineProps({
   reloadQueue: { type: Function, required: true },
 });
 
+// Wired queue handlers: every write re-syncs the feeds that show its effect —
+// both feeds for a remove (the issue is eligible again), the queue alone for
+// start-next and restart, the queue unconditionally after a reorder. Bound
+// straight into the template below; the same contract is tested against the
+// same composable in _tests/components/RunQueueColumn.test.js.
 const {
   reorder,
   reorderError,
@@ -37,7 +43,10 @@ const {
   restart,
   restartError,
   isRestarting,
-} = useQueueActions();
+} = useQueueHandlers({
+  reloadIssues: props.reloadIssues,
+  reloadQueue: props.reloadQueue,
+});
 
 // Shadow copy of the feed queue: drops land here first for instant
 // feedback, and the feed only overwrites it while no save or drag is in
@@ -47,16 +56,12 @@ const localQueue = ref([]);
 
 const isSaving = computed(() => isReordering.value || isRemoving.value || isRestarting.value);
 
-// A drop persists optimistically (useDragReorder already moved the rows),
-// then re-syncs the queue unconditionally — even when the persist failed —
-// so the shadow copy converges on server truth.
-async function persistReorder(ids) {
-  await reorder(ids);
-  await props.reloadQueue();
-}
-
+// A drop persists optimistically (useDragReorder already moved the rows) via
+// the wired `reorder` handler, which re-syncs the queue feed unconditionally
+// — even when the persist failed — so the shadow copy converges on server
+// truth.
 const { draggedId, dragOverId, onDragStart, onDragOver, onDragLeave, onDragEnd, onDrop } =
-  useDragReorder({ items: localQueue, onReorder: persistReorder });
+  useDragReorder({ items: localQueue, onReorder: reorder });
 
 watch(
   () => props.queue,
@@ -72,33 +77,18 @@ watch(
 const nextQueueItem = computed(() => localQueue.value[0] ?? null);
 const hasRunningItem = computed(() => props.queue.some((item) => queueRowView(item).isRunning));
 
-// One row view-model per queue row: a single queueRowView call drives the
-// status badge text, its status class, and the Restart gating, instead of
-// the template consulting 3-4 separate helpers per row.
+// One row view-model per queue row (Block A): a single queueRowView call
+// drives the status badge text, its status class, and the Restart gating,
+// instead of the template consulting 3-4 separate helpers per row.
 const rows = computed(() => localQueue.value.map((item) => ({ item, view: queueRowView(item) })));
 
-// Each button's write-then-resync: run the action, then refresh the feeds
-// that show its effect — both feeds for a remove (the issue is eligible
-// again), the queue alone for start-next and restart. Mirror of the
-// write-then-resync seam tests in _tests/components/RunQueueColumn.test.js.
-async function onRemove(item) {
-  if (await remove(item.id)) {
-    await Promise.all([props.reloadIssues(), props.reloadQueue()]);
-  }
-}
-
+// Start-next gating is view state — the head of the shadow queue and whether
+// anything is already running — so the guard stays here; the write and its
+// re-sync are the wired `startNext` handler.
 async function onStartNext() {
   const item = nextQueueItem.value;
   if (!item || hasRunningItem.value) return;
-  if (await startNext(item.id)) {
-    await props.reloadQueue();
-  }
-}
-
-async function onRestart(item) {
-  if (await restart(item.id)) {
-    await props.reloadQueue();
-  }
+  await startNext(item);
 }
 </script>
 
@@ -165,11 +155,11 @@ async function onRestart(item) {
           v-if="view.isFailed"
           class="restart-button"
           :disabled="isRestarting"
-          @click="onRestart(item)"
+          @click="restart(item)"
         >
           Restart
         </button>
-        <button class="remove-button" :disabled="isRemoving" @click="onRemove(item)">Remove</button>
+        <button class="remove-button" :disabled="isRemoving" @click="remove(item)">Remove</button>
       </article>
     </section>
 

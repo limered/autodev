@@ -2,7 +2,7 @@ import { describe, it, expect, vi } from "vitest";
 import { createSSRApp, h } from "vue";
 import { renderToString } from "vue/server-renderer";
 import EligibleIssuesColumn from "../../components/EligibleIssuesColumn.vue";
-import { useQueueActions } from "../../services/useQueueActions.js";
+import { useQueueHandlers } from "../../services/useQueueHandlers.js";
 
 // Rendered via SSR (mirroring ErrorBanner's test) so the column's markup
 // contract can be asserted without a DOM: which issues count as eligible,
@@ -67,29 +67,18 @@ describe("EligibleIssuesColumn", () => {
   });
 });
 
-// The column's enqueue handler composes useQueueActions with the two feed
-// loads exactly as wired in EligibleIssuesColumn.vue. Buttons need a DOM
-// event lifecycle this SSR harness doesn't have, so the write-then-resync
-// contract — run the write, then refresh both feeds it affects — is
-// exercised here at the composable seam with a fake fetch and fake loads
-// (mirroring RunsList.test.js's makeWiredLists). Keep this wiring in
-// lockstep with the component's onEnqueue.
-function makeWiredColumn({ writeFetch, reloadIssues, reloadQueue }) {
-  const actions = useQueueActions(writeFetch);
-  const enqueue = async (issue) => {
-    if (await actions.enqueue(issue.gitHubId)) {
-      await Promise.all([reloadIssues(), reloadQueue()]);
-    }
-  };
-  return { actions, enqueue };
-}
-
+// The column's enqueue handler is the shared composable itself (Block A):
+// EligibleIssuesColumn wires useQueueHandlers with its two feed loads, so the
+// write-then-resync contract — run the write, then refresh both feeds it
+// affects — is exercised here against that same composable with a fake fetch
+// and fake loads. No wiring is re-stated: the handler logic lives once in
+// services/useQueueHandlers.js.
 describe("EligibleIssuesColumn write-then-resync", () => {
   it("reloads both feeds after a successful enqueue", async () => {
     const reloadIssues = vi.fn();
     const reloadQueue = vi.fn();
-    const { enqueue } = makeWiredColumn({
-      writeFetch: vi.fn(() => Promise.resolve({ ok: true, status: 201 })),
+    const { enqueue } = useQueueHandlers({
+      fetchFn: vi.fn(() => Promise.resolve({ ok: true, status: 201 })),
       reloadIssues,
       reloadQueue,
     });
@@ -103,8 +92,8 @@ describe("EligibleIssuesColumn write-then-resync", () => {
   it("reloads nothing and records the error when the enqueue fails", async () => {
     const reloadIssues = vi.fn();
     const reloadQueue = vi.fn();
-    const { actions, enqueue } = makeWiredColumn({
-      writeFetch: vi.fn(() => Promise.resolve({ ok: false, status: 503 })),
+    const { enqueue, enqueueError } = useQueueHandlers({
+      fetchFn: vi.fn(() => Promise.resolve({ ok: false, status: 503 })),
       reloadIssues,
       reloadQueue,
     });
@@ -113,6 +102,6 @@ describe("EligibleIssuesColumn write-then-resync", () => {
 
     expect(reloadIssues).not.toHaveBeenCalled();
     expect(reloadQueue).not.toHaveBeenCalled();
-    expect(actions.enqueueError.value).toBe("HTTP 503");
+    expect(enqueueError.value).toBe("HTTP 503");
   });
 });
