@@ -180,7 +180,19 @@ while ($true) {
                 Write-Host "    Synced $($issues.Count) issue(s)" -ForegroundColor DarkGray
             }
             catch {
-                Write-Warning "Issue sync failed for ${ownerRepo}: $_"
+                # Invoke-RestMethod hides the backend's error body; read it so a 400
+                # names the offending field (e.g. a null non-nullable property).
+                $detail = if ($_.ErrorDetails.Message) { $_.ErrorDetails.Message } else { "$_" }
+                $resp = $_.Exception.Response
+                if (-not $detail -and $resp) {
+                    try {
+                        $stream = $resp.GetResponseStream()
+                        $reader = New-Object System.IO.StreamReader($stream)
+                        $detail = $reader.ReadToEnd()
+                    }
+                    catch {}
+                }
+                Write-Warning "Issue sync failed for ${ownerRepo}: $detail"
             }
         }
         $lastSync = Get-Date

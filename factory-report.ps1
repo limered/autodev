@@ -61,9 +61,12 @@ function Send-FactoryEvent {
         if ($Fields) { foreach ($k in $Fields.Keys) { $body[$k] = $Fields[$k] } }
 
         $json = $body | ConvertTo-Json -Compress -Depth 10
+        # PowerShell 5.1 encodes a string -Body as Latin-1 without a charset, corrupting
+        # non-ASCII chars (e.g. U+00B7 in a spec) into bytes System.Text.Json rejects (400).
+        $bytes = [System.Text.Encoding]::UTF8.GetBytes($json)
         $uri = "$script:FactoryReportUrl/runs/$RunId/events"
-        Invoke-RestMethod -Method Post -Uri $uri -Body $json `
-            -ContentType "application/json" `
+        Invoke-RestMethod -Method Post -Uri $uri -Body $bytes `
+            -ContentType "application/json; charset=utf-8" `
             -Headers @{ "X-Factory-Token" = $script:FactoryReportToken } `
             -TimeoutSec 5 | Out-Null
     }
