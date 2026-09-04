@@ -22,5 +22,6 @@
     "bash": "allow",
     "edit": "allow",
     "external_directory": "allow"
-  }
+  },
+  "lsp": true
 }
