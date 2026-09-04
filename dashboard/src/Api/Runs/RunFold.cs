@@ -20,6 +20,23 @@ public static class RunFold
         };
     }
 
+    /// <summary>
+    /// True when an event can never apply: there is no run yet, or the event is at or
+    /// before the run's last update (out of order). When false, <paramref name="current"/>
+    /// is not null and the event is in order — handlers may dereference it (current!).
+    /// </summary>
+    public static bool IsStale(RunState? current, DateTimeOffset at) =>
+        current is null || at <= current.UpdatedAt;
+
+    /// <summary>
+    /// True when the event is <see cref="IsStale">stale</see> or the run already reached
+    /// a terminal status and accepts no further transitions.
+    /// </summary>
+    public static bool IsBlocked(RunState? current, DateTimeOffset at) =>
+        IsStale(current, at) || IsTerminal(current!.Status);
+
+    private static bool IsTerminal(string status) => status is "done" or "failed";
+
     private static RunState? ApplyRunStarted(RunState? current, RunStartedEvent ev, DateTimeOffset at)
     {
         if (current is not null)
@@ -48,12 +65,12 @@ public static class RunFold
 
     private static RunState? ApplyAgentStarted(RunState? current, AgentStartedEvent ev, DateTimeOffset at)
     {
-        if (current is null || IsTerminal(current.Status) || at <= current.UpdatedAt)
+        if (IsBlocked(current, at))
         {
             return null;
         }
 
-        return current with
+        return current! with
         {
             Status = "running",
             VmName = ev.VmName,
@@ -63,6 +80,8 @@ public static class RunFold
 
     private static RunState? ApplyHeartbeat(RunState? current, HeartbeatEvent ev, DateTimeOffset at)
     {
+        // Heartbeat keeps its own guard: it orders on LastHeartbeatAt, not UpdatedAt
+        // (a heartbeat never bumps UpdatedAt), so IsStale does not apply here.
         if (current is null)
         {
             return null;
@@ -85,12 +104,12 @@ public static class RunFold
 
     private static RunState? ApplyStallDetected(RunState? current, StallDetectedEvent ev, DateTimeOffset at)
     {
-        if (current is null || IsTerminal(current.Status) || at <= current.UpdatedAt)
+        if (IsBlocked(current, at))
         {
             return null;
         }
 
-        return current with
+        return current! with
         {
             Status = "stalled",
             FailureReason = ev.FailureReason,
@@ -100,12 +119,12 @@ public static class RunFold
 
     private static RunState? ApplyFreezeCaptured(RunState? current, FreezeCapturedEvent ev, DateTimeOffset at)
     {
-        if (current is null || at <= current.UpdatedAt)
+        if (IsStale(current, at))
         {
             return null;
         }
 
-        return current with
+        return current! with
         {
             FreezeCaptured = true,
             FreezeLocalPath = ev.FreezeLocalPath,
@@ -115,12 +134,12 @@ public static class RunFold
 
     private static RunState? ApplyPrVerified(RunState? current, PrVerifiedEvent ev, DateTimeOffset at)
     {
-        if (current is null || at <= current.UpdatedAt)
+        if (IsStale(current, at))
         {
             return null;
         }
 
-        return current with
+        return current! with
         {
             PrUrl = ev.PrUrl,
             UpdatedAt = at,
@@ -129,12 +148,12 @@ public static class RunFold
 
     private static RunState? ApplyRunFinished(RunState? current, DateTimeOffset at)
     {
-        if (current is null || IsTerminal(current.Status) || at <= current.UpdatedAt)
+        if (IsBlocked(current, at))
         {
             return null;
         }
 
-        return current with
+        return current! with
         {
             Status = "done",
             FinishedAt = at,
@@ -144,12 +163,12 @@ public static class RunFold
 
     private static RunState? ApplyRunFailed(RunState? current, RunFailedEvent ev, DateTimeOffset at)
     {
-        if (current is null || IsTerminal(current.Status) || at <= current.UpdatedAt)
+        if (IsBlocked(current, at))
         {
             return null;
         }
 
-        return current with
+        return current! with
         {
             Status = "failed",
             FinishedAt = at,
@@ -157,6 +176,4 @@ public static class RunFold
             UpdatedAt = at,
         };
     }
-
-    private static bool IsTerminal(string status) => status is "done" or "failed";
 }
