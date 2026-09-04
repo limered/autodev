@@ -17,7 +17,7 @@ You are **read-only on the repo**: you have no `edit` permission and write no fi
 The user will provide a SPEC block in this format:
 
 ```
-ISSUE: <GitHub issue number the run implements, e.g. 8>   # optional
+ISSUE: <GitHub issue number the run implements, e.g. 8>   # optional; falls back to the number in BRANCH
 BRANCH: <branch the run is on>
 BASE: <base branch the run builds on>
 REPO: <owner/repo>
@@ -36,7 +36,7 @@ Follow these steps exactly and in order:
      -H "Accept: application/vnd.github.v3+json" \
      https://api.github.com/repos/<REPO>/issues/<ISSUE>
    ```
-   If the response has no body or only a `"message"` error, print the response and exit non-zero — the tracker host is your sink, so unreachable is self-failure. If the SPEC block carries no ISSUE token, do not fail: mark the spec unavailable and carry that into step 4, where the skill's own "no spec available" path applies.
+   If the response has no body or only a `"message"` error, print the response and exit non-zero — the tracker host is your sink, so unreachable is self-failure. If the SPEC block carries no ISSUE token, derive it from BRANCH: factory branches are named `factory/issue-<N>-...`, so extract `<N>` (`echo "$BRANCH" | grep -oP 'issue-\K[0-9]+'`) and use that as ISSUE. Only when neither the SPEC block nor the branch yields a number do you mark the spec unavailable and carry that into step 4, where the skill's own "no spec available" path applies. Whenever you do have a number, the Spec sub-agent must run — never skip it while a resolvable issue exists.
 
 4. **Run `/code-review` headless**: Load the code-review skill and follow its process as designed, with its two interactive prompts pre-bound from the SPEC block so its "ask the user" branches never fire:
    - **Fixed point = BASE** (pinned in step 2) — the skill's "ask for the fixed point" branch never fires.
@@ -50,9 +50,12 @@ Follow these steps exactly and in order:
 
    If the skill is not available in this runtime, print the error and exit non-zero (operational failure).
 
+   This skill's run is filed only when at least one candidate carries **Recommendation strength: Strong** — if every candidate is `Worth exploring` or `Speculative`, treat the run as empty for step 6 (no issue). Drop the weaker candidates from the payload; only the `Strong` cards go in the issue.
+
 6. **File the tracker issues** — exactly one `ready-for-human` issue per skill whose run was non-empty, the two kept separate (never one merged issue). For each, `POST /repos/<REPO>/issues` with the PAT, writing the JSON payload to a temp file outside the repo (e.g. under `/tmp`) and passing `-d @file` to avoid shell-quoting problems with multi-line bodies:
     - **Title**: `[agentic-review] <skill> findings - <BRANCH>`, with the skill's own name (`code-review`, `improve-codebase-architecture`).
     - **Labels**: `["ready-for-human", "agentic-review"]`.
+    - **Dedup**: before creating, `GET /repos/<REPO>/issues?state=all&labels=agentic-review` and check for an existing issue with this exact title. If one exists, skip the POST entirely (do not re-file, do not comment) — the title is unique per skill+branch, so a match means these findings are already tracked. Only `POST` when no match exists.
     - **Body**: a header block —
 
       ```
