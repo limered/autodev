@@ -6,21 +6,21 @@ public static class RunFold
     {
         var at = ev.At ?? DateTimeOffset.UtcNow;
 
-        return ev.Type switch
+        return ev switch
         {
-            "run-started" => ApplyRunStarted(current, ev, at),
-            "agent-started" => ApplyAgentStarted(current, ev, at),
-            "heartbeat" => ApplyHeartbeat(current, ev, at),
-            "stall-detected" => ApplyStallDetected(current, ev, at),
-            "freeze-captured" => ApplyFreezeCaptured(current, ev, at),
-            "pr-verified" => ApplyPrVerified(current, ev, at),
-            "run-finished" => ApplyRunFinished(current, at),
-            "run-failed" => ApplyRunFailed(current, ev, at),
-            _ => null,
+            RunStartedEvent e => ApplyRunStarted(current, e, at),
+            AgentStartedEvent e => ApplyAgentStarted(current, e, at),
+            HeartbeatEvent e => ApplyHeartbeat(current, e, at),
+            StallDetectedEvent e => ApplyStallDetected(current, e, at),
+            FreezeCapturedEvent e => ApplyFreezeCaptured(current, e, at),
+            PrVerifiedEvent e => ApplyPrVerified(current, e, at),
+            RunFinishedEvent => ApplyRunFinished(current, at),
+            RunFailedEvent e => ApplyRunFailed(current, e, at),
+            _ => null, // unknown/unmapped event type (a bare RunEvent): no-op
         };
     }
 
-    private static RunState? ApplyRunStarted(RunState? current, RunEvent ev, DateTimeOffset at)
+    private static RunState? ApplyRunStarted(RunState? current, RunStartedEvent ev, DateTimeOffset at)
     {
         if (current is not null)
         {
@@ -46,7 +46,7 @@ public static class RunFold
             Stages: ev.Stages);
     }
 
-    private static RunState? ApplyAgentStarted(RunState? current, RunEvent ev, DateTimeOffset at)
+    private static RunState? ApplyAgentStarted(RunState? current, AgentStartedEvent ev, DateTimeOffset at)
     {
         if (current is null || IsTerminal(current.Status) || at <= current.UpdatedAt)
         {
@@ -61,7 +61,7 @@ public static class RunFold
         };
     }
 
-    private static RunState? ApplyHeartbeat(RunState? current, RunEvent ev, DateTimeOffset at)
+    private static RunState? ApplyHeartbeat(RunState? current, HeartbeatEvent ev, DateTimeOffset at)
     {
         if (current is null)
         {
@@ -83,7 +83,7 @@ public static class RunFold
         };
     }
 
-    private static RunState? ApplyStallDetected(RunState? current, RunEvent ev, DateTimeOffset at)
+    private static RunState? ApplyStallDetected(RunState? current, StallDetectedEvent ev, DateTimeOffset at)
     {
         if (current is null || IsTerminal(current.Status) || at <= current.UpdatedAt)
         {
@@ -98,7 +98,7 @@ public static class RunFold
         };
     }
 
-    private static RunState? ApplyFreezeCaptured(RunState? current, RunEvent ev, DateTimeOffset at)
+    private static RunState? ApplyFreezeCaptured(RunState? current, FreezeCapturedEvent ev, DateTimeOffset at)
     {
         if (current is null || at <= current.UpdatedAt)
         {
@@ -113,7 +113,7 @@ public static class RunFold
         };
     }
 
-    private static RunState? ApplyPrVerified(RunState? current, RunEvent ev, DateTimeOffset at)
+    private static RunState? ApplyPrVerified(RunState? current, PrVerifiedEvent ev, DateTimeOffset at)
     {
         if (current is null || at <= current.UpdatedAt)
         {
@@ -142,7 +142,7 @@ public static class RunFold
         };
     }
 
-    private static RunState? ApplyRunFailed(RunState? current, RunEvent ev, DateTimeOffset at)
+    private static RunState? ApplyRunFailed(RunState? current, RunFailedEvent ev, DateTimeOffset at)
     {
         if (current is null || IsTerminal(current.Status) || at <= current.UpdatedAt)
         {

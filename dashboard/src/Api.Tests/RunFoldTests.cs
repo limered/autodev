@@ -10,19 +10,13 @@ public class RunFoldTests
     private static readonly DateTimeOffset T1 = T0.AddMinutes(1);
     private static readonly DateTimeOffset T2 = T0.AddMinutes(2);
 
-    private static RunEvent E(string type, DateTimeOffset? at = null, Func<RunEvent, RunEvent>? configure = null)
-    {
-        var ev = new RunEvent(type, at, null, null, null, null, null, null, null, null) { RunId = RunId };
-        return configure?.Invoke(ev) ?? ev;
-    }
-
     private static RunState State(string status = "launching", DateTimeOffset? updatedAt = null, DateTimeOffset? lastHeartbeatAt = null, string? currentPhase = null) =>
         new(RunId, "repo", "branch", "spec", "model", null, status, T0, null, lastHeartbeatAt, null, null, false, null, updatedAt ?? T0, null, currentPhase);
 
     [Fact]
     public void RunStarted_CreatesNewRun()
     {
-        var next = RunFold.Apply(null, E("run-started", T1, e => e with { Repo = "r", Branch = "b", Spec = "s", Model = "m" }));
+        var next = RunFold.Apply(null, new RunStartedEvent("r", "b", "s", "m") { At = T1, RunId = RunId });
 
         Assert.NotNull(next);
         Assert.Equal(RunId, next.RunId);
@@ -54,7 +48,7 @@ public class RunFoldTests
             new RunStage("pr-author", "opencode-go/kimi-k2.7-code"),
         };
 
-        var next = RunFold.Apply(null, E("run-started", T1, e => e with { Repo = "r", Stages = stages }));
+        var next = RunFold.Apply(null, new RunStartedEvent(Repo: "r", Stages: stages) { At = T1, RunId = RunId });
 
         Assert.NotNull(next);
         Assert.NotNull(next.Stages);
@@ -72,7 +66,7 @@ public class RunFoldTests
     {
         var current = State();
 
-        var next = RunFold.Apply(current, E("run-started", T1, e => e with { Repo = "r" }));
+        var next = RunFold.Apply(current, new RunStartedEvent(Repo: "r") { At = T1, RunId = RunId });
 
         Assert.Null(next);
     }
@@ -82,7 +76,7 @@ public class RunFoldTests
     {
         var current = State("launching");
 
-        var next = RunFold.Apply(current, E("agent-started", T1, e => e with { VmName = "vm-1" }));
+        var next = RunFold.Apply(current, new AgentStartedEvent("vm-1") { At = T1, RunId = RunId });
 
         Assert.NotNull(next);
         Assert.Equal("running", next.Status);
@@ -95,7 +89,7 @@ public class RunFoldTests
     {
         var current = State("running", updatedAt: T2);
 
-        var next = RunFold.Apply(current, E("agent-started", T1, e => e with { VmName = "vm-1" }));
+        var next = RunFold.Apply(current, new AgentStartedEvent("vm-1") { At = T1, RunId = RunId });
 
         Assert.Null(next);
     }
@@ -107,7 +101,7 @@ public class RunFoldTests
     {
         var current = State(terminalStatus);
 
-        var next = RunFold.Apply(current, E("agent-started", T1, e => e with { VmName = "vm-1" }));
+        var next = RunFold.Apply(current, new AgentStartedEvent("vm-1") { At = T1, RunId = RunId });
 
         Assert.Null(next);
     }
@@ -117,7 +111,7 @@ public class RunFoldTests
     {
         var current = State("running", updatedAt: T0);
 
-        var next = RunFold.Apply(current, E("heartbeat", T1));
+        var next = RunFold.Apply(current, new HeartbeatEvent { At = T1, RunId = RunId });
 
         Assert.NotNull(next);
         Assert.Equal(T1, next.LastHeartbeatAt);
@@ -130,7 +124,7 @@ public class RunFoldTests
     {
         var current = State("running", updatedAt: T0, lastHeartbeatAt: T2);
 
-        var next = RunFold.Apply(current, E("heartbeat", T1));
+        var next = RunFold.Apply(current, new HeartbeatEvent { At = T1, RunId = RunId });
 
         Assert.Null(next);
     }
@@ -140,7 +134,7 @@ public class RunFoldTests
     {
         var current = State("running", updatedAt: T0, lastHeartbeatAt: null);
 
-        var next = RunFold.Apply(current, E("heartbeat", T1));
+        var next = RunFold.Apply(current, new HeartbeatEvent { At = T1, RunId = RunId });
 
         Assert.NotNull(next);
         Assert.Equal(T1, next.LastHeartbeatAt);
@@ -151,7 +145,7 @@ public class RunFoldTests
     {
         var current = State("running", updatedAt: T0, currentPhase: null);
 
-        var next = RunFold.Apply(current, E("heartbeat", T1, e => e with { CurrentPhase = "feature-builder" }));
+        var next = RunFold.Apply(current, new HeartbeatEvent("feature-builder") { At = T1, RunId = RunId });
 
         Assert.NotNull(next);
         Assert.Equal(T1, next.LastHeartbeatAt);
@@ -165,7 +159,7 @@ public class RunFoldTests
     {
         var current = State("running", updatedAt: T0, lastHeartbeatAt: T0, currentPhase: "feature-builder");
 
-        var next = RunFold.Apply(current, E("heartbeat", T1, e => e with { CurrentPhase = "test-runner" }));
+        var next = RunFold.Apply(current, new HeartbeatEvent("test-runner") { At = T1, RunId = RunId });
 
         Assert.NotNull(next);
         Assert.Equal("test-runner", next.CurrentPhase);
@@ -177,7 +171,7 @@ public class RunFoldTests
     {
         var current = State("running", updatedAt: T0, lastHeartbeatAt: T0, currentPhase: "feature-builder");
 
-        var next = RunFold.Apply(current, E("heartbeat", T1));
+        var next = RunFold.Apply(current, new HeartbeatEvent { At = T1, RunId = RunId });
 
         Assert.NotNull(next);
         Assert.Equal("feature-builder", next.CurrentPhase);
@@ -189,7 +183,7 @@ public class RunFoldTests
     {
         var current = State("running", updatedAt: T0, lastHeartbeatAt: null, currentPhase: null);
 
-        var next = RunFold.Apply(current, E("heartbeat", T1, e => e with { CurrentPhase = "feature-builder" }));
+        var next = RunFold.Apply(current, new HeartbeatEvent("feature-builder") { At = T1, RunId = RunId });
 
         Assert.NotNull(next);
         Assert.Equal("feature-builder", next.CurrentPhase);
@@ -201,7 +195,7 @@ public class RunFoldTests
     {
         var current = State("running");
 
-        var next = RunFold.Apply(current, E("stall-detected", T1, e => e with { FailureReason = "stuck" }));
+        var next = RunFold.Apply(current, new StallDetectedEvent("stuck") { At = T1, RunId = RunId });
 
         Assert.NotNull(next);
         Assert.Equal("stalled", next.Status);
@@ -216,7 +210,7 @@ public class RunFoldTests
     {
         var current = State(terminalStatus);
 
-        var next = RunFold.Apply(current, E("stall-detected", T1, e => e with { FailureReason = "stuck" }));
+        var next = RunFold.Apply(current, new StallDetectedEvent("stuck") { At = T1, RunId = RunId });
 
         Assert.Null(next);
     }
@@ -226,7 +220,7 @@ public class RunFoldTests
     {
         var current = State("running", updatedAt: T2);
 
-        var next = RunFold.Apply(current, E("stall-detected", T1));
+        var next = RunFold.Apply(current, new StallDetectedEvent { At = T1, RunId = RunId });
 
         Assert.Null(next);
     }
@@ -236,7 +230,7 @@ public class RunFoldTests
     {
         var current = State("running");
 
-        var next = RunFold.Apply(current, E("freeze-captured", T1, e => e with { FreezeLocalPath = "/freeze" }));
+        var next = RunFold.Apply(current, new FreezeCapturedEvent("/freeze") { At = T1, RunId = RunId });
 
         Assert.NotNull(next);
         Assert.True(next.FreezeCaptured);
@@ -249,7 +243,7 @@ public class RunFoldTests
     {
         var current = State("running", updatedAt: T2);
 
-        var next = RunFold.Apply(current, E("freeze-captured", T1, e => e with { FreezeLocalPath = "/freeze" }));
+        var next = RunFold.Apply(current, new FreezeCapturedEvent("/freeze") { At = T1, RunId = RunId });
 
         Assert.Null(next);
     }
@@ -259,7 +253,7 @@ public class RunFoldTests
     {
         var current = State("running");
 
-        var next = RunFold.Apply(current, E("pr-verified", T1, e => e with { PrUrl = "https://pr" }));
+        var next = RunFold.Apply(current, new PrVerifiedEvent("https://pr") { At = T1, RunId = RunId });
 
         Assert.NotNull(next);
         Assert.Equal("https://pr", next.PrUrl);
@@ -271,7 +265,7 @@ public class RunFoldTests
     {
         var current = State("running", updatedAt: T2);
 
-        var next = RunFold.Apply(current, E("pr-verified", T1, e => e with { PrUrl = "https://pr" }));
+        var next = RunFold.Apply(current, new PrVerifiedEvent("https://pr") { At = T1, RunId = RunId });
 
         Assert.Null(next);
     }
@@ -281,7 +275,7 @@ public class RunFoldTests
     {
         var current = State("running");
 
-        var next = RunFold.Apply(current, E("run-finished", T1));
+        var next = RunFold.Apply(current, new RunFinishedEvent { At = T1, RunId = RunId });
 
         Assert.NotNull(next);
         Assert.Equal("done", next.Status);
@@ -296,7 +290,7 @@ public class RunFoldTests
     {
         var current = State(terminalStatus);
 
-        var next = RunFold.Apply(current, E("run-finished", T1));
+        var next = RunFold.Apply(current, new RunFinishedEvent { At = T1, RunId = RunId });
 
         Assert.Null(next);
     }
@@ -306,7 +300,7 @@ public class RunFoldTests
     {
         var current = State("running", updatedAt: T2);
 
-        var next = RunFold.Apply(current, E("run-finished", T1));
+        var next = RunFold.Apply(current, new RunFinishedEvent { At = T1, RunId = RunId });
 
         Assert.Null(next);
     }
@@ -316,7 +310,7 @@ public class RunFoldTests
     {
         var current = State("running");
 
-        var next = RunFold.Apply(current, E("run-failed", T1, e => e with { FailureReason = "oops" }));
+        var next = RunFold.Apply(current, new RunFailedEvent("oops") { At = T1, RunId = RunId });
 
         Assert.NotNull(next);
         Assert.Equal("failed", next.Status);
@@ -332,7 +326,7 @@ public class RunFoldTests
     {
         var current = State(terminalStatus);
 
-        var next = RunFold.Apply(current, E("run-failed", T1, e => e with { FailureReason = "oops" }));
+        var next = RunFold.Apply(current, new RunFailedEvent("oops") { At = T1, RunId = RunId });
 
         Assert.Null(next);
     }
@@ -342,7 +336,7 @@ public class RunFoldTests
     {
         var current = State("running", updatedAt: T2);
 
-        var next = RunFold.Apply(current, E("run-failed", T1, e => e with { FailureReason = "oops" }));
+        var next = RunFold.Apply(current, new RunFailedEvent("oops") { At = T1, RunId = RunId });
 
         Assert.Null(next);
     }
@@ -350,9 +344,10 @@ public class RunFoldTests
     [Fact]
     public void UnknownEvent_IsNoOp()
     {
+        // An unmapped wire type binds to the bare base event; the fold ignores it.
         var current = State("running");
 
-        var next = RunFold.Apply(current, E("unknown-event", T1));
+        var next = RunFold.Apply(current, new RunEvent { At = T1, RunId = RunId });
 
         Assert.Null(next);
     }
