@@ -1,7 +1,7 @@
 ---
 description: Authors the pull request title and body from the branch diff and creates the PR.
 mode: primary
-model: opencode-go/kimi-k2.7-code
+model: opencode-go/qwen3.8-flash
 permission:
   bash: allow
 ---

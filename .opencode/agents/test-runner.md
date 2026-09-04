@@ -1,7 +1,7 @@
 ---
 description: Runs the target repo's declared test-harness commands between implement and PR.
 mode: primary
-model: opencode-go/kimi-k2.7-code
+model: opencode-go/qwen3.8-flash
 permission:
   bash: allow
 ---
