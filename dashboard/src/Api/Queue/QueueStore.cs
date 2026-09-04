@@ -39,15 +39,17 @@ public sealed class QueueStore : IQueueStore
         await using var conn = await _dataSource.OpenConnectionAsync();
         await using var tx = await conn.BeginTransactionAsync();
 
-        // Mechanical read of the queue inside the transaction; QueueRules makes the
-        // dedup and next-rank decisions so they live once, shared with the fake.
-        var items = await QueryItems(SelectQueueSql, conn, tx);
+        // Mechanical read of the queue's own rows inside the transaction; QueueRules
+        // makes the dedup and next-rank decisions so they live once, shared with the
+        // fake. Rule decisions need no issue/run enrichment, so the snapshot skips
+        // the API select's LEFT JOINs.
+        var items = await QueryRuleItems(SelectQueueRuleSql, conn, tx);
 
         var existing = QueueRules.ExistingForIssue(items, issueId);
         if (existing is not null)
         {
             await tx.CommitAsync();
-            return existing;
+            return await GetById(existing.Id);
         }
 
         var rank = QueueRules.NextRank(items.Select(i => i.Rank));
@@ -121,11 +123,13 @@ public sealed class QueueStore : IQueueStore
 
         var runId = Guid.NewGuid();
 
-        // Mechanical snapshot; QueueRules decides which rows are claimable and in what
-        // order, shared with the fake so the predicate and ordering cannot drift.
-        var items = await QueryItems(SelectQueueSql, conn, tx);
+        // Mechanical snapshot of the queue's own rows; QueueRules decides which rows
+        // are claimable and in what order, shared with the fake so the predicate and
+        // ordering cannot drift. Claiming needs no issue/run enrichment, so the
+        // snapshot skips the API select's LEFT JOINs.
+        var items = await QueryRuleItems(SelectQueueRuleSql, conn, tx);
 
-        QueueListItem? claimed = null;
+        QueueRuleItem? claimed = null;
         foreach (var candidate in QueueRules.ClaimableInRankOrder(items))
         {
             claimed = await TryLockClaimable(candidate.Id, conn, tx);
@@ -176,13 +180,13 @@ public sealed class QueueStore : IQueueStore
         return new ClaimedQueueItem(runId, repoUrl, spec);
     }
 
-    private static async Task<QueueListItem?> TryLockClaimable(long id, NpgsqlConnection conn, NpgsqlTransaction tx)
+    private static async Task<QueueRuleItem?> TryLockClaimable(long id, NpgsqlConnection conn, NpgsqlTransaction tx)
     {
         // Lock exactly one candidate row. SKIP LOCKED keeps a row mid-claim by a
         // concurrent transaction invisible — the guarantee the old single-statement
         // claim had — so the caller falls through to the next candidate, never waits.
-        var rows = await QueryItems(
-            $"{SelectQueueSql} WHERE q.id = @id FOR UPDATE OF q SKIP LOCKED",
+        var rows = await QueryRuleItems(
+            $"{SelectQueueRuleSql} WHERE q.id = @id FOR UPDATE OF q SKIP LOCKED",
             conn, tx, new NpgsqlParameter("id", id));
         var locked = rows.SingleOrDefault();
         if (locked is null)
@@ -237,13 +241,14 @@ public sealed class QueueStore : IQueueStore
         return items.SingleOrDefault();
     }
 
-    private static async Task<List<QueueListItem>> QueryItems(
+    private static async Task<List<T>> Query<T>(
         string sql,
         NpgsqlConnection conn,
-        NpgsqlTransaction? tx = null,
+        NpgsqlTransaction? tx,
+        Func<NpgsqlDataReader, T> map,
         params NpgsqlParameter[] parameters)
     {
-        var items = new List<QueueListItem>();
+        var items = new List<T>();
         await using var cmd = tx is null ? new NpgsqlCommand(sql, conn) : new NpgsqlCommand(sql, conn, tx);
         foreach (var p in parameters)
         {
@@ -253,12 +258,27 @@ public sealed class QueueStore : IQueueStore
         await using var reader = await cmd.ExecuteReaderAsync();
         while (await reader.ReadAsync())
         {
-            items.Add(Map(reader));
+            items.Add(map(reader));
         }
 
         return items;
     }
 
+    private static Task<List<QueueListItem>> QueryItems(
+        string sql,
+        NpgsqlConnection conn,
+        NpgsqlTransaction? tx = null,
+        params NpgsqlParameter[] parameters)
+        => Query(sql, conn, tx, Map, parameters);
+
+    private static Task<List<QueueRuleItem>> QueryRuleItems(
+        string sql,
+        NpgsqlConnection conn,
+        NpgsqlTransaction? tx = null,
+        params NpgsqlParameter[] parameters)
+        => Query(sql, conn, tx, MapRuleItem, parameters);
+
+    /// <summary>The API select: the queue row plus the issue/run enrichments the response carries.</summary>
     private const string SelectQueueSql =
         """
         SELECT
@@ -279,6 +299,18 @@ public sealed class QueueStore : IQueueStore
         LEFT JOIN runs r ON r.run_id = q.run_id
         """;
 
+    /// <summary>The rule select: the queue's own rows, join-free — all QueueRules needs.</summary>
+    private const string SelectQueueRuleSql =
+        """
+        SELECT
+            q.id,
+            q.issue_id,
+            q.rank,
+            q.run_id,
+            q.start_requested_at
+        FROM queue q
+        """;
+
     private static QueueListItem Map(NpgsqlDataReader r)
     {
         return new QueueListItem(
@@ -295,6 +327,14 @@ public sealed class QueueStore : IQueueStore
             GetStringOrNull(r, "issue_state"),
             r.GetBoolean(r.GetOrdinal("issue_present")));
     }
+
+    private static QueueRuleItem MapRuleItem(NpgsqlDataReader r) =>
+        new(
+            r.GetInt64(r.GetOrdinal("id")),
+            r.GetInt64(r.GetOrdinal("issue_id")),
+            r.GetInt32(r.GetOrdinal("rank")),
+            GetGuidOrNull(r, "run_id"),
+            GetDateTimeOffsetOrNull(r, "start_requested_at"));
 
     private static DateTimeOffset? GetDateTimeOffsetOrNull(NpgsqlDataReader r, string column)
     {

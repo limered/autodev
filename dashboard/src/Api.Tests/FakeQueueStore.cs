@@ -7,6 +7,13 @@ public sealed class FakeQueueStore : IQueueStore
     private readonly List<QueueListItem> _items = new();
     private long _nextId = 1;
 
+    /// <summary>
+    /// The boundary projection: QueueRules sees only the queue row fields, so the
+    /// enrichments QueueListItem adds for the API response are dropped here.
+    /// </summary>
+    private IEnumerable<QueueRuleItem> RuleItems() =>
+        _items.Select(i => new QueueRuleItem(i.Id, i.IssueId, i.Rank, i.RunId, i.StartRequestedAt));
+
     public Task<IReadOnlyList<QueueListItem>> All()
     {
         var ordered = _items.OrderBy(i => i.Rank).ToList();
@@ -17,10 +24,10 @@ public sealed class FakeQueueStore : IQueueStore
     {
         // Rank/dedup derivation is QueueRules', shared with the real SQL store; only
         // the storage here is fake.
-        var existing = QueueRules.ExistingForIssue(_items, issueId);
+        var existing = QueueRules.ExistingForIssue(RuleItems(), issueId);
         if (existing is not null)
         {
-            return Task.FromResult<QueueListItem?>(existing);
+            return Task.FromResult<QueueListItem?>(_items.Single(i => i.Id == existing.Id));
         }
 
         var item = new QueueListItem(
@@ -69,14 +76,15 @@ public sealed class FakeQueueStore : IQueueStore
 
     public Task<ClaimedQueueItem?> ClaimNext()
     {
-        var item = QueueRules.NextClaimable(_items);
+        var next = QueueRules.NextClaimable(RuleItems());
 
-        if (item is null)
+        if (next is null)
         {
             return Task.FromResult<ClaimedQueueItem?>(null);
         }
 
         var runId = Guid.NewGuid();
+        var item = _items.Single(i => i.Id == next.Id);
         var idx = _items.IndexOf(item);
         _items[idx] = item with { RunId = runId };
         return Task.FromResult<ClaimedQueueItem?>(new ClaimedQueueItem(runId, "https://github.com/test/repo.git", "spec"));
