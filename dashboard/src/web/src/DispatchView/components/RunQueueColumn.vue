@@ -1,15 +1,9 @@
 <script setup>
 import { computed, ref, watch } from "vue";
 import ErrorBanner from "../../_shared/components/ErrorBanner.vue";
+import { queueRowView, resolveLocalQueue } from "../models/queueView.js";
 import { useDragReorder } from "../services/useDragReorder.js";
 import { useQueueActions } from "../services/useQueueActions.js";
-import {
-  queueStatus,
-  queueStatusClass,
-  isQueueItemRunning,
-  isQueueItemFailed,
-  resolveLocalQueue,
-} from "../models/queueView.js";
 import IssueRef from "./IssueRef.vue";
 
 // The run-queue column of the DispatchView split: owns everything its
@@ -76,7 +70,12 @@ watch(
 );
 
 const nextQueueItem = computed(() => localQueue.value[0] ?? null);
-const hasRunningItem = computed(() => props.queue.some(isQueueItemRunning));
+const hasRunningItem = computed(() => props.queue.some((item) => queueRowView(item).isRunning));
+
+// One row view-model per queue row: a single queueRowView call drives the
+// status badge text, its status class, and the Restart gating, instead of
+// the template consulting 3-4 separate helpers per row.
+const rows = computed(() => localQueue.value.map((item) => ({ item, view: queueRowView(item) })));
 
 // Each button's write-then-resync: run the action, then refresh the feeds
 // that show its effect — both feeds for a remove (the issue is eligible
@@ -134,7 +133,7 @@ async function onRestart(item) {
 
     <section v-if="localQueue.length" class="queue-list">
       <article
-        v-for="item in localQueue"
+        v-for="{ item, view } in rows"
         :key="item.id"
         class="queue-row"
         :class="{ dragging: draggedId === item.id, 'drag-over': dragOverId === item.id }"
@@ -158,12 +157,12 @@ async function onRestart(item) {
             <span class="missing-issue">no longer eligible</span>
           </template>
         </div>
-        <span class="status-badge" :class="queueStatusClass(item)">
+        <span class="status-badge" :class="view.statusClass">
           <span class="status-indicator"></span>
-          {{ queueStatus(item) }}
+          {{ view.status }}
         </span>
         <button
-          v-if="isQueueItemFailed(item)"
+          v-if="view.isFailed"
           class="restart-button"
           :disabled="isRestarting"
           @click="onRestart(item)"

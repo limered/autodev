@@ -1,75 +1,58 @@
 import { describe, it, expect } from "vitest";
-import {
-  queueStatus,
-  queueStatusClass,
-  isQueueItemRunning,
-  isQueueItemFailed,
-  resolveLocalQueue,
-} from "../../models/queueView.js";
+import { queueRowView, resolveLocalQueue } from "../../models/queueView.js";
 
-describe("queueStatus", () => {
-  it("returns queued when no run is linked", () => {
-    expect(queueStatus({ runId: null })).toBe("queued");
+// Row view-model for one queue item: a single queueRowView call derives the
+// badge status text, its status-* class, and the running/failed gating the
+// RunQueueColumn template needs per row, so the runId/runStatus branching is
+// table-tested once through this seam instead of through four helpers.
+describe("queueRowView", () => {
+  it("views an item with no linked run as queued and idle", () => {
+    expect(queueRowView({ runId: null })).toEqual({
+      status: "queued",
+      statusClass: "status-queued",
+      isRunning: false,
+      isFailed: false,
+    });
   });
 
-  it("returns starting when a run id is reserved but no run event has arrived", () => {
-    expect(queueStatus({ runId: "r1", runStatus: null })).toBe("starting");
-    expect(queueStatus({ runId: "r1", runStatus: undefined })).toBe("starting");
+  it("views a reserved run id with no run event yet as starting and running", () => {
+    for (const runStatus of [null, undefined]) {
+      expect(queueRowView({ runId: "r1", runStatus })).toEqual({
+        status: "starting",
+        statusClass: "status-starting",
+        isRunning: true,
+        isFailed: false,
+      });
+    }
   });
 
-  it("returns running for launching, running, or stalled runs", () => {
-    expect(queueStatus({ runId: "r1", runStatus: "launching" })).toBe("running");
-    expect(queueStatus({ runId: "r1", runStatus: "running" })).toBe("running");
-    expect(queueStatus({ runId: "r1", runStatus: "stalled" })).toBe("running");
+  it("views launching, running, stalled, and starting runs as running", () => {
+    for (const runStatus of ["launching", "running", "stalled", "starting"]) {
+      expect(queueRowView({ runId: "r1", runStatus })).toEqual({
+        status: "running",
+        statusClass: "status-running",
+        isRunning: true,
+        isFailed: false,
+      });
+    }
   });
 
-  it("returns done for finished runs", () => {
-    expect(queueStatus({ runId: "r1", runStatus: "done" })).toBe("done");
+  it("views finished runs as done and not running", () => {
+    expect(queueRowView({ runId: "r1", runStatus: "done" })).toEqual({
+      status: "done",
+      statusClass: "status-done",
+      isRunning: false,
+      isFailed: false,
+    });
   });
 
-  it("returns failed for failed runs", () => {
-    expect(queueStatus({ runId: "r1", runStatus: "failed" })).toBe("failed");
-  });
-});
-
-describe("queueStatusClass", () => {
-  it("prefixes the inferred status with status-", () => {
-    expect(queueStatusClass({ runId: null })).toBe("status-queued");
-    expect(queueStatusClass({ runId: "r1", runStatus: "done" })).toBe("status-done");
-    expect(queueStatusClass({ runId: "r1", runStatus: null })).toBe("status-starting");
-  });
-});
-
-describe("isQueueItemRunning", () => {
-  it("returns false when no run is linked", () => {
-    expect(isQueueItemRunning({ runId: null })).toBe(false);
-  });
-
-  it("returns true for active run statuses", () => {
-    expect(isQueueItemRunning({ runId: "r1", runStatus: "launching" })).toBe(true);
-    expect(isQueueItemRunning({ runId: "r1", runStatus: "running" })).toBe(true);
-    expect(isQueueItemRunning({ runId: "r1", runStatus: "stalled" })).toBe(true);
-    expect(isQueueItemRunning({ runId: "r1", runStatus: "starting" })).toBe(true);
-  });
-
-  it("returns false for terminal run statuses", () => {
-    expect(isQueueItemRunning({ runId: "r1", runStatus: "done" })).toBe(false);
-    expect(isQueueItemRunning({ runId: "r1", runStatus: "failed" })).toBe(false);
-  });
-});
-
-describe("isQueueItemFailed", () => {
-  it("returns false when no run is linked", () => {
-    expect(isQueueItemFailed({ runId: null })).toBe(false);
-  });
-
-  it("returns false for non-failed statuses", () => {
-    expect(isQueueItemFailed({ runId: "r1", runStatus: "running" })).toBe(false);
-    expect(isQueueItemFailed({ runId: "r1", runStatus: "done" })).toBe(false);
-  });
-
-  it("returns true for failed runs", () => {
-    expect(isQueueItemFailed({ runId: "r1", runStatus: "failed" })).toBe(true);
+  it("views failed runs as failed and restartable", () => {
+    expect(queueRowView({ runId: "r1", runStatus: "failed" })).toEqual({
+      status: "failed",
+      statusClass: "status-failed",
+      isRunning: false,
+      isFailed: true,
+    });
   });
 });
 
