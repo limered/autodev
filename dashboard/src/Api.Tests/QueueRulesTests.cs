@@ -11,14 +11,13 @@ namespace Api.Tests;
 /// </summary>
 public class QueueRulesTests
 {
-    private static QueueListItem Item(
+    private static QueueRuleItem Item(
         long id,
         long issueId,
         int rank,
         Guid? runId = null,
         DateTimeOffset? startRequestedAt = null) => new(
-        id, issueId, rank, runId, startRequestedAt,
-        null, null, null, null, null, null, false);
+        id, issueId, rank, runId, startRequestedAt);
 
     [Fact]
     public void NextRank_EmptyQueue_ReturnsOne()

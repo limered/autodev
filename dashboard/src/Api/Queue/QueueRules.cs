@@ -4,7 +4,9 @@ namespace Api.Queue;
 /// The queue's three business decisions, stated once so the SQL <see cref="QueueStore"/>
 /// and the in-memory <c>FakeQueueStore</c> derive them identically and cannot drift:
 /// next-rank assignment, claim eligibility + ordering, and enqueue dedup. The stores
-/// own storage and execution; this class owns only the derivation.
+/// own storage and execution; this class owns only the derivation. Decisions run on
+/// <see cref="QueueRuleItem"/> — the queue row's own fields — so the API response
+/// shape stays outside this module.
 /// </summary>
 public static class QueueRules
 {
@@ -18,7 +20,7 @@ public static class QueueRules
     /// Claimable = start requested but not yet attached to a run. <see cref="QueueStore"/>
     /// re-applies this under the row lock when claiming; the fake applies it directly.
     /// </summary>
-    public static bool IsClaimable(QueueListItem item) =>
+    public static bool IsClaimable(QueueRuleItem item) =>
         item.StartRequestedAt is not null && item.RunId is null;
 
     /// <summary>
@@ -26,17 +28,17 @@ public static class QueueRules
     /// walks these in order, skipping rows a concurrent claimer already locked; the
     /// first one is the next claim.
     /// </summary>
-    public static IEnumerable<QueueListItem> ClaimableInRankOrder(IEnumerable<QueueListItem> items) =>
+    public static IEnumerable<QueueRuleItem> ClaimableInRankOrder(IEnumerable<QueueRuleItem> items) =>
         items.Where(IsClaimable).OrderBy(i => i.Rank);
 
     /// <summary>The next claim: the lowest-ranked claimable row, or none.</summary>
-    public static QueueListItem? NextClaimable(IEnumerable<QueueListItem> items) =>
+    public static QueueRuleItem? NextClaimable(IEnumerable<QueueRuleItem> items) =>
         ClaimableInRankOrder(items).FirstOrDefault();
 
     /// <summary>
     /// Enqueue is idempotent per issue: an issue occupies at most one queue row, so the
     /// existing row for the issue (if any) is returned instead of enqueueing again.
     /// </summary>
-    public static QueueListItem? ExistingForIssue(IEnumerable<QueueListItem> items, long issueId) =>
+    public static QueueRuleItem? ExistingForIssue(IEnumerable<QueueRuleItem> items, long issueId) =>
         items.FirstOrDefault(i => i.IssueId == issueId);
 }
