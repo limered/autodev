@@ -4,10 +4,15 @@ public static class RunsEndpoints
 {
     public static IEndpointRouteBuilder MapRunsEndpoints(this IEndpointRouteBuilder app)
     {
-        app.MapPost("/runs/{runId:guid}/events", async (Guid runId, RunEvent ev, IRunStore store) =>
+        app.MapPost("/runs/{runId:guid}/events", async (Guid runId, RunEvent? ev, IRunStore store) =>
         {
-            if (string.IsNullOrWhiteSpace(ev.Type))
+            // A JSON null body binds to null. Anything the wire mapper cannot type — an
+            // unknown or missing discriminator — binds to a bare RunEvent, which the fold
+            // no-ops, so producers never see a 500 for an event type this API doesn't know.
+            if (ev is null)
+            {
                 return Results.BadRequest();
+            }
 
             await store.Apply(runId, ev);
             return Results.Accepted();

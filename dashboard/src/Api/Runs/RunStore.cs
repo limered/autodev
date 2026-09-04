@@ -108,7 +108,7 @@ public sealed class RunStore : IRunStore
         await Persist(next, current, conn, tx);
 
         (string Repo, int Number)? issueToClose = null;
-        if (ev.Type == "run-finished")
+        if (ev is RunFinishedEvent)
         {
             // ponytail: the linked-issue resolve and the queue-row delete live here in
             // Apply deliberately, inlined rather than abstracted. They only make sense

@@ -27,10 +27,12 @@ public sealed class RunStoreIntegrationTests : IClassFixture<PostgresFixture>, I
 
     public Task DisposeAsync() => Task.CompletedTask;
 
-    private static RunEvent Started(DateTimeOffset at) => new(
-        "run-started", at, "owner/repo", "feat/x", "do the thing", "gpt-x",
-        null, null, null, null,
-        Stages: new[] { new RunStage("build", "gpt-x") });
+    private static RunStartedEvent Started(DateTimeOffset at) => new(
+        "owner/repo", "feat/x", "do the thing", "gpt-x",
+        Stages: new[] { new RunStage("build", "gpt-x") })
+    {
+        At = at,
+    };
 
     // Postgres timestamptz keeps microsecond precision while DateTimeOffset keeps 100ns
     // ticks, so a UtcNow with a sub-microsecond tail never round-trips exactly. Seed the
@@ -82,8 +84,7 @@ public sealed class RunStoreIntegrationTests : IClassFixture<PostgresFixture>, I
         var before = await _fixture.GetRunAsync(runId);
 
         var beat = started.AddSeconds(5);
-        await _store.Apply(runId, new RunEvent(
-            "heartbeat", beat, null, null, null, null, null, null, null, null, CurrentPhase: "compiling"));
+        await _store.Apply(runId, new HeartbeatEvent("compiling") { At = beat });
 
         var after = await _fixture.GetRunAsync(runId);
         Assert.Equal(beat, after!.LastHeartbeatAt);
@@ -101,9 +102,7 @@ public sealed class RunStoreIntegrationTests : IClassFixture<PostgresFixture>, I
         await _store.Apply(runId, Started(started));
 
         var at = started.AddSeconds(3);
-        await _store.Apply(runId, new RunEvent(
-            "agent-started", at, null, null, null, null, VmName: "vm-42",
-            null, null, null));
+        await _store.Apply(runId, new AgentStartedEvent("vm-42") { At = at });
 
         var after = await _fixture.GetRunAsync(runId);
         Assert.Equal("running", after!.Status);
@@ -119,12 +118,10 @@ public sealed class RunStoreIntegrationTests : IClassFixture<PostgresFixture>, I
         var runId = Guid.NewGuid();
         var started = DateTimeOffset.UtcNow;
         await _store.Apply(runId, Started(started));
-        await _store.Apply(runId, new RunEvent(
-            "agent-started", started.AddSeconds(10), null, null, null, null, "vm-new", null, null, null));
+        await _store.Apply(runId, new AgentStartedEvent("vm-new") { At = started.AddSeconds(10) });
 
         // A stale agent-started (earlier timestamp, different vm) must not overwrite.
-        await _store.Apply(runId, new RunEvent(
-            "agent-started", started.AddSeconds(1), null, null, null, null, "vm-stale", null, null, null));
+        await _store.Apply(runId, new AgentStartedEvent("vm-stale") { At = started.AddSeconds(1) });
 
         var after = await _fixture.GetRunAsync(runId);
         Assert.Equal("vm-new", after!.VmName);
@@ -140,11 +137,9 @@ public sealed class RunStoreIntegrationTests : IClassFixture<PostgresFixture>, I
         await _fixture.SeedIssueAsync(555, "owner/repo", 7, "The issue");
         await _fixture.SeedQueueRowAsync(555, runId);
         await _store.Apply(runId, Started(started));
-        await _store.Apply(runId, new RunEvent(
-            "agent-started", started.AddSeconds(1), null, null, null, null, "vm-1", null, null, null));
+        await _store.Apply(runId, new AgentStartedEvent("vm-1") { At = started.AddSeconds(1) });
 
-        await _store.Apply(runId, new RunEvent(
-            "run-finished", started.AddSeconds(9), null, null, null, null, null, null, null, null));
+        await _store.Apply(runId, new RunFinishedEvent { At = started.AddSeconds(9) });
 
         var after = await _fixture.GetRunAsync(runId);
         Assert.Equal("done", after!.Status);
@@ -160,8 +155,7 @@ public sealed class RunStoreIntegrationTests : IClassFixture<PostgresFixture>, I
         var started = DateTimeOffset.UtcNow;
         await _store.Apply(runId, Started(started));
 
-        await _store.Apply(runId, new RunEvent(
-            "run-finished", started.AddSeconds(9), null, null, null, null, null, null, null, null));
+        await _store.Apply(runId, new RunFinishedEvent { At = started.AddSeconds(9) });
 
         Assert.Empty(_gitHub.Closed);
     }
