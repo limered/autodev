@@ -98,10 +98,14 @@ function Sync-IssuesToBackend {
     # bare object and an empty set to null, both of which fail the backend's
     # List<IssueSnapshot> binding (400). Where-Object drops the $null that
     # ForEach-Object yields for an empty issue list, so zero issues sends [].
-    $body = ConvertTo-Json -InputObject @($snapshot | Where-Object { $_ }) -Depth 4 -Compress
+    $json = ConvertTo-Json -InputObject @($snapshot | Where-Object { $_ }) -Depth 4 -Compress
+    # PowerShell 5.1 encodes a string -Body as Latin-1 when the content type omits a
+    # charset, corrupting any non-ASCII char (e.g. U+00B7) into bytes System.Text.Json
+    # rejects with an empty-body 400. Send UTF-8 bytes so the payload survives intact.
+    $body = [System.Text.Encoding]::UTF8.GetBytes($json)
     $uri = "$BackendUrl/issues/$OwnerRepo"
     Invoke-RestMethod -Method Put -Uri $uri -Body $body `
-        -ContentType "application/json" `
+        -ContentType "application/json; charset=utf-8" `
         -Headers @{ "X-Factory-Token" = $FactoryToken } `
         -TimeoutSec 30 | Out-Null
 }
