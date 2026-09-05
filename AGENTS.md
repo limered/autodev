@@ -24,6 +24,7 @@ The factory test phase runs every `test-harness.<name>` command declared here. A
 
 test-harness.api: dotnet test dashboard/src/Api.Tests
 test-harness.web: npm test --prefix dashboard/src/web
+test-harness.ps1: pwsh -NoProfile -Command "Invoke-Pester lib/"
 
 ## Frontend structure
 
