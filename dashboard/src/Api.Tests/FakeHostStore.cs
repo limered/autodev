@@ -19,7 +19,7 @@ public sealed class FakeHostStore : IHostStore
             return Task.FromResult<HostState?>(null);
         }
 
-        var online = DateTimeOffset.UtcNow - _lastSeen.Value <= TimeSpan.FromSeconds(20);
+        var online = HostLiveness.IsOnline(_lastSeen, DateTimeOffset.UtcNow);
         return Task.FromResult<HostState?>(new HostState(_lastSeen.Value, online));
     }
 }

@@ -13,7 +13,6 @@ public record HostState(DateTimeOffset LastSeen, bool Online);
 public sealed class HostStore : IHostStore
 {
     private readonly NpgsqlDataSource _dataSource;
-    private static readonly TimeSpan OnlineThreshold = TimeSpan.FromSeconds(20);
 
     public HostStore(NpgsqlDataSource dataSource)
     {
@@ -45,7 +44,7 @@ public sealed class HostStore : IHostStore
         }
 
         var lastSeen = new DateTimeOffset(DateTime.SpecifyKind((DateTime)result, DateTimeKind.Utc));
-        var online = DateTimeOffset.UtcNow - lastSeen <= OnlineThreshold;
+        var online = HostLiveness.IsOnline(lastSeen, DateTimeOffset.UtcNow);
         return new HostState(lastSeen, online);
     }
 }
