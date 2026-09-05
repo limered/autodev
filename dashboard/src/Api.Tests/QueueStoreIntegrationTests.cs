@@ -107,7 +107,8 @@ public sealed class QueueStoreIntegrationTests : IClassFixture<PostgresFixture>,
     {
         Skip.IfNot(_fixture.IsDockerAvailable, "Docker is not available; skipping QueueStore integration tests.");
 
-        // ClaimNext inner-joins issues (i.github_id = q.issue_id), so seed both.
+        // ClaimNext resolves the claim payload from the linked issues row (inner-join
+        // semantics: no row, no claim), so seed both.
         await _fixture.SeedIssueAsync(1, "owner/repo-a", 1, "First issue", "Do the first thing");
         await _fixture.SeedIssueAsync(2, "owner/repo-b", 2, "Second issue", "Do the second thing");
 
@@ -139,5 +140,23 @@ public sealed class QueueStoreIntegrationTests : IClassFixture<PostgresFixture>,
         var claim = await _store.ClaimNext();
 
         Assert.Null(claim);
+    }
+
+    [SkippableFact]
+    public async Task ClaimNext_IssueRowMissing_ClaimsNothing()
+    {
+        Skip.IfNot(_fixture.IsDockerAvailable, "Docker is not available; skipping QueueStore integration tests.");
+
+        // The old single-statement claim inner-joined issues: a queue row whose issue
+        // has no issues row matched nothing and claimed nothing. The resolver seam must
+        // keep that guarantee — a null payload claims nothing and attaches no run.
+        var enqueued = await _store.Enqueue(77);
+        await _store.StartNext(enqueued!.Id);
+
+        var claim = await _store.ClaimNext();
+
+        Assert.Null(claim);
+        var all = await _store.All();
+        Assert.Null(all.Single(i => i.Id == enqueued.Id).RunId);
     }
 }

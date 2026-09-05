@@ -38,15 +38,17 @@ public sealed class PostgresFixture : IAsyncLifetime
     public bool IsDockerAvailable { get; private set; }
 
     /// <summary>
-    /// Constructs a real <see cref="QueueStore"/> over the container's data source.
-    /// Only valid to call when <see cref="IsDockerAvailable"/> is <see langword="true"/>.
+    /// Constructs a real <see cref="QueueStore"/> over the container's data source, with
+    /// the SQL <see cref="IssueResolver"/> answering its claim payload. Only valid to
+    /// call when <see cref="IsDockerAvailable"/> is <see langword="true"/>.
     /// </summary>
-    public QueueStore CreateStore() => new(_dataSource, _hostStore);
+    public QueueStore CreateStore() => new(_dataSource, _hostStore, new IssueResolver());
 
     /// <summary>
     /// Constructs a real <see cref="RunStore"/> (queue release + linked-issue resolve
-    /// inlined in Apply) and a <see cref="RecordingGitHubIssuesClient"/> so tests can
-    /// assert the finish path resolved and closed the linked issue. Only valid when
+    /// composed in Apply via the <see cref="IssueResolver"/> seam) and a
+    /// <see cref="RecordingGitHubIssuesClient"/> so tests can assert the finish path
+    /// resolved and closed the linked issue. Only valid when
     /// <see cref="IsDockerAvailable"/>.
     /// </summary>
     public (RunStore Store, RecordingGitHubIssuesClient GitHub) CreateRunStore()
@@ -56,7 +58,8 @@ public sealed class PostgresFixture : IAsyncLifetime
             _dataSource,
             NullLogger<RunStore>.Instance,
             gitHub,
-            _hostStore);
+            _hostStore,
+            new IssueResolver());
         return (store, gitHub);
     }
 
@@ -152,8 +155,8 @@ public sealed class PostgresFixture : IAsyncLifetime
 
     /// <summary>
     /// Seeds an issues row directly via SQL. QueueStore LEFT JOINs issues on
-    /// github_id = issue_id, and ClaimNext inner-joins it, so a matching row must exist
-    /// for the JOINs to surface real data.
+    /// github_id = issue_id, and the claim resolver inner-joins it, so a matching row
+    /// must exist for the JOINs to surface real data.
     /// </summary>
     public async Task SeedIssueAsync(
         long githubId,

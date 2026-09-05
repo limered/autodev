@@ -28,6 +28,7 @@ builder.Services.AddSingleton<IRunStore, RunStore>();
 builder.Services.AddSingleton<IIssuesStore, IssuesStore>();
 builder.Services.AddSingleton<IQueueStore, QueueStore>();
 builder.Services.AddSingleton<IHostStore, HostStore>();
+builder.Services.AddSingleton<IIssueResolver, IssueResolver>();
 
 var githubPat = ReadGitHubPat(builder.Environment.ContentRootPath);
 builder.Services.AddHttpClient<IGitHubIssuesClient, GitHubIssuesClient>(client =>
