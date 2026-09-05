@@ -34,6 +34,8 @@ param(
 
 $ErrorActionPreference = "Stop"
 
+. (Join-Path $PSScriptRoot "lib/JobIntake.ps1")
+
 function Read-SecretFile {
     param([string]$Path)
     if (-not (Test-Path -LiteralPath $Path)) { return $null }
@@ -82,18 +84,7 @@ function Sync-IssuesToBackend {
         [string]$OwnerRepo,
         [array]$Issues
     )
-    $snapshot = $Issues | ForEach-Object {
-        @{
-            id = $_.id
-            number = $_.number
-            title = $_.title
-            htmlUrl = $_.html_url
-            labels = @($_.labels | ForEach-Object { $_.name })
-            body = $_.body
-            state = $_.state
-            updatedAt = $_.updated_at
-        }
-    }
+    $snapshot = ConvertTo-IssueSnapshot -Issues $Issues
     # @(...) forces array output: ConvertTo-Json collapses a single item to a
     # bare object and an empty set to null, both of which fail the backend's
     # List<IssueSnapshot> binding (400). Where-Object drops the $null that

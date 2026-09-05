@@ -41,6 +41,7 @@ param(
 $ErrorActionPreference = "Stop"
 
 . (Join-Path $PSScriptRoot "lib/HostVm.ps1")
+. (Join-Path $PSScriptRoot "lib/JobIntake.ps1")
 
 # Dashboard reporting is optional: only if a RunId + RepoRoot were passed AND
 # the .secrets/ config exists. Send-FactoryEvent is a no-op otherwise.
@@ -107,7 +108,7 @@ try {
             $vmStartEpoch
         }
 
-        $staleSeconds = $vmNow - $referenceEpoch
+        $staleSeconds = Get-StaleSeconds -VmNow $vmNow -ReferenceEpoch $referenceEpoch
         if ($staleSeconds -gt $StallThresholdSeconds) {
             $stallReason = "Heartbeat stale for ${staleSeconds}s (threshold ${StallThresholdSeconds}s); job appears stalled"
             if ($RunId) {

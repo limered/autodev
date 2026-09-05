@@ -39,20 +39,10 @@ param(
 
 $ErrorActionPreference = "Stop"
 
-# Accept a bare number, "#8", or a GitHub issue URL (.../issues/8); extract the number.
-if ($Issue -match '/issues/(\d+)') {
-    $IssueNumber = $Matches[1]
-}
-elseif ($Issue -match '^#?(\d+)$') {
-    $IssueNumber = $Matches[1]
-}
-else {
-    throw "Issue must be a GitHub issue number, '#N', or issue URL (.../issues/N); got: $Issue"
-}
+. (Join-Path $PSScriptRoot "lib/JobIntake.ps1")
 
-$timestamp = Get-Date -Format 'yyyyMMdd-HHmmss'
-$randomSuffix = Get-Random -Maximum 9999
-$Branch = "factory/issue-$IssueNumber-$timestamp-$randomSuffix"
+$IssueNumber = ConvertTo-IssueNumber -Issue $Issue
+$Branch = New-IssueBranchName -IssueNumber $IssueNumber
 
 $startJob = Join-Path $RepoRoot "start-job.ps1"
 if (-not (Test-Path $startJob)) {
