@@ -24,27 +24,7 @@ $sshKey = Join-Path $secretsDir "bot-github"
 $sshPubKey = Join-Path $secretsDir "bot-github.pub"
 $patFile = Join-Path $secretsDir "github-pat.txt"
 
-function Write-Step {
-    param([string]$Message)
-    Write-Host "==> $Message" -ForegroundColor Cyan
-}
-
-function Invoke-Multipass {
-    param(
-        [Parameter(ValueFromRemainingArguments = $true)]
-        [string[]]$Arguments
-    )
-    & multipass @Arguments
-    if ($LASTEXITCODE -ne 0) {
-        throw "multipass failed with exit code ${LASTEXITCODE}: multipass $Arguments"
-    }
-}
-
-function Remove-Vm {
-    param([string]$Name)
-    Write-Step "Destroying VM $Name"
-    multipass delete $Name --purge 2>&1 | Out-Null
-}
+. (Join-Path $RepoRoot "lib/HostVm.ps1")
 
 $vmCreated = $false
 

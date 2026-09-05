@@ -18,26 +18,16 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
+. (Join-Path $RepoRoot "lib/HostVm.ps1")
 $VmName = "freeze-test-$(Get-Date -Format 'yyyyMMdd-HHmmss')-$(Get-Random -Maximum 9999)"
-
-# Pull the real Save-FreezeSnapshot / Invoke-VmCapture / Write-Step out of the
-# production script without executing its mandatory-param body.
-$startJob = Join-Path $RepoRoot "start-job.ps1"
-$src = Get-Content -Raw -LiteralPath $startJob
-# Grab only the function definitions: from the first "function " to the start of
-# the main body ($vmCreated = ...). Avoids the mandatory-param body running.
-$fnStart = $src.IndexOf("function Write-Step")
-$fnEnd = $src.IndexOf("`$vmCreated = `$false")
-Invoke-Expression $src.Substring($fnStart, $fnEnd - $fnStart)
 
 $watch = Join-Path $RepoRoot "watch-heartbeat.ps1"
 
 $vmCreated = $false
 $snapshotPath = $null
 try {
-    Write-Host "==> Launching test VM $VmName" -ForegroundColor Cyan
-    multipass launch 24.04 --name $VmName --cpus 1 --memory 1G --disk 5G 2>&1 | Out-Null
-    if ($LASTEXITCODE -ne 0) { throw "launch failed" }
+    Write-Step "Launching test VM $VmName"
+    Invoke-Multipass launch 24.04 --name $VmName --cpus 1 --memory 1G --disk 5G
     $vmCreated = $true
 
     # Deliberate stall: sleep long, never touch /tmp/heartbeat.
@@ -64,8 +54,7 @@ try {
 }
 finally {
     if ($vmCreated -and -not $KeepVm) {
-        Write-Host "==> Destroying $VmName" -ForegroundColor Cyan
-        multipass delete $VmName --purge 2>&1 | Out-Null
+        Remove-Vm -Name $VmName
     }
 }
 

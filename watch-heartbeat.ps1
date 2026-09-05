@@ -34,10 +34,13 @@ param(
     [int]$StallThresholdSeconds = 300,
     [int]$PollIntervalSeconds = 10,
     [string]$RunId,
-    [string]$RepoRoot
+    [string]$RepoRoot,
+    [scriptblock]$Executor
 )
 
 $ErrorActionPreference = "Stop"
+
+. (Join-Path $PSScriptRoot "lib/HostVm.ps1")
 
 # Dashboard reporting is optional: only if a RunId + RepoRoot were passed AND
 # the .secrets/ config exists. Send-FactoryEvent is a no-op otherwise.
@@ -47,46 +50,32 @@ if ($RunId -and $RepoRoot) {
 }
 
 function Get-VmEpochSeconds {
-    param([string]$Name)
-    $prev = $ErrorActionPreference
-    $ErrorActionPreference = "Continue"
-    $output = & multipass exec $Name -- date +%s 2>&1
-    $exitCode = $LASTEXITCODE
-    $ErrorActionPreference = $prev
-    if ($exitCode -ne 0) {
-        throw "Could not read VM clock: $output"
-    }
+    param([string]$Name, [scriptblock]$Executor)
+    $output = Invoke-MultipassOutput -Arguments @('exec', $Name, '--', 'date', '+%s') -Executor $Executor
     return [int]::Parse($output.Trim())
 }
 
 function Get-HeartbeatEpochSeconds {
-    param([string]$Name)
-    $prev = $ErrorActionPreference
-    $ErrorActionPreference = "Continue"
-    $output = & multipass exec $Name -- stat -c %Y /tmp/heartbeat 2>&1
-    $exitCode = $LASTEXITCODE
-    $ErrorActionPreference = $prev
-    if ($exitCode -eq 0) {
+    param([string]$Name, [scriptblock]$Executor)
+    try {
+        $output = Invoke-MultipassOutput -Arguments @('exec', $Name, '--', 'stat', '-c', '%Y', '/tmp/heartbeat') -Executor $Executor
         return [int]::Parse($output.Trim())
     }
-    return $null
+    catch {
+        return $null
+    }
 }
 
 function Get-VmCurrentPhase {
-    # Reads the in-VM /tmp/current-phase marker written by each agent phase as it
-    # begins. Returns the trimmed phase/agent name, or $null when the marker is
-    # absent (e.g. before the first phase has started). Never throws: a missing or
-    # unreadable marker simply yields no phase on this heartbeat.
-    param([string]$Name)
-    $prev = $ErrorActionPreference
-    $ErrorActionPreference = "Continue"
-    $output = & multipass exec $Name -- cat /tmp/current-phase 2>&1
-    $exitCode = $LASTEXITCODE
-    $ErrorActionPreference = $prev
-    if ($exitCode -eq 0 -and $output) {
-        return ($output.Trim())
+    param([string]$Name, [scriptblock]$Executor)
+    try {
+        $output = Invoke-MultipassOutput -Arguments @('exec', $Name, '--', 'cat', '/tmp/current-phase') -Executor $Executor
+        if ($output) { return ($output.Trim()) }
+        return $null
     }
-    return $null
+    catch {
+        return $null
+    }
 }
 
 try {
@@ -94,8 +83,8 @@ try {
     $lastReportedHeartbeat = $null
 
     while ($Job.State -eq "Running") {
-        $vmNow = Get-VmEpochSeconds -Name $VmName
-        $heartbeatEpoch = Get-HeartbeatEpochSeconds -Name $VmName
+        $vmNow = Get-VmEpochSeconds -Name $VmName -Executor $Executor
+        $heartbeatEpoch = Get-HeartbeatEpochSeconds -Name $VmName -Executor $Executor
 
         # Report a heartbeat only when the marker mtime actually advanced since
         # last reported — an idle agent simply stops reporting. The current-phase
@@ -105,7 +94,7 @@ try {
             $lastReportedHeartbeat = $heartbeatEpoch
             $at = [DateTimeOffset]::FromUnixTimeSeconds($heartbeatEpoch).UtcDateTime.ToString("o")
             $fields = @{ at = $at }
-            $currentPhase = Get-VmCurrentPhase -Name $VmName
+            $currentPhase = Get-VmCurrentPhase -Name $VmName -Executor $Executor
             if ($currentPhase) { $fields["currentPhase"] = $currentPhase }
             Send-FactoryEvent -RunId $RunId -Type "heartbeat" -Fields $fields
         }

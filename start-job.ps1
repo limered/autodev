@@ -87,6 +87,7 @@ $stages = @(foreach ($agent in $phaseOrder) {
 
 # Fire-and-forget dashboard reporting (no-op if .secrets/ config is absent).
 . (Join-Path $RepoRoot "factory-report.ps1")
+. (Join-Path $RepoRoot "lib/HostVm.ps1")
 Initialize-FactoryReport -RepoRoot $RepoRoot
 Send-FactoryEvent -RunId $RunId -Type "run-started" -Fields @{
     repo   = $Repo
@@ -102,83 +103,6 @@ $secretsDir = Join-Path $RepoRoot ".secrets"
 $patFile = Join-Path $secretsDir "github-pat.txt"
 $apiKeyFile = Join-Path $secretsDir "opencode-api-key.txt"
 $opencodeDir = Join-Path $RepoRoot ".opencode"
-
-function Write-Step {
-    param([string]$Message)
-    Write-Host "==> $Message" -ForegroundColor Cyan
-}
-
-function Invoke-Multipass {
-    param(
-        [Parameter(ValueFromRemainingArguments = $true)]
-        [string[]]$Arguments
-    )
-    # $ErrorActionPreference=Stop turns native stderr writes (e.g. git's benign
-    # "Cloning into..." on stderr) into terminating errors. Suspend it for the
-    # native call and gate purely on the real exit code.
-    $prev = $ErrorActionPreference
-    $ErrorActionPreference = "Continue"
-    & multipass @Arguments 2>&1 | ForEach-Object { "$_" }
-    $ErrorActionPreference = $prev
-    if ($LASTEXITCODE -ne 0) {
-        throw "multipass failed with exit code ${LASTEXITCODE}: multipass $Arguments"
-    }
-}
-
-function Remove-Vm {
-    param([string]$Name)
-    Write-Step "Destroying VM $Name"
-    multipass delete $Name --purge 2>&1 | Out-Null
-}
-
-function Invoke-VmCapture {
-    # Bounded in-VM command; a wedged VM cannot re-hang the collector. Returns
-    # captured text (stdout+stderr) or a "<unavailable: ...>" marker on failure.
-    # The in-VM `timeout` bounds a slow command, but if `multipass exec` itself
-    # never returns (VM wedged / tearing down) that's unbounded — so also cap the
-    # host side with a job we abandon after HostTimeoutSeconds.
-    param([string]$Name, [string]$Command, [int]$TimeoutSeconds = 15, [int]$HostTimeoutSeconds = 25)
-    $job = Start-Job -ScriptBlock {
-        param($Name, $Command, $TimeoutSeconds)
-        $out = & multipass exec $Name -- timeout $TimeoutSeconds bash -c $Command 2>&1 | ForEach-Object { "$_" }
-        [PSCustomObject]@{ Code = $LASTEXITCODE; Out = ($out -join "`n") }
-    } -ArgumentList $Name, $Command, $TimeoutSeconds
-    if (-not (Wait-Job -Job $job -Timeout $HostTimeoutSeconds)) {
-        Stop-Job -Job $job -ErrorAction SilentlyContinue
-        Remove-Job -Job $job -Force -ErrorAction SilentlyContinue
-        return "<unavailable: host exec timed out after ${HostTimeoutSeconds}s>"
-    }
-    $r = Receive-Job -Job $job
-    Remove-Job -Job $job -Force -ErrorAction SilentlyContinue
-    if ($null -eq $r) { return "<unavailable: no result>" }
-    if ($r.Code -ne 0) { return "<unavailable: exit $($r.Code)> $($r.Out)" }
-    return $r.Out
-}
-
-function Save-FreezeSnapshot {
-    # Collect a debug manifest from the still-alive VM before teardown.
-    param([string]$Name, [hashtable]$JobParams, [string]$RepoRoot)
-    Write-Step "Capturing freeze snapshot from $Name before teardown"
-    $stamp = Get-Date -Format 'yyyyMMdd-HHmmss'
-    $dir = Join-Path $RepoRoot ".scratch\freezes\$Name-$stamp"
-    New-Item -ItemType Directory -Path $dir -Force | Out-Null
-
-    $manifest = [ordered]@{
-        vm             = $Name
-        capturedAtUtc  = (Get-Date).ToUniversalTime().ToString("o")
-        jobParams      = $JobParams
-        markerMtime    = (Invoke-VmCapture $Name 'stat -c %y /tmp/heartbeat 2>/dev/null || echo missing')
-        agentLogTail   = (Invoke-VmCapture $Name 'f=$(ls -t ~/.local/share/opencode/log/*.log 2>/dev/null | head -1); [ -n "$f" ] && tail -n 200 "$f" || echo "<no opencode log>"')
-        psAux          = (Invoke-VmCapture $Name 'ps aux')
-        freeM          = (Invoke-VmCapture $Name 'free -m')
-        dfH            = (Invoke-VmCapture $Name 'df -h')
-    }
-
-    $path = Join-Path $dir "manifest.json"
-    $manifest | ConvertTo-Json -Depth 6 | Set-Content -LiteralPath $path -Encoding UTF8
-    Write-Step "Freeze snapshot written to $path"
-    return $path
-}
 
 $vmCreated = $false
 $jobFailed = $false
