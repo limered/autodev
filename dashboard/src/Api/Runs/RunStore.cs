@@ -23,6 +23,7 @@ public sealed class RunStore : IRunStore
     private readonly ILogger<RunStore> _logger;
     private readonly IGitHubIssuesClient _gitHub;
     private readonly IHostStore _hostStore;
+    private readonly IIssueResolver _resolver;
 
     private const string RunColumns =
         "run_id, repo, branch, spec, model, vm_name, status, started_at, finished_at, last_heartbeat_at, pr_url, failure_reason, freeze_captured, freeze_local_path, updated_at, stages, current_phase";
@@ -45,12 +46,18 @@ public sealed class RunStore : IRunStore
         }
     }
 
-    public RunStore(NpgsqlDataSource dataSource, ILogger<RunStore> logger, IGitHubIssuesClient gitHub, IHostStore hostStore)
+    public RunStore(
+        NpgsqlDataSource dataSource,
+        ILogger<RunStore> logger,
+        IGitHubIssuesClient gitHub,
+        IHostStore hostStore,
+        IIssueResolver resolver)
     {
         _dataSource = dataSource;
         _logger = logger;
         _gitHub = gitHub;
         _hostStore = hostStore;
+        _resolver = resolver;
     }
 
     public async Task<IReadOnlyList<RunState>> All()
@@ -107,32 +114,40 @@ public sealed class RunStore : IRunStore
 
         await Persist(next, current, conn, tx);
 
-        (string Repo, int Number)? issueToClose = null;
+        LinkedIssue? linkedIssue = null;
         if (ev is RunFinishedEvent)
         {
-            // ponytail: the linked-issue resolve and the queue-row delete live here in
-            // Apply deliberately, inlined rather than abstracted. They only make sense
-            // inside this transaction, so the old conn/tx-passing IRunCompletion seam
-            // (one implementation, zero abstracted behaviour) was deleted, not kept.
-            issueToClose = await GetLinkedIssue(runId, conn, tx);
-            await ReleaseQueueSlot(runId, conn, tx);
+            // ponytail: the linked-issue resolve and the queue-slot release live here in
+            // Apply deliberately, composed on this transaction rather than orchestrated
+            // elsewhere. They only make sense inside it — the resolve must see the queue
+            // row before the release deletes it, and the release must be atomic with the
+            // run's terminal write. That is also why the resolver seam takes the
+            // caller's conn/tx: the old conn/tx-passing IRunCompletion seam was deleted
+            // for being one implementation with zero abstracted behaviour, while
+            // IIssueResolver is a real seam (SQL and in-memory implementations, queue
+            // and run callers) that moves the cross-domain issues/queue SQL to its
+            // owning domain without moving it out of this transaction.
+            linkedIssue = await _resolver.ResolveLinkedIssueAsync(runId, conn, tx);
+            await _resolver.ReleaseQueueSlotAsync(runId, conn, tx);
         }
 
         await tx.CommitAsync();
 
-        if (issueToClose.HasValue)
+        if (linkedIssue is not null)
         {
+            // Best-effort and post-commit on purpose: the run's terminal write is durable
+            // regardless of GitHub's answer, and a failed close never fails the event.
             try
             {
-                await _gitHub.CloseIssueAsync(issueToClose.Value.Repo, issueToClose.Value.Number);
+                await _gitHub.CloseIssueAsync(linkedIssue.Repo, linkedIssue.Number);
             }
             catch (Exception ex)
             {
                 _logger.LogWarning(
                     ex,
                     "Failed to close GitHub issue {Repo}#{Number} for finished run {RunId}; continuing.",
-                    issueToClose.Value.Repo,
-                    issueToClose.Value.Number,
+                    linkedIssue.Repo,
+                    linkedIssue.Number,
                     runId);
             }
         }
@@ -142,14 +157,14 @@ public sealed class RunStore : IRunStore
 
     // Hard-delete a run and release any queue slot still linked to it, atomically.
     // Used by the dashboard to clear stuck runs (e.g. a "launching" row whose VM
-    // never sent another event). The queue delete mirrors the run-finished release in
+    // never sent another event). The queue release mirrors the run-finished release in
     // Apply so a deleted run leaves no orphaned queue row.
     public async Task<bool> Delete(Guid runId)
     {
         await using var conn = await _dataSource.OpenConnectionAsync();
         await using var tx = await conn.BeginTransactionAsync();
 
-        await ReleaseQueueSlot(runId, conn, tx);
+        await _resolver.ReleaseQueueSlotAsync(runId, conn, tx);
 
         await using var deleteRunCmd = new NpgsqlCommand(
             "DELETE FROM runs WHERE run_id = @runId;", conn, tx);
@@ -172,39 +187,6 @@ public sealed class RunStore : IRunStore
         }
 
         return MapRun(r);
-    }
-
-    /// <summary>The GitHub issue linked to a run via its queue row, or none.</summary>
-    private static async Task<(string Repo, int Number)?> GetLinkedIssue(
-        Guid runId,
-        NpgsqlConnection conn,
-        NpgsqlTransaction tx)
-    {
-        await using var cmd = new NpgsqlCommand(
-            """
-            SELECT i.repo, i.number
-            FROM queue q
-            JOIN issues i ON i.github_id = q.issue_id
-            WHERE q.run_id = @runId;
-            """, conn, tx);
-        cmd.Parameters.AddWithValue("runId", runId);
-
-        await using var reader = await cmd.ExecuteReaderAsync();
-        if (!await reader.ReadAsync())
-        {
-            return null;
-        }
-
-        return (reader.GetString(0), reader.GetInt32(1));
-    }
-
-    /// <summary>Releases the run's queue slot (if any) within the caller's transaction.</summary>
-    private static async Task ReleaseQueueSlot(Guid runId, NpgsqlConnection conn, NpgsqlTransaction tx)
-    {
-        await using var cmd = new NpgsqlCommand(
-            "DELETE FROM queue WHERE run_id = @runId;", conn, tx);
-        cmd.Parameters.AddWithValue("runId", runId);
-        await cmd.ExecuteNonQueryAsync();
     }
 
     private static async Task Persist(RunState next, RunState? current, NpgsqlConnection conn, NpgsqlTransaction tx)

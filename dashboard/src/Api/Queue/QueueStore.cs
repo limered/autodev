@@ -1,4 +1,5 @@
 using Api.Host;
+using Api.Issues;
 using Npgsql;
 
 namespace Api.Queue;
@@ -20,11 +21,13 @@ public sealed class QueueStore : IQueueStore
 {
     private readonly NpgsqlDataSource _dataSource;
     private readonly IHostStore _hostStore;
+    private readonly IIssueResolver _resolver;
 
-    public QueueStore(NpgsqlDataSource dataSource, IHostStore hostStore)
+    public QueueStore(NpgsqlDataSource dataSource, IHostStore hostStore, IIssueResolver resolver)
     {
         _dataSource = dataSource;
         _hostStore = hostStore;
+        _resolver = resolver;
     }
 
     public async Task<IReadOnlyList<QueueListItem>> All()
@@ -140,25 +143,17 @@ public sealed class QueueStore : IQueueStore
         }
 
         // The claim used to be one statement that inner-joined issues: a queue row
-        // whose issue has no issues row matched nothing and claimed nothing. Keep that.
-        string? repo = null;
-        string? body = null;
-        string? title = null;
+        // whose issue has no issues row matched nothing and claimed nothing. The
+        // resolver seam keeps that — a missing issue row answers null — while the
+        // issues SQL moves behind the issues domain, still on this locked transaction
+        // so the answer is covered by the row lock the claim just took.
+        IssueClaimPayload? payload = null;
         if (claimed is not null)
         {
-            await using var issueCmd = new NpgsqlCommand(
-                "SELECT i.repo, i.body, i.title FROM issues i WHERE i.github_id = @issueId;", conn, tx);
-            issueCmd.Parameters.AddWithValue("issueId", claimed.IssueId);
-            await using var reader = await issueCmd.ExecuteReaderAsync();
-            if (await reader.ReadAsync())
-            {
-                repo = reader.GetString(0);
-                body = reader.IsDBNull(1) ? null : reader.GetString(1);
-                title = reader.IsDBNull(2) ? null : reader.GetString(2);
-            }
+            payload = await _resolver.ResolveClaimPayloadAsync(claimed.IssueId, conn, tx);
         }
 
-        if (claimed is not null && repo is not null)
+        if (claimed is not null && payload is not null)
         {
             await using var updateCmd = new NpgsqlCommand(
                 "UPDATE queue SET run_id = @runId WHERE id = @id;", conn, tx);
@@ -170,14 +165,12 @@ public sealed class QueueStore : IQueueStore
         await tx.CommitAsync();
         await _hostStore.StampLastSeen();
 
-        if (claimed is null || repo is null)
+        if (claimed is null || payload is null)
         {
             return null;
         }
 
-        var repoUrl = $"https://github.com/{repo}.git";
-        var spec = !string.IsNullOrWhiteSpace(body) ? body.Trim() : title ?? repo;
-        return new ClaimedQueueItem(runId, repoUrl, spec);
+        return new ClaimedQueueItem(runId, payload.RepoUrl, payload.Spec);
     }
 
     private static async Task<QueueRuleItem?> TryLockClaimable(long id, NpgsqlConnection conn, NpgsqlTransaction tx)
