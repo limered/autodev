@@ -14,6 +14,22 @@ public sealed class FakeQueueStore : IQueueStore
     private IEnumerable<QueueRuleItem> RuleItems() =>
         _items.Select(i => new QueueRuleItem(i.Id, i.IssueId, i.Rank, i.RunId, i.StartRequestedAt));
 
+    /// <summary>The queue row attached to a run, or none — the run's slot.</summary>
+    public QueueListItem? FindByRunId(Guid runId) => _items.FirstOrDefault(i => i.RunId == runId);
+
+    /// <summary>
+    /// Removes the queue row attached to a run, mirroring the resolver's
+    /// <c>DELETE FROM queue WHERE run_id = @runId</c>.
+    /// </summary>
+    public void DeleteByRunId(Guid runId)
+    {
+        var slot = FindByRunId(runId);
+        if (slot is not null)
+        {
+            _items.Remove(slot);
+        }
+    }
+
     public Task<IReadOnlyList<QueueListItem>> All()
     {
         var ordered = _items.OrderBy(i => i.Rank).ToList();
