@@ -1,7 +1,7 @@
 ---
 description: Runs the two pre-PR review skills headless - /code-review on the BASE...HEAD diff against the issue, and improve-codebase-architecture explore-only - and files each skill's findings as one ready-for-human tracker issue via the GitHub PAT. Read-only on the repo; never fixes, never loops, never blocks the PR.
 mode: primary
-model: opencode-go/kimi-k2.7-code
+model: opencode-go/muse-spark-1.3-contributor
 permission:
   bash: allow
 ---
