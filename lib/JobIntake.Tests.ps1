@@ -10,7 +10,7 @@ Describe 'ConvertTo-IssueSnapshot' {
             labels = @([PSCustomObject]@{ name = 'ready-for-agent' })
             body = 'b'; state = 'open'; updated_at = '2026-01-01'
         })
-        $s = ConvertTo-IssueSnapshot -Issues $in
+        $s = @(ConvertTo-IssueSnapshot -Issues $in)
         $s.Count | Should -Be 1
         $s[0].number | Should -Be 8
         $s[0].labels | Should -Be @('ready-for-agent')

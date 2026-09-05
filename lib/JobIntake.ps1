@@ -13,8 +13,8 @@
 
 function ConvertTo-IssueSnapshot {
     param([array]$Issues)
-    if ($null -eq $Issues -or $Issues.Count -eq 0) { return @() }
-    $out = foreach ($i in $Issues) {
+    # Pipeline output (enumerated): callers needing an array wrap with @().
+    foreach ($i in $Issues) {
         if ($null -eq $i) { continue }
         @{
             id        = $i.id
@@ -27,7 +27,6 @@ function ConvertTo-IssueSnapshot {
             updatedAt = $i.updated_at
         }
     }
-    return @($out | Where-Object { $_ })
 }
 
 function Get-StaleSeconds {
