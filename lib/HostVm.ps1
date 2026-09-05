@@ -18,7 +18,11 @@ function Write-Step {
 
 function Invoke-Multipass {
     param(
-        [Parameter(ValueFromRemainingArguments = $true)]
+        # Position 0 is load-bearing: without it PowerShell assigns implicit
+        # position 0 to $Executor, so the first bare word (e.g. "launch") binds
+        # to -Executor and fails [scriptblock] conversion on every prod call
+        # that omits -Executor. All bare words must land in $Arguments.
+        [Parameter(ValueFromRemainingArguments = $true, Position = 0)]
         [string[]]$Arguments,
         [scriptblock]$Executor
     )

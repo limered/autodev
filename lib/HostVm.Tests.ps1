@@ -14,6 +14,20 @@ Describe 'Invoke-Multipass Executor Seam' {
         $fake = { param($a) return 3 }
         { Invoke-Multipass launch --name v -Executor $fake } | Should -Throw
     }
+    It 'collects bare args positionally when Executor is omitted (prod shape)' {
+        # Prod callers (start-job.ps1, test-*.ps1) omit -Executor; without an
+        # explicit Position the first bare word bound to -Executor and failed
+        # [scriptblock] conversion. Shadow the native command so nothing runs.
+        $script:seenArgs = $null
+        function multipass { $script:seenArgs = $args; $global:LASTEXITCODE = 0 }
+        try {
+            { Invoke-Multipass launch 24.04 --name v --cpus 4 } | Should -Not -Throw
+        }
+        finally {
+            Remove-Item -Path 'function:multipass' -ErrorAction SilentlyContinue
+        }
+        ($script:seenArgs -join ' ') | Should -Be 'launch 24.04 --name v --cpus 4'
+    }
     It 'Remove-Vm deletes with purge' {
         $seen = $null
         $fake = { param($a) $script:seen = $a; return 0 }
