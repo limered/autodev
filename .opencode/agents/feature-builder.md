@@ -1,7 +1,7 @@
 ---
 description: Implements a software feature from a spec issue, or applies static-analysis AFK fixes in fix-findings mode; commits and pushes the branch. Does not create the PR.
 mode: primary
-model: opencode-go/glm-5.2
+model: opencode-go/muse-spark-1.3-contributor
 permission:
   bash: allow
   edit: allow
