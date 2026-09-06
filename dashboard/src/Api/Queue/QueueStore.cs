@@ -6,10 +6,10 @@ namespace Api.Queue;
 
 public interface IQueueStore
 {
-    Task<IReadOnlyList<QueueListItem>> All();
-    Task<QueueListItem?> Enqueue(long issueId);
-    Task<QueueListItem?> StartNext(long id);
-    Task<QueueListItem?> Restart(long id);
+    Task<IReadOnlyList<QueueRow>> All();
+    Task<QueueRow?> Enqueue(long issueId);
+    Task<QueueRow?> StartNext(long id);
+    Task<QueueRow?> Restart(long id);
     Task<ClaimedQueueItem?> ClaimNext();
     Task Reorder(IReadOnlyList<long> ids);
     Task<bool> Delete(long id);
@@ -30,14 +30,14 @@ public sealed class QueueStore : IQueueStore
         _resolver = resolver;
     }
 
-    public async Task<IReadOnlyList<QueueListItem>> All()
+    public async Task<IReadOnlyList<QueueRow>> All()
     {
         await using var conn = await _dataSource.OpenConnectionAsync();
         var items = await QueryItems($"{SelectQueueSql} ORDER BY q.rank", conn);
         return items;
     }
 
-    public async Task<QueueListItem?> Enqueue(long issueId)
+    public async Task<QueueRow?> Enqueue(long issueId)
     {
         await using var conn = await _dataSource.OpenConnectionAsync();
         await using var tx = await conn.BeginTransactionAsync();
@@ -72,7 +72,7 @@ public sealed class QueueStore : IQueueStore
         return await GetById(id);
     }
 
-    public async Task<QueueListItem?> StartNext(long id)
+    public async Task<QueueRow?> StartNext(long id)
     {
         await using var conn = await _dataSource.OpenConnectionAsync();
         await using var tx = await conn.BeginTransactionAsync();
@@ -98,7 +98,7 @@ public sealed class QueueStore : IQueueStore
         return await GetById((long)updatedId);
     }
 
-    public async Task<QueueListItem?> Restart(long id)
+    public async Task<QueueRow?> Restart(long id)
     {
         await using var conn = await _dataSource.OpenConnectionAsync();
         await using var tx = await conn.BeginTransactionAsync();
@@ -227,7 +227,7 @@ public sealed class QueueStore : IQueueStore
         return rows == 1;
     }
 
-    private async Task<QueueListItem?> GetById(long id)
+    private async Task<QueueRow?> GetById(long id)
     {
         await using var conn = await _dataSource.OpenConnectionAsync();
         var items = await QueryItems($"{SelectQueueSql} WHERE q.id = @id", conn, parameters: new NpgsqlParameter("id", id));
@@ -257,7 +257,7 @@ public sealed class QueueStore : IQueueStore
         return items;
     }
 
-    private static Task<List<QueueListItem>> QueryItems(
+    private static Task<List<QueueRow>> QueryItems(
         string sql,
         NpgsqlConnection conn,
         NpgsqlTransaction? tx = null,
@@ -271,7 +271,7 @@ public sealed class QueueStore : IQueueStore
         params NpgsqlParameter[] parameters)
         => Query(sql, conn, tx, MapRuleItem, parameters);
 
-    /// <summary>The API select: the queue row plus the issue/run enrichments the response carries.</summary>
+    /// <summary>The raw joined-row select: the queue row plus the issue/run enrichments the endpoint projects to the response.</summary>
     private const string SelectQueueSql =
         """
         SELECT
@@ -304,9 +304,9 @@ public sealed class QueueStore : IQueueStore
         FROM queue q
         """;
 
-    private static QueueListItem Map(NpgsqlDataReader r)
+    private static QueueRow Map(NpgsqlDataReader r)
     {
-        return new QueueListItem(
+        return new QueueRow(
             r.GetInt64(r.GetOrdinal("id")),
             r.GetInt64(r.GetOrdinal("issue_id")),
             r.GetInt32(r.GetOrdinal("rank")),
