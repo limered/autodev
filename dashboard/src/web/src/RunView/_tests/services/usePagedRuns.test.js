@@ -202,9 +202,7 @@ describe("usePagedRuns", () => {
     await feed.loadFirst();
 
     expect(feed.runs.value).toHaveLength(10); // raw window drives skip/hasMore
-    expect(feed.historyRuns.value.map((r) => r.runId)).toEqual(
-      makeRuns(6, 0).map((r) => r.runId),
-    );
+    expect(feed.historyRuns.value.map((r) => r.runId)).toEqual(makeRuns(6, 0).map((r) => r.runId));
     expect(feed.hasMore.value).toBe(true); // full raw page: end not reached
   });
 });
