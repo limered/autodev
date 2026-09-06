@@ -41,6 +41,7 @@ Describe 'Invoke-Multipass Executor Seam' {
         $script:calls.Count | Should -Be 2
         ($script:calls[0] -join ' ') | Should -Match 'launch 24.04 --name v1'
         ($script:calls[0] -join ' ') | Should -Match '--cpus 1 --memory 1G --disk 5G'
+        ($script:calls[0] -join ' ') | Should -Match '--timeout 1200'
         ($script:calls[1] -join ' ') | Should -Match 'cloud-init status --wait'
     }
     It 'Invoke-MultipassOutput returns Executor string' {

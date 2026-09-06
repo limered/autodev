@@ -70,11 +70,14 @@ function Remove-Vm {
 function New-VmFromBlueprint {
     param([string]$Name, [string]$CloudInit, [string]$Cpus = '4', [string]$Memory = '4G', [string]$Disk = '40G', [switch]$NoWait, [scriptblock]$Executor)
     Write-Step "Launching VM $Name"
+    # --timeout 1200: cloud-init (apt upgrade + docker + nodesource + dotnet)
+    # takes ~7 min; multipass defaults to 5 min per phase and aborts the
+    # launch (leaving the half-provisioned VM behind) before it finishes.
     if ($CloudInit) {
-        Invoke-Multipass launch 24.04 --name $Name --cpus $Cpus --memory $Memory --disk $Disk --cloud-init $CloudInit -Executor $Executor
+        Invoke-Multipass launch 24.04 --name $Name --cpus $Cpus --memory $Memory --disk $Disk --timeout 1200 --cloud-init $CloudInit -Executor $Executor
     }
     else {
-        Invoke-Multipass launch 24.04 --name $Name --cpus $Cpus --memory $Memory --disk $Disk -Executor $Executor
+        Invoke-Multipass launch 24.04 --name $Name --cpus $Cpus --memory $Memory --disk $Disk --timeout 1200 -Executor $Executor
     }
     if (-not $NoWait) {
         Write-Step "Waiting for cloud-init provisioning to complete"
