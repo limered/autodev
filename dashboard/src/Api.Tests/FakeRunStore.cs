@@ -45,7 +45,7 @@ public sealed class FakeRunStore : IRunStore
     public Task<IReadOnlyList<RunState>> Active()
     {
         var runs = _runs.Values
-            .Where(r => r.Status is "launching" or "running" or "stalled")
+            .Where(r => RunFold.IsActiveStatus(r.Status))
             .OrderByDescending(r => r.StartedAt)
             .ToList();
         return Task.FromResult<IReadOnlyList<RunState>>(runs);

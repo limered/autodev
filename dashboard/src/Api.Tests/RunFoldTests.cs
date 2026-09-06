@@ -190,6 +190,57 @@ public class RunFoldTests
         Assert.Equal(T1, next.LastHeartbeatAt);
     }
 
+    [Theory]
+    [InlineData("done")]
+    [InlineData("failed")]
+    public void Heartbeat_AfterTerminal_StillApplies(string terminalStatus)
+    {
+        var current = State(terminalStatus, updatedAt: T0, lastHeartbeatAt: T0);
+
+        var next = RunFold.Apply(current, new HeartbeatEvent { At = T1, RunId = RunId });
+
+        Assert.NotNull(next);
+        Assert.Equal(T1, next.LastHeartbeatAt);
+    }
+
+    [Theory]
+    [InlineData("done")]
+    [InlineData("failed")]
+    public void FreezeCaptured_AfterTerminal_StillApplies(string terminalStatus)
+    {
+        var current = State(terminalStatus);
+
+        var next = RunFold.Apply(current, new FreezeCapturedEvent("/freeze") { At = T1, RunId = RunId });
+
+        Assert.NotNull(next);
+        Assert.True(next.FreezeCaptured);
+    }
+
+    [Theory]
+    [InlineData("done")]
+    [InlineData("failed")]
+    public void PrVerified_AfterTerminal_StillApplies(string terminalStatus)
+    {
+        var current = State(terminalStatus);
+
+        var next = RunFold.Apply(current, new PrVerifiedEvent("https://pr") { At = T1, RunId = RunId });
+
+        Assert.NotNull(next);
+        Assert.Equal("https://pr", next.PrUrl);
+    }
+
+    [Theory]
+    [InlineData("launching", true)]
+    [InlineData("running", true)]
+    [InlineData("stalled", true)]
+    [InlineData("done", false)]
+    [InlineData("failed", false)]
+    public void ActiveAndTerminal_Predicates_Agree(string status, bool active)
+    {
+        Assert.Equal(active, RunFold.IsActiveStatus(status));
+        Assert.Equal(!active, RunFold.IsTerminal(status));
+    }
+
     [Fact]
     public void StallDetected_TransitionsToStalled()
     {

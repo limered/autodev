@@ -33,6 +33,31 @@ public sealed class RunStore : IRunStore
     private static readonly string[] Columns = RunColumns.Split(',').Select(c => c.Trim()).ToArray();
     private static readonly string SelectSql = $"SELECT {RunColumns} FROM runs";
 
+    // Single description of the mutable shape: drives IsHeartbeatOnly, UpdateHeartbeat
+    // and UpdateDiff, so adding a column touches one list. Heartbeat:true marks the
+    // cheap-path pair (last_heartbeat_at + current_phase, which rides it); everything
+    // else diffs on the ordered path. Identity/stages columns never change post-insert
+    // and stay out of both paths.
+    private sealed record ColumnSync(string Column, string Param, Func<RunState, object?> Get, bool Heartbeat = false);
+
+    private static readonly ColumnSync[] SyncColumns =
+    [
+        new("vm_name", "vm", s => s.VmName),
+        new("status", "status", s => s.Status),
+        new("finished_at", "finishedAt", s => s.FinishedAt),
+        new("pr_url", "prUrl", s => s.PrUrl),
+        new("failure_reason", "failureReason", s => s.FailureReason),
+        new("freeze_captured", "freezeCaptured", s => s.FreezeCaptured),
+        new("freeze_local_path", "freezeLocalPath", s => s.FreezeLocalPath),
+        new("updated_at", "updatedAt", s => s.UpdatedAt),
+        new("last_heartbeat_at", "lastHeartbeatAt", s => s.LastHeartbeatAt, Heartbeat: true),
+        new("current_phase", "currentPhase", s => s.CurrentPhase, Heartbeat: true),
+    ];
+
+    // Active set derived from the fold's single source; statuses are codebase constants.
+    private static readonly string ActiveStatusList =
+        string.Join(", ", RunFold.ActiveStatuses.Select(s => $"'{s}'"));
+
     static RunStore()
     {
         var runStateFieldCount = typeof(RunState)
@@ -43,6 +68,13 @@ public sealed class RunStore : IRunStore
         {
             throw new InvalidOperationException(
                 $"RunStore mapping mismatch: {Columns.Length} SQL columns but RunState has {runStateFieldCount} fields.");
+        }
+
+        var unknown = SyncColumns.Select(c => c.Column).Except(Columns).ToArray();
+        if (unknown.Length > 0)
+        {
+            throw new InvalidOperationException(
+                $"RunStore sync mismatch: {string.Join(", ", unknown)} not in SQL columns.");
         }
     }
 
@@ -75,7 +107,7 @@ public sealed class RunStore : IRunStore
 
     public async Task<IReadOnlyList<RunState>> Active()
     {
-        return await Query($"{SelectSql} WHERE status IN ('launching', 'running', 'stalled') ORDER BY started_at DESC");
+        return await Query($"{SelectSql} WHERE status IN ({ActiveStatusList}) ORDER BY started_at DESC");
     }
 
     public async Task<RunState?> GetRun(Guid runId)
@@ -242,14 +274,7 @@ public sealed class RunStore : IRunStore
     private static bool IsHeartbeatOnly(RunState current, RunState next)
     {
         return next.LastHeartbeatAt != current.LastHeartbeatAt &&
-               next.UpdatedAt == current.UpdatedAt &&
-               next.VmName == current.VmName &&
-               next.Status == current.Status &&
-               next.FinishedAt == current.FinishedAt &&
-               next.PrUrl == current.PrUrl &&
-               next.FailureReason == current.FailureReason &&
-               next.FreezeCaptured == current.FreezeCaptured &&
-               next.FreezeLocalPath == current.FreezeLocalPath;
+            SyncColumns.Where(c => !c.Heartbeat).All(c => Equals(c.Get(current), c.Get(next)));
     }
 
     private static async Task UpdateHeartbeat(RunState next, NpgsqlConnection conn, NpgsqlTransaction tx)
@@ -257,45 +282,38 @@ public sealed class RunStore : IRunStore
         // currentPhase rides the heartbeat: it advances only at phase transitions,
         // so it is written on the same cheap path as last_heartbeat_at. The
         // last_heartbeat_at guard rejects out-of-order heartbeats wholesale.
-        await using var cmd = new NpgsqlCommand(
-            """
-            UPDATE runs
-            SET last_heartbeat_at = @lastHeartbeatAt,
-                current_phase = @currentPhase
-            WHERE run_id = @id
-              AND (last_heartbeat_at IS NULL OR @lastHeartbeatAt > last_heartbeat_at);
-            """, conn, tx);
+        var hb = SyncColumns.Where(c => c.Heartbeat).ToArray();
+        var beatAt = hb.Single(c => c.Column == "last_heartbeat_at");
+        var sql = $"UPDATE runs SET {string.Join(", ", hb.Select(c => $"{c.Column} = @{c.Param}"))} " +
+            $"WHERE run_id = @id AND (last_heartbeat_at IS NULL OR @{beatAt.Param} > last_heartbeat_at);";
+        await using var cmd = new NpgsqlCommand(sql, conn, tx);
         cmd.Parameters.AddWithValue("id", next.RunId);
-        cmd.Parameters.AddWithValue("lastHeartbeatAt", next.LastHeartbeatAt!.Value);
-        cmd.Parameters.AddWithValue("currentPhase", (object?)next.CurrentPhase ?? DBNull.Value);
+        foreach (var c in hb)
+        {
+            cmd.Parameters.AddWithValue(c.Param, c.Get(next) ?? DBNull.Value);
+        }
         await cmd.ExecuteNonQueryAsync();
     }
 
     private static async Task UpdateDiff(RunState current, RunState next, NpgsqlConnection conn, NpgsqlTransaction tx)
     {
-        var changes = new List<(string column, string param, object? value)>();
-        if (next.VmName != current.VmName) changes.Add(("vm_name", "vm", (object?)next.VmName ?? DBNull.Value));
-        if (next.Status != current.Status) changes.Add(("status", "status", next.Status));
-        if (next.FinishedAt != current.FinishedAt) changes.Add(("finished_at", "finishedAt", (object?)next.FinishedAt ?? DBNull.Value));
-        if (next.PrUrl != current.PrUrl) changes.Add(("pr_url", "prUrl", (object?)next.PrUrl ?? DBNull.Value));
-        if (next.FailureReason != current.FailureReason) changes.Add(("failure_reason", "failureReason", (object?)next.FailureReason ?? DBNull.Value));
-        if (next.FreezeCaptured != current.FreezeCaptured) changes.Add(("freeze_captured", "freezeCaptured", next.FreezeCaptured));
-        if (next.FreezeLocalPath != current.FreezeLocalPath) changes.Add(("freeze_local_path", "freezeLocalPath", (object?)next.FreezeLocalPath ?? DBNull.Value));
-        if (next.UpdatedAt != current.UpdatedAt) changes.Add(("updated_at", "updatedAt", next.UpdatedAt));
-
+        var changes = SyncColumns
+            .Where(c => !c.Heartbeat && !Equals(c.Get(current), c.Get(next)))
+            .ToList();
         if (changes.Count == 0)
         {
             return;
         }
 
-        var setClauses = changes.Select(c => $"{c.column} = @{c.param}");
-        var sql = $"UPDATE runs SET {string.Join(", ", setClauses)} WHERE run_id = @id AND @updatedAt > updated_at";
+        var updatedAt = SyncColumns.Single(c => c.Column == "updated_at");
+        var setClauses = changes.Select(c => $"{c.Column} = @{c.Param}");
+        var sql = $"UPDATE runs SET {string.Join(", ", setClauses)} WHERE run_id = @id AND @{updatedAt.Param} > updated_at";
 
         await using var cmd = new NpgsqlCommand(sql, conn, tx);
         cmd.Parameters.AddWithValue("id", next.RunId);
-        foreach (var (_, param, value) in changes)
+        foreach (var c in changes)
         {
-            cmd.Parameters.AddWithValue(param, value ?? DBNull.Value);
+            cmd.Parameters.AddWithValue(c.Param, c.Get(next) ?? DBNull.Value);
         }
         await cmd.ExecuteNonQueryAsync();
     }

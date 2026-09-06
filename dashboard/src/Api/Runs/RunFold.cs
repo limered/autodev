@@ -2,20 +2,38 @@ namespace Api.Runs;
 
 public static class RunFold
 {
+    /// <summary>
+    /// Single source for the active set. Built from <see cref="RunStatus"/>
+    /// constants so the fold, guards, and Active() queries share one list.
+    /// </summary>
+    public static readonly string[] ActiveStatuses = [RunStatus.Launching, RunStatus.Running, RunStatus.Stalled];
+
+    public static bool IsActiveStatus(string status) => ActiveStatuses.Contains(status);
+
+    public static bool IsTerminal(string status) => RunStatus.IsTerminal(status);
+
     public static RunState? Apply(RunState? current, RunEvent ev)
     {
         var at = ev.At ?? DateTimeOffset.UtcNow;
 
+        // Full applicability rule (ordering + terminal) in one place; handlers below
+        // are pure transitions and enforce nothing themselves:
+        // - run-started: creation, applies only when there is no run yet.
+        // - heartbeat: freshness orders on LastHeartbeatAt (it never bumps UpdatedAt,
+        //   so IsStale does not apply); exempt from the terminal rule like freeze/pr.
+        // - freeze-captured, pr-verified: IsStale only, exempt from the terminal rule
+        //   (post-terminal bookkeeping must still land).
+        // - everything else: IsBlocked (stale or terminal).
         return ev switch
         {
-            RunStartedEvent e => ApplyRunStarted(current, e, at),
-            AgentStartedEvent e => ApplyAgentStarted(current, e, at),
-            HeartbeatEvent e => ApplyHeartbeat(current, e, at),
-            StallDetectedEvent e => ApplyStallDetected(current, e, at),
-            FreezeCapturedEvent e => ApplyFreezeCaptured(current, e, at),
-            PrVerifiedEvent e => ApplyPrVerified(current, e, at),
-            RunFinishedEvent => ApplyRunFinished(current, at),
-            RunFailedEvent e => ApplyRunFailed(current, e, at),
+            RunStartedEvent e => current is not null ? null : ApplyRunStarted(e, at),
+            HeartbeatEvent e => IsHeartbeatStale(current, at) ? null : ApplyHeartbeat(current!, e, at),
+            FreezeCapturedEvent e => IsStale(current, at) ? null : ApplyFreezeCaptured(current!, e, at),
+            PrVerifiedEvent e => IsStale(current, at) ? null : ApplyPrVerified(current!, e, at),
+            AgentStartedEvent e => IsBlocked(current, at) ? null : ApplyAgentStarted(current!, e, at),
+            StallDetectedEvent e => IsBlocked(current, at) ? null : ApplyStallDetected(current!, e, at),
+            RunFinishedEvent => IsBlocked(current, at) ? null : ApplyRunFinished(current!, at),
+            RunFailedEvent e => IsBlocked(current, at) ? null : ApplyRunFailed(current!, e, at),
             _ => null, // unknown/unmapped event type (a bare RunEvent): no-op
         };
     }
@@ -35,13 +53,15 @@ public static class RunFold
     public static bool IsBlocked(RunState? current, DateTimeOffset at) =>
         IsStale(current, at) || RunStatus.IsTerminal(current!.Status);
 
-    private static RunState? ApplyRunStarted(RunState? current, RunStartedEvent ev, DateTimeOffset at)
-    {
-        if (current is not null)
-        {
-            return null;
-        }
+    /// <summary>
+    /// Heartbeat freshness: orders on LastHeartbeatAt, not UpdatedAt (a heartbeat
+    /// never bumps UpdatedAt, so <see cref="IsStale"/> does not apply here).
+    /// </summary>
+    public static bool IsHeartbeatStale(RunState? current, DateTimeOffset at) =>
+        current is null || (current.LastHeartbeatAt.HasValue && at <= current.LastHeartbeatAt.Value);
 
+    private static RunState ApplyRunStarted(RunStartedEvent ev, DateTimeOffset at)
+    {
         return new RunState(
             RunId: ev.RunId,
             Repo: ev.Repo ?? string.Empty,
@@ -61,14 +81,9 @@ public static class RunFold
             Stages: ev.Stages);
     }
 
-    private static RunState? ApplyAgentStarted(RunState? current, AgentStartedEvent ev, DateTimeOffset at)
+    private static RunState ApplyAgentStarted(RunState current, AgentStartedEvent ev, DateTimeOffset at)
     {
-        if (IsBlocked(current, at))
-        {
-            return null;
-        }
-
-        return current! with
+        return current with
         {
             Status = RunStatus.Running,
             VmName = ev.VmName,
@@ -76,20 +91,8 @@ public static class RunFold
         };
     }
 
-    private static RunState? ApplyHeartbeat(RunState? current, HeartbeatEvent ev, DateTimeOffset at)
+    private static RunState ApplyHeartbeat(RunState current, HeartbeatEvent ev, DateTimeOffset at)
     {
-        // Heartbeat keeps its own guard: it orders on LastHeartbeatAt, not UpdatedAt
-        // (a heartbeat never bumps UpdatedAt), so IsStale does not apply here.
-        if (current is null)
-        {
-            return null;
-        }
-
-        if (current.LastHeartbeatAt.HasValue && at <= current.LastHeartbeatAt.Value)
-        {
-            return null;
-        }
-
         // currentPhase rides the heartbeat: the host relay reads the in-VM phase
         // marker and attaches it. A heartbeat without it keeps the last known
         // phase, so a transient read miss never wipes the advancing phase.
@@ -100,14 +103,9 @@ public static class RunFold
         };
     }
 
-    private static RunState? ApplyStallDetected(RunState? current, StallDetectedEvent ev, DateTimeOffset at)
+    private static RunState ApplyStallDetected(RunState current, StallDetectedEvent ev, DateTimeOffset at)
     {
-        if (IsBlocked(current, at))
-        {
-            return null;
-        }
-
-        return current! with
+        return current with
         {
             Status = RunStatus.Stalled,
             FailureReason = ev.FailureReason,
@@ -115,14 +113,9 @@ public static class RunFold
         };
     }
 
-    private static RunState? ApplyFreezeCaptured(RunState? current, FreezeCapturedEvent ev, DateTimeOffset at)
+    private static RunState ApplyFreezeCaptured(RunState current, FreezeCapturedEvent ev, DateTimeOffset at)
     {
-        if (IsStale(current, at))
-        {
-            return null;
-        }
-
-        return current! with
+        return current with
         {
             FreezeCaptured = true,
             FreezeLocalPath = ev.FreezeLocalPath,
@@ -130,28 +123,18 @@ public static class RunFold
         };
     }
 
-    private static RunState? ApplyPrVerified(RunState? current, PrVerifiedEvent ev, DateTimeOffset at)
+    private static RunState ApplyPrVerified(RunState current, PrVerifiedEvent ev, DateTimeOffset at)
     {
-        if (IsStale(current, at))
-        {
-            return null;
-        }
-
-        return current! with
+        return current with
         {
             PrUrl = ev.PrUrl,
             UpdatedAt = at,
         };
     }
 
-    private static RunState? ApplyRunFinished(RunState? current, DateTimeOffset at)
+    private static RunState ApplyRunFinished(RunState current, DateTimeOffset at)
     {
-        if (IsBlocked(current, at))
-        {
-            return null;
-        }
-
-        return current! with
+        return current with
         {
             Status = RunStatus.Done,
             FinishedAt = at,
@@ -159,14 +142,9 @@ public static class RunFold
         };
     }
 
-    private static RunState? ApplyRunFailed(RunState? current, RunFailedEvent ev, DateTimeOffset at)
+    private static RunState ApplyRunFailed(RunState current, RunFailedEvent ev, DateTimeOffset at)
     {
-        if (IsBlocked(current, at))
-        {
-            return null;
-        }
-
-        return current! with
+        return current with
         {
             Status = RunStatus.Failed,
             FinishedAt = at,
