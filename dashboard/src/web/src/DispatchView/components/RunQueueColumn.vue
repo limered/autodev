@@ -59,24 +59,15 @@ const localQueue = ref([]);
 // syncFeed watch) into a `useQueueFeedShadow` module instead of growing the
 // list here (grilled #109-C2 → minimal fix: enumerate the flags).
 const isSaving = computed(
-  () =>
-    isReordering.value || isRemoving.value || isStartingNext.value || isRestarting.value,
+  () => isReordering.value || isRemoving.value || isStartingNext.value || isRestarting.value,
 );
 
 // The single reorder seam: onDrop orchestrates move → persist → reconverge
 // (persist via the wired `reorder` handler, which re-syncs the queue feed
 // unconditionally — even when the persist failed — so the shadow converges
 // on server truth), and the feed watch reconverges through syncFeed.
-const {
-  draggedId,
-  dragOverId,
-  onDragStart,
-  onDragOver,
-  onDragLeave,
-  onDragEnd,
-  onDrop,
-  syncFeed,
-} = useDragReorder({ items: localQueue, onReorder: reorder });
+const { draggedId, dragOverId, onDragStart, onDragOver, onDragLeave, onDragEnd, onDrop, syncFeed } =
+  useDragReorder({ items: localQueue, onReorder: reorder });
 
 watch(
   () => props.queue,
