@@ -23,7 +23,7 @@ public static class RunStageStatus
         // A finished run completed every stage. The in-VM phase marker still
         // names the last agent, so positional derivation alone would leave that
         // stage "running" — collapse the whole pipeline to done instead.
-        if (runStatus == "done")
+        if (runStatus == RunStatus.Done)
         {
             return stages.Select(s => new RunStageView(s.Agent, s.Model, Done)).ToArray();
         }
