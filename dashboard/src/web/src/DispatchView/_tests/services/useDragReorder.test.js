@@ -1,44 +1,10 @@
 import { describe, it, expect, vi } from "vitest";
 import { ref } from "vue";
-import { reorderQueue, useDragReorder } from "../../services/useDragReorder.js";
+import { useDragReorder } from "../../services/useDragReorder.js";
 
 function fakeDragEvent() {
   return { dataTransfer: { effectAllowed: null, setData: vi.fn() } };
 }
-
-describe("reorderQueue", () => {
-  it("places a downward drag at the visually-indicated drop target", () => {
-    const list = ["a", "b", "c", "d", "e"];
-    // drag 'b' (index 1) down onto 'd' (index 3). After splicing 'b' out, 'd'
-    // shifts to index 2, so the drop slot is toIndex - 1 = 2, not the stale 3.
-    // (The buggy insert-at-toIndex would yield ['a','c','d','b','e'].)
-    expect(reorderQueue(list, 1, 3)).toEqual(["a", "c", "b", "d", "e"]);
-  });
-
-  it("places an upward drag at the visually-indicated drop target", () => {
-    const list = ["a", "b", "c", "d", "e"];
-    // drag 'd' (index 3) up onto 'b' (index 1): removal does not shift the
-    // target, so insert at toIndex = 1.
-    expect(reorderQueue(list, 3, 1)).toEqual(["a", "d", "b", "c", "e"]);
-  });
-
-  it("returns the same reference when source and target are the same slot", () => {
-    const list = ["a", "b", "c"];
-    expect(reorderQueue(list, 1, 1)).toBe(list);
-  });
-
-  it("returns the same reference for out-of-range indices", () => {
-    const list = ["a", "b", "c"];
-    expect(reorderQueue(list, -1, 2)).toBe(list);
-    expect(reorderQueue(list, 0, 99)).toBe(list);
-  });
-
-  it("does not mutate the input list", () => {
-    const list = ["a", "b", "c", "d"];
-    reorderQueue(list, 1, 3);
-    expect(list).toEqual(["a", "b", "c", "d"]);
-  });
-});
 
 describe("useDragReorder", () => {
   it("reorders a downward drop and persists the new id order", async () => {
@@ -49,6 +15,9 @@ describe("useDragReorder", () => {
     drag.onDragStart(items.value[1], fakeDragEvent()); // grab q2
     await drag.onDrop("q4"); // drop onto q4 (downward)
 
+    // After splicing q2 out, q4 shifts down one slot, so q2 lands just
+    // before q4 — the slot the user saw. (Insert-at-stale-toIndex would
+    // yield ["q1","q3","q4","q2"].)
     expect(items.value.map((i) => i.id)).toEqual(["q1", "q3", "q2", "q4"]);
     expect(onReorder).toHaveBeenCalledTimes(1);
     expect(onReorder).toHaveBeenCalledWith(["q1", "q3", "q2", "q4"]);
@@ -79,6 +48,18 @@ describe("useDragReorder", () => {
     expect(onReorder).not.toHaveBeenCalled();
   });
 
+  it("does not persist when the drop target is unknown", async () => {
+    const items = ref([{ id: "q1" }, { id: "q2" }]);
+    const onReorder = vi.fn(() => Promise.resolve());
+    const drag = useDragReorder({ items, onReorder });
+
+    drag.onDragStart(items.value[0], fakeDragEvent());
+    await drag.onDrop("missing");
+
+    expect(items.value.map((i) => i.id)).toEqual(["q1", "q2"]);
+    expect(onReorder).not.toHaveBeenCalled();
+  });
+
   it("clears the drag-over highlight and dragged id on drop", async () => {
     const items = ref([{ id: "q1" }, { id: "q2" }, { id: "q3" }]);
     const onReorder = vi.fn(() => Promise.resolve());
@@ -93,5 +74,37 @@ describe("useDragReorder", () => {
 
     expect(drag.dragOverId.value).toBeNull();
     expect(drag.draggedId.value).toBeNull();
+  });
+
+  it("takes the feed while idle, copied so the shadow never aliases it", () => {
+    const feed = [{ id: "q1" }, { id: "q2" }];
+    const items = ref([{ id: "q2" }, { id: "q1" }]);
+    const drag = useDragReorder({ items, onReorder: vi.fn() });
+
+    drag.syncFeed(feed, { isSaving: false });
+
+    expect(items.value).toEqual(feed);
+    expect(items.value).not.toBe(feed);
+  });
+
+  it("keeps the local order when the feed changes mid-drag", () => {
+    const feed = [{ id: "q1" }, { id: "q2" }];
+    const items = ref([{ id: "q2" }, { id: "q1" }]);
+    const drag = useDragReorder({ items, onReorder: vi.fn() });
+
+    drag.onDragStart(items.value[0], fakeDragEvent());
+    drag.syncFeed(feed, { isSaving: false });
+
+    expect(items.value).toEqual([{ id: "q2" }, { id: "q1" }]);
+  });
+
+  it("keeps the local order while a save is in flight", () => {
+    const feed = [{ id: "q1" }, { id: "q2" }];
+    const items = ref([{ id: "q2" }, { id: "q1" }]);
+    const drag = useDragReorder({ items, onReorder: vi.fn() });
+
+    drag.syncFeed(feed, { isSaving: true });
+
+    expect(items.value).toEqual([{ id: "q2" }, { id: "q1" }]);
   });
 });

@@ -89,6 +89,29 @@ describe("EligibleIssuesColumn write-then-resync", () => {
     expect(reloadQueue).toHaveBeenCalledTimes(1);
   });
 
+  it("reloads both feeds concurrently after a successful enqueue", async () => {
+    let release;
+    const gate = new Promise((r) => (release = r));
+    const reloadIssues = vi.fn(() => gate);
+    const reloadQueue = vi.fn(() => Promise.resolve());
+    const { enqueue } = useQueueHandlers({
+      fetchFn: vi.fn(() => Promise.resolve({ ok: true, status: 201 })),
+      reloadIssues,
+      reloadQueue,
+    });
+
+    const pending = enqueue(issue(101, 12));
+    await new Promise((r) => setTimeout(r, 0));
+
+    // Promise.all: both reloads start before either finishes.
+    expect(reloadIssues).toHaveBeenCalledTimes(1);
+    expect(reloadQueue).toHaveBeenCalledTimes(1);
+    release();
+    await pending;
+    expect(reloadIssues).toHaveBeenCalledTimes(1);
+    expect(reloadQueue).toHaveBeenCalledTimes(1);
+  });
+
   it("reloads nothing and records the error when the enqueue fails", async () => {
     const reloadIssues = vi.fn();
     const reloadQueue = vi.fn();

@@ -1,7 +1,7 @@
 <script setup>
 import { computed, ref, watch } from "vue";
 import ErrorBanner from "../../_shared/components/ErrorBanner.vue";
-import { queueRowView, resolveLocalQueue } from "../models/queueView.js";
+import { queueRowView } from "../models/queueView.js";
 import { useDragReorder } from "../services/useDragReorder.js";
 import { useQueueHandlers } from "../services/useQueueHandlers.js";
 import IssueRef from "./IssueRef.vue";
@@ -48,28 +48,33 @@ const {
   reloadQueue: props.reloadQueue,
 });
 
-// Shadow copy of the feed queue: drops land here first for instant
-// feedback, and the feed only overwrites it while no save or drag is in
-// flight (resolveLocalQueue), so a polling sync never yanks rows out from
-// under the pointer.
+// Shadow copy of the feed queue, owned by the drag seam below: drops land
+// here first for instant feedback, and the feed only overwrites it while no
+// save or drag is in flight (syncFeed), so a polling sync never yanks rows
+// out from under the pointer.
 const localQueue = ref([]);
 
 const isSaving = computed(() => isReordering.value || isRemoving.value || isRestarting.value);
 
-// A drop persists optimistically (useDragReorder already moved the rows) via
-// the wired `reorder` handler, which re-syncs the queue feed unconditionally
-// — even when the persist failed — so the shadow copy converges on server
-// truth.
-const { draggedId, dragOverId, onDragStart, onDragOver, onDragLeave, onDragEnd, onDrop } =
-  useDragReorder({ items: localQueue, onReorder: reorder });
+// The single reorder seam: onDrop orchestrates move → persist → reconverge
+// (persist via the wired `reorder` handler, which re-syncs the queue feed
+// unconditionally — even when the persist failed — so the shadow converges
+// on server truth), and the feed watch reconverges through syncFeed.
+const {
+  draggedId,
+  dragOverId,
+  onDragStart,
+  onDragOver,
+  onDragLeave,
+  onDragEnd,
+  onDrop,
+  syncFeed,
+} = useDragReorder({ items: localQueue, onReorder: reorder });
 
 watch(
   () => props.queue,
   (newQueue) => {
-    localQueue.value = resolveLocalQueue(newQueue, localQueue.value, {
-      isSaving: isSaving.value,
-      isDragging: draggedId.value !== null,
-    });
+    syncFeed(newQueue, { isSaving: isSaving.value });
   },
   { immediate: true },
 );

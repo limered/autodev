@@ -130,6 +130,29 @@ describe("RunQueueColumn write-then-resync", () => {
     expect(reloads.reloadQueue).toHaveBeenCalledTimes(1);
   });
 
+  it("reloads both feeds concurrently after a successful remove", async () => {
+    let release;
+    const gate = new Promise((r) => (release = r));
+    const reloadIssues = vi.fn(() => gate);
+    const reloadQueue = vi.fn(() => Promise.resolve());
+    const { remove } = useQueueHandlers({
+      fetchFn: vi.fn(() => Promise.resolve({ ok: true, status: 200 })),
+      reloadIssues,
+      reloadQueue,
+    });
+
+    const pending = remove({ id: "q1" });
+    await new Promise((r) => setTimeout(r, 0));
+
+    // Promise.all: both reloads start before either finishes.
+    expect(reloadIssues).toHaveBeenCalledTimes(1);
+    expect(reloadQueue).toHaveBeenCalledTimes(1);
+    release();
+    await pending;
+    expect(reloadIssues).toHaveBeenCalledTimes(1);
+    expect(reloadQueue).toHaveBeenCalledTimes(1);
+  });
+
   it("reloads nothing and records the error when a remove fails", async () => {
     const reloads = makeReloads();
     const { remove, removeError } = useQueueHandlers({
