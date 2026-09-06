@@ -34,3 +34,12 @@ The frontend (`dashboard/src/web`) groups code **semantically by theme, not by k
 - Shared code lives under `_shared/` (`_shared/components/`, `_shared/models/`, `_shared/services/`).
 - **Promote on second use**: a component or model starts in its owning theme folder and moves to `_shared/` only the first time a second theme needs it. Nothing goes in `_shared/` speculatively.
 - Tests live in a parallel `_tests/` folder per theme, mirroring the code structure — `RunView/models/runView.js` is tested by `RunView/_tests/models/runView.test.js`. Tests never sit inline beside the code.
+
+## Comment Rules
+
+- only comment your code, if it's absolutely necessery for understanding the code
+- never describe in a comment what can be inferred from the function name or by reading the source
+- never leave historical data in the comments
+- never state an issue on which this change is based on
+- do not include content in a comment that stems from the issue or the message history
+- if you find a comment that is against this rules
