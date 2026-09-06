@@ -1,3 +1,4 @@
+using Api.Issues;
 using Api.Queue;
 using Xunit;
 
@@ -113,6 +114,23 @@ public class QueueTests
     }
 
     [Fact]
+    public async Task StartNext_Twice_KeepsFirstTimestamp()
+    {
+        // The shared rule: start is requested only when none was requested before.
+        Assert.True(QueueRules.ShouldRequestStart(new QueueRuleItem(1, 1, 1, null, null)));
+        Assert.False(QueueRules.ShouldRequestStart(new QueueRuleItem(1, 1, 1, null, DateTimeOffset.UtcNow)));
+
+        var store = new FakeQueueStore();
+        var item = await store.Enqueue(42);
+        var first = await store.StartNext(item!.Id);
+        var second = await store.StartNext(item.Id);
+
+        Assert.NotNull(first);
+        Assert.NotNull(second);
+        Assert.Equal(first!.StartRequestedAt, second!.StartRequestedAt);
+    }
+
+    [Fact]
     public async Task ClaimNext_ClaimsHighestRankedStartRequestedItem()
     {
         var store = new FakeQueueStore();
@@ -138,6 +156,45 @@ public class QueueTests
         var claim = await store.ClaimNext();
 
         Assert.Null(claim);
+    }
+
+    [Fact]
+    public async Task ClaimNext_IssueRowMissing_ClaimsNothing()
+    {
+        // Same guarantee as the SQL store: no issues row means the resolver answers
+        // null, so the claim attaches no run — pinned here without Postgres.
+        var queue = new FakeQueueStore();
+        queue.Resolver = new FakeIssueResolver(queue, new FakeIssuesStore());
+        var enqueued = await queue.Enqueue(77);
+        await queue.StartNext(enqueued!.Id);
+
+        var claim = await queue.ClaimNext();
+
+        Assert.Null(claim);
+        Assert.Null((await queue.All()).Single(i => i.Id == enqueued.Id).RunId);
+    }
+
+    [Fact]
+    public async Task ClaimNext_IssueRowPresent_ClaimsWithResolverPayload()
+    {
+        var queue = new FakeQueueStore();
+        var issues = new FakeIssuesStore();
+        await issues.SyncRepo("owner/repo", new[]
+        {
+            new IssueSnapshot(
+                1, 7, "First issue", "https://github.com/owner/repo/issues/7",
+                new[] { "ready-for-agent" }, "Do the first thing", "open", DateTimeOffset.UtcNow),
+        });
+        queue.Resolver = new FakeIssueResolver(queue, issues);
+        var enqueued = await queue.Enqueue(1);
+        await queue.StartNext(enqueued!.Id);
+
+        var claim = await queue.ClaimNext();
+
+        Assert.NotNull(claim);
+        Assert.Equal("https://github.com/owner/repo.git", claim!.RepoUrl);
+        Assert.Equal("Do the first thing", claim.Spec);
+        Assert.Equal(claim.RunId, (await queue.All()).Single().RunId);
     }
 
     [Fact]

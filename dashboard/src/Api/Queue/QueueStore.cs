@@ -77,6 +77,8 @@ public sealed class QueueStore : IQueueStore
         await using var conn = await _dataSource.OpenConnectionAsync();
         await using var tx = await conn.BeginTransactionAsync();
 
+        // QueueRules.ShouldRequestStart pushed to SQL: the timestamp is set only when
+        // none was requested before, so a repeat call keeps the first timestamp.
         await using var cmd = new NpgsqlCommand(
             """
             UPDATE queue
@@ -271,7 +273,7 @@ public sealed class QueueStore : IQueueStore
         params NpgsqlParameter[] parameters)
         => Query(sql, conn, tx, MapRuleItem, parameters);
 
-    /// <summary>The raw joined-row select: the queue row plus the issue/run enrichments the endpoint projects to the response.</summary>
+    /// <summary>The joined-row select: the queue row plus the issue/run enrichments served as the response. The LEFT JOINs keep rows whose issue/run is missing.</summary>
     private const string SelectQueueSql =
         """
         SELECT

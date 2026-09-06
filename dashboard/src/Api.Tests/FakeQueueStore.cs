@@ -1,3 +1,4 @@
+using Api.Issues;
 using Api.Queue;
 
 namespace Api.Tests;
@@ -6,6 +7,13 @@ public sealed class FakeQueueStore : IQueueStore
 {
     private readonly List<QueueRow> _items = new();
     private long _nextId = 1;
+
+    /// <summary>
+    /// The issues-domain seam the real store claims through. Unwired, ClaimNext keeps
+    /// its legacy hardcoded payload; wired (e.g. to a <c>FakeIssueResolver</c>), the
+    /// claim resolves through it and a missing issue row claims nothing — same as SQL.
+    /// </summary>
+    public IIssueResolver? Resolver { get; set; }
 
     /// <summary>
     /// The boundary projection: QueueRules sees only the queue row fields, so the
@@ -74,6 +82,13 @@ public sealed class FakeQueueStore : IQueueStore
             return Task.FromResult<QueueRow?>(null);
         }
 
+        // QueueRules.ShouldRequestStart, shared with the real SQL store's
+        // WHERE start_requested_at IS NULL: a repeat call keeps the first timestamp.
+        if (!QueueRules.ShouldRequestStart(RuleItems().Single(i => i.Id == id)))
+        {
+            return Task.FromResult<QueueRow?>(item);
+        }
+
         var idx = _items.IndexOf(item);
         _items[idx] = item with { StartRequestedAt = DateTimeOffset.UtcNow };
         return Task.FromResult<QueueRow?>(_items[idx]);
@@ -92,20 +107,33 @@ public sealed class FakeQueueStore : IQueueStore
         return Task.FromResult<QueueRow?>(_items[idx]);
     }
 
-    public Task<ClaimedQueueItem?> ClaimNext()
+    public async Task<ClaimedQueueItem?> ClaimNext()
     {
         var next = QueueRules.NextClaimable(RuleItems());
 
         if (next is null)
         {
-            return Task.FromResult<ClaimedQueueItem?>(null);
+            return null;
+        }
+
+        // The claim payload comes from the issues domain via the same resolver seam
+        // the SQL store claims through — a missing issue row answers null and claims
+        // nothing, attaching no run, exactly like the SQL inner-join guarantee. The
+        // fake ignores the caller's connection/transaction; that is its contract.
+        var payload = Resolver is null
+            ? new IssueClaimPayload("https://github.com/test/repo.git", "spec")
+            : await Resolver.ResolveClaimPayloadAsync(next.IssueId, conn: null!, tx: null!);
+
+        if (payload is null)
+        {
+            return null;
         }
 
         var runId = Guid.NewGuid();
         var item = _items.Single(i => i.Id == next.Id);
         var idx = _items.IndexOf(item);
         _items[idx] = item with { RunId = runId };
-        return Task.FromResult<ClaimedQueueItem?>(new ClaimedQueueItem(runId, "https://github.com/test/repo.git", "spec"));
+        return new ClaimedQueueItem(runId, payload.RepoUrl, payload.Spec);
     }
 
     public Task Reorder(IReadOnlyList<long> ids)

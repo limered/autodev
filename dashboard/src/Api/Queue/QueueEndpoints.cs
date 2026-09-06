@@ -9,22 +9,22 @@ public static class QueueEndpoints
             var row = await store.Enqueue(req.IssueId);
             return row is null
                 ? Results.Problem("Failed to enqueue issue.")
-                : Results.Json(QueueListItem.From(row));
+                : Results.Json(row);
         });
 
         app.MapGet("/queue", async (IQueueStore store) =>
-            Results.Json((await store.All()).Select(QueueListItem.From).ToArray()));
+            Results.Json(await store.All()));
 
         app.MapPost("/queue/{id:long}/start-next", async (long id, IQueueStore store) =>
         {
             var row = await store.StartNext(id);
-            return row is null ? Results.NotFound() : Results.Json(QueueListItem.From(row));
+            return row is null ? Results.NotFound() : Results.Json(row);
         });
 
         app.MapPost("/queue/{id:long}/restart", async (long id, IQueueStore store) =>
         {
             var row = await store.Restart(id);
-            return row is null ? Results.NotFound() : Results.Json(QueueListItem.From(row));
+            return row is null ? Results.NotFound() : Results.Json(row);
         });
 
         app.MapPost("/queue/claim-next", async (IQueueStore store) =>

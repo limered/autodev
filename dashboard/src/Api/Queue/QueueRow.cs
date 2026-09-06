@@ -1,10 +1,9 @@
 namespace Api.Queue;
 
 /// <summary>
-/// The raw queue joined-row record: the queue row plus the issue/run enrichments
-/// from the store's LEFT JOIN across issues/runs. This is the store's read shape;
-/// the API response DTO (<see cref="QueueListItem"/>) is projected from it at the
-/// queue endpoint seam via <see cref="QueueListItem.From"/>.
+/// The queue API contract: the queue row plus the issue/run enrichments from the
+/// store's LEFT JOIN across issues/runs. The store returns this shape and the
+/// endpoints serialize it directly — one shape, no projection seam.
 /// </summary>
 public record QueueRow(
     long Id,
