@@ -111,6 +111,22 @@ describe("useActiveRuns", () => {
     expect(onSetChange).toHaveBeenCalledTimes(1);
   });
 
+  it("fires no change when a delete-then-reload finds an already-dropped run", async () => {
+    // The delete handler just re-polls through this diff (no manual emit), so
+    // deleting a run that already left the set must not refresh history.
+    const onSetChange = vi.fn();
+    let items = [run("a", "running")];
+    const fetchFn = vi.fn(() => Promise.resolve(ok(items)));
+    const feed = useActiveRuns(fetchFn, { onSetChange });
+
+    await feed.load(); // seed: a active
+    items = [];
+    await feed.load(); // a finished on its own — one change
+    expect(onSetChange).toHaveBeenCalledTimes(1);
+    await feed.load(); // user deletes the already-dropped run, set unchanged
+    expect(onSetChange).toHaveBeenCalledTimes(1);
+  });
+
   it("a failed poll raises no change, surfaces the error and keeps the known set", async () => {
     const onSetChange = vi.fn();
     let items = [run("a", "running")];

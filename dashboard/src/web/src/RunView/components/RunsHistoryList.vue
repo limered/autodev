@@ -2,6 +2,7 @@
 import { computed } from "vue";
 import ErrorBanner from "../../_shared/components/ErrorBanner.vue";
 import RunCard from "./RunCard.vue";
+import RunSection from "./RunSection.vue";
 import { isTerminalRun } from "../models/runStatus.js";
 import { usePagedRuns } from "../services/usePagedRuns.js";
 import { useNowTicker } from "../services/useNowTicker.js";
@@ -22,61 +23,36 @@ defineExpose({ refreshFirst });
 </script>
 
 <template>
-  <div>
-    <ErrorBanner
-      v-if="error"
-      title="Connection lost"
-      :message="`Failed to load run history: ${error}`"
-    />
+  <RunSection title="History" aria-label="Run history">
+    <template #alerts>
+      <ErrorBanner
+        v-if="error"
+        title="Connection lost"
+        :message="`Failed to load run history: ${error}`"
+      />
+    </template>
 
-    <section class="history-runs" aria-label="Run history">
-      <header class="section-header">
-        <h2><span class="prompt">&gt;</span> History</h2>
-      </header>
+    <div v-if="historyRuns.length" class="run-list">
+      <RunCard v-for="r in historyRuns" :key="r.runId" :run="r" :now="now" />
+    </div>
 
-      <div v-if="historyRuns.length" class="run-list">
-        <RunCard v-for="r in historyRuns" :key="r.runId" :run="r" :now="now" />
-      </div>
-
-      <section v-else-if="!error" class="empty-state">
-        <div class="empty-prompt">&gt;_</div>
-        <h2>No finished runs yet</h2>
-        <p>Runs will appear here as they finish.</p>
-      </section>
-
-      <div v-if="hasMore" class="load-more-row">
-        <button type="button" class="load-more" :disabled="isLoading" @click="loadNext">
-          {{ isLoading ? "Loading..." : "Load more" }}
-        </button>
-      </div>
+    <section v-else-if="!error" class="empty-state">
+      <div class="empty-prompt">&gt;_</div>
+      <h2>No finished runs yet</h2>
+      <p>Runs will appear here as they finish.</p>
     </section>
-  </div>
+
+    <div v-if="hasMore" class="load-more-row">
+      <button type="button" class="load-more" :disabled="isLoading" @click="loadNext">
+        {{ isLoading ? "Loading..." : "Load more" }}
+      </button>
+    </div>
+  </RunSection>
 </template>
 
 <style scoped>
-.section-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 1rem;
-  margin-bottom: 1rem;
-  padding-bottom: 0.75rem;
-  border-bottom: 1px solid var(--border);
-}
-.section-header h2 {
-  margin: 0;
-  font-size: 1.1rem;
-  font-weight: 700;
-  letter-spacing: -0.01em;
-}
-.prompt {
-  color: var(--accent);
-  margin-right: 0.25rem;
-}
-.run-list {
-  display: grid;
-  gap: 1rem;
-}
+/* Single-use rows below the shared shell (header, list grid and banner
+   geometry live in RunSection.vue): the empty state and the paging control. */
 .empty-state {
   text-align: center;
   padding: 4rem 1rem;
@@ -119,11 +95,5 @@ defineExpose({ refreshFirst });
 .load-more:disabled {
   opacity: 0.6;
   cursor: default;
-}
-/* Skin lives in _shared/components/ErrorBanner.vue; these are this view's
-   page-level geometry. */
-.error-banner {
-  margin-bottom: 1.5rem;
-  padding: 1rem 1.25rem;
 }
 </style>
