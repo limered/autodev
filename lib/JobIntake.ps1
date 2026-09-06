@@ -34,6 +34,24 @@ function Get-StaleSeconds {
     return ($VmNow - $ReferenceEpoch)
 }
 
+function ConvertTo-OwnerRepo {
+    param([string]$RepoUrl)
+    if ($RepoUrl -notmatch 'github\.com[:/]([^/]+/[^/]+?)(\.git)?$') {
+        throw "Cannot parse owner/name from RepoUrl: $RepoUrl"
+    }
+    return $Matches[1]
+}
+
+function Wait-ForPullRequest {
+    param([string]$Repo, [string]$Owner, [string]$Branch, [scriptblock]$Poll, [int]$MaxAttempts = 10, [int]$SleepSeconds = 3)
+    for ($i = 0; $i -lt $MaxAttempts; $i++) {
+        $prs = & $Poll $Repo $Owner $Branch
+        if ($prs.Count -gt 0) { return $prs[0] }
+        if ($SleepSeconds -gt 0) { Start-Sleep -Seconds $SleepSeconds }
+    }
+    throw "No open pull request found for branch $Branch"
+}
+
 function ConvertTo-IssueNumber {
     param([string]$Issue)
     if ($Issue -match '/issues/(\d+)') { return $Matches[1] }

@@ -35,11 +35,8 @@ try {
     if (-not (Test-Path $patFile)) { throw "PAT file not found: $patFile" }
 
     Write-Step "Launching VM $VmName"
-    Invoke-Multipass launch 24.04 --name $VmName --cpus 4 --memory 4G --disk 40G --cloud-init $cloudInit
+    New-VmFromBlueprint -Name $VmName -CloudInit $cloudInit
     $vmCreated = $true
-
-    Write-Step "Waiting for cloud-init provisioning to complete"
-    Invoke-Multipass exec $VmName '--' cloud-init status --wait
 
     Write-Step "Transferring bot SSH key, public key, PAT, and test script into VM"
     Invoke-Multipass transfer $sshKey "$($VmName):/tmp/bot-github"

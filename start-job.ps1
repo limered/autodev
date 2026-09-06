@@ -49,11 +49,9 @@ param(
 
 $ErrorActionPreference = "Stop"
 
-# owner/name from git@github.com:owner/name.git  (or https://github.com/owner/name(.git))
-if ($RepoUrl -notmatch 'github\.com[:/]([^/]+/[^/]+?)(\.git)?$') {
-    throw "Cannot parse owner/name from RepoUrl: $RepoUrl"
-}
-$Repo = $Matches[1]
+. (Join-Path $PSScriptRoot "lib/JobIntake.ps1")
+
+$Repo = ConvertTo-OwnerRepo -RepoUrl $RepoUrl
 
 # Read an agent's model from its definition frontmatter (.opencode/agents/<name>.md,
 # the `model:` field) — the single source of truth opencode headless honors.
@@ -117,11 +115,8 @@ try {
     if (-not (Test-Path $opencodeDir)) { throw ".opencode directory not found: $opencodeDir" }
 
     Write-Step "Launching VM $VmName"
-    Invoke-Multipass launch 24.04 --name $VmName --cpus 4 --memory 4G --disk 40G --cloud-init $cloudInit
+    New-VmFromBlueprint -Name $VmName -CloudInit $cloudInit
     $vmCreated = $true
-
-    Write-Step "Waiting for cloud-init provisioning to complete"
-    Invoke-Multipass exec $VmName '--' cloud-init status --wait
 
     Write-Step "Transferring PAT, opencode API key, .opencode config, and test script into VM"
     Invoke-Multipass transfer $patFile "$($VmName):/tmp/github-pat.txt"
@@ -170,14 +165,13 @@ try {
         Authorization = "Bearer $pat"
         Accept = "application/vnd.github.v3+json"
     }
-    # Push+PR creation is done by the time the agent exits, but GitHub's API can
+    # Push+PR creation is done by the time the agent exits, but GitHub's interface can
     # lag a beat. Poll a few times before giving up.
-    for ($i = 0; $i -lt 10; $i++) {
-        $prs = Invoke-RestMethod -Uri "https://api.github.com/repos/$Repo/pulls?state=open&head=$($owner):$Branch" -Headers $headers
-        if ($prs.Count -gt 0) { $pr = $prs[0]; break }
-        Start-Sleep -Seconds 3
-    }
-    if (-not $pr) { throw "No open pull request found for branch $Branch" }
+    $poll = {
+        param($Repo, $Owner, $Branch)
+        Invoke-RestMethod -Uri "https://api.github.com/repos/$Repo/pulls?state=open&head=$($Owner):$Branch" -Headers $headers
+    }.GetNewClosure()
+    $pr = Wait-ForPullRequest -Repo $Repo -Owner $owner -Branch $Branch -Poll $poll
     $prUrl = $pr.html_url
     Write-Step "Verified PR: $prUrl"
     Send-FactoryEvent -RunId $RunId -Type "pr-verified" -Fields @{ prUrl = $prUrl }

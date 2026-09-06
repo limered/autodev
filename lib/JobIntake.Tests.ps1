@@ -44,3 +44,27 @@ Describe 'New-IssueBranchName' {
             Should -Be 'factory/issue-8-20260101-000000-7'
     }
 }
+
+Describe 'ConvertTo-OwnerRepo' {
+    It 'parses https and ssh forms' {
+        ConvertTo-OwnerRepo -RepoUrl 'https://github.com/owner/name.git' | Should -Be 'owner/name'
+        ConvertTo-OwnerRepo -RepoUrl 'git@github.com:owner/name.git' | Should -Be 'owner/name'
+    }
+    It 'throws on garbage' {
+        { ConvertTo-OwnerRepo -RepoUrl 'not-a-url' } | Should -Throw
+    }
+}
+
+Describe 'Wait-ForPullRequest' {
+    It 'returns the PR when found on retry' {
+        $script:calls = 0
+        $poll = { param($r, $o, $b) $script:calls++; if ($script:calls -lt 3) { return @() }; return @([PSCustomObject]@{ html_url = 'u'; number = 1 }) }
+        $pr = Wait-ForPullRequest -Repo 'o/r' -Owner 'o' -Branch 'b' -Poll $poll -SleepSeconds 0
+        $pr.number | Should -Be 1
+        $script:calls | Should -Be 3
+    }
+    It 'throws when no PR appears' {
+        $poll = { param($r, $o, $b) return @() }
+        { Wait-ForPullRequest -Repo 'o/r' -Owner 'o' -Branch 'b' -Poll $poll -MaxAttempts 2 -SleepSeconds 0 } | Should -Throw
+    }
+}

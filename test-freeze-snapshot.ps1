@@ -27,7 +27,7 @@ $vmCreated = $false
 $snapshotPath = $null
 try {
     Write-Step "Launching test VM $VmName"
-    Invoke-Multipass launch 24.04 --name $VmName --cpus 1 --memory 1G --disk 5G
+    New-VmFromBlueprint -Name $VmName -Cpus '1' -Memory '1G' -Disk '5G' -NoWait
     $vmCreated = $true
 
     # Deliberate stall: sleep long, never touch /tmp/heartbeat.
