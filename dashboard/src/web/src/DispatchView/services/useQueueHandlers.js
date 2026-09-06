@@ -63,5 +63,6 @@ export function useQueueHandlers({ reloadIssues, reloadQueue, fetchFn = fetch } 
     isStartingNext: actions.isStartingNext,
     restartError: actions.restartError,
     isRestarting: actions.isRestarting,
+    isSaving: actions.isSaving,
   };
 }

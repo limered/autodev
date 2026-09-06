@@ -80,4 +80,22 @@ describe("useQueueActions", () => {
     resolve();
     await first;
   });
+
+  it("reports isSaving while any write is in flight", async () => {
+    let release;
+    const gate = new Promise((r) => (release = r));
+    const fetchFn = vi.fn(() => gate);
+    const actions = useQueueActions(fetchFn);
+
+    expect(actions.isSaving.value).toBe(false);
+
+    const pending = actions.remove(1);
+    await new Promise((r) => setTimeout(r, 0));
+    expect(actions.isRemoving.value).toBe(true);
+    expect(actions.isSaving.value).toBe(true);
+
+    release({ ok: true, status: 200 });
+    await pending;
+    expect(actions.isSaving.value).toBe(false);
+  });
 });

@@ -1,18 +1,18 @@
 <script setup>
-import { computed, ref, watch } from "vue";
+import { computed } from "vue";
 import ErrorBanner from "../../_shared/components/ErrorBanner.vue";
 import { queueRowView } from "../models/queueView.js";
-import { useDragReorder } from "../services/useDragReorder.js";
+import { useQueueFeedShadow } from "../services/useQueueFeedShadow.js";
 import { useQueueHandlers } from "../services/useQueueHandlers.js";
 import IssueRef from "./IssueRef.vue";
 
 // The run-queue column of the DispatchView split: owns everything its
 // buttons do — the queue write actions and each action's run()-then-load()
 // re-sync, wired once in the shared useQueueHandlers composable (Block A) —
-// plus the drag-reorder interaction and the `localQueue` shadow copy of the
-// feed. What still arrives as props is read state (the feed's items and sync
-// error) plus the two feed loads the re-syncs need; no action state or
-// handler passes through DispatchView.
+// plus the drag-reorder interaction over the `localQueue` shadow copy of the
+// feed, owned by useQueueFeedShadow. What still arrives as props is read
+// state (the feed's items and sync error) plus the two feed loads the
+// re-syncs need; no action state or handler passes through DispatchView.
 const props = defineProps({
   // Array of queue items from the /queue feed, in server order.
   queue: { type: Array, required: true },
@@ -33,7 +33,6 @@ const props = defineProps({
 const {
   reorder,
   reorderError,
-  isReordering,
   remove,
   removeError,
   isRemoving,
@@ -43,39 +42,22 @@ const {
   restart,
   restartError,
   isRestarting,
+  isSaving,
 } = useQueueHandlers({
   reloadIssues: props.reloadIssues,
   reloadQueue: props.reloadQueue,
 });
 
-// Shadow copy of the feed queue, owned by the drag seam below: drops land
-// here first for instant feedback, and the feed only overwrites it while no
-// save or drag is in flight (syncFeed), so a polling sync never yanks rows
-// out from under the pointer.
-const localQueue = ref([]);
-
-// ponytail: if another in-flight flag is ever missed in this disjunction
-// again, consolidate the shadow-queue state machine (localQueue + isSaving +
-// syncFeed watch) into a `useQueueFeedShadow` module instead of growing the
-// list here (grilled #109-C2 → minimal fix: enumerate the flags).
-const isSaving = computed(
-  () => isReordering.value || isRemoving.value || isStartingNext.value || isRestarting.value,
-);
-
-// The single reorder seam: onDrop orchestrates move → persist → reconverge
-// (persist via the wired `reorder` handler, which re-syncs the queue feed
-// unconditionally — even when the persist failed — so the shadow converges
-// on server truth), and the feed watch reconverges through syncFeed.
-const { draggedId, dragOverId, onDragStart, onDragOver, onDragLeave, onDragEnd, onDrop, syncFeed } =
-  useDragReorder({ items: localQueue, onReorder: reorder });
-
-watch(
-  () => props.queue,
-  (newQueue) => {
-    syncFeed(newQueue, { isSaving: isSaving.value });
-  },
-  { immediate: true },
-);
+const {
+  localQueue,
+  draggedId,
+  dragOverId,
+  onDragStart,
+  onDragOver,
+  onDragLeave,
+  onDragEnd,
+  onDrop,
+} = useQueueFeedShadow({ feed: () => props.queue, isSaving, onReorder: reorder });
 
 const nextQueueItem = computed(() => localQueue.value[0] ?? null);
 
