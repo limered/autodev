@@ -40,7 +40,7 @@ export function useQueueHandlers({ reloadIssues, reloadQueue, fetchFn = fetch } 
     if (await actions.restart(item.id)) await reloadQueue();
   }
 
-<  // reorder takes raw ids (sole caller: useDragReorder.onDrop); reload is
+  // reorder takes raw ids (sole caller: useDragReorder.onDrop); reload is
   // unconditional so the shadow converges on server truth.
   async function reorder(ids) {
     await actions.reorder(ids);
