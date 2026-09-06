@@ -20,6 +20,8 @@ $script:FactoryReportUrl = $null
 $script:FactoryReportToken = $null
 $script:FactoryReportInit = $false
 
+. (Join-Path $PSScriptRoot "lib/HttpJson.ps1")
+
 function Initialize-FactoryReport {
     param([string]$RepoRoot)
     $script:FactoryReportInit = $true
@@ -60,10 +62,7 @@ function Send-FactoryEvent {
         }
         if ($Fields) { foreach ($k in $Fields.Keys) { $body[$k] = $Fields[$k] } }
 
-        $json = $body | ConvertTo-Json -Compress -Depth 10
-        # PowerShell 5.1 encodes a string -Body as Latin-1 without a charset, corrupting
-        # non-ASCII chars (e.g. U+00B7 in a spec) into bytes System.Text.Json rejects (400).
-        $bytes = [System.Text.Encoding]::UTF8.GetBytes($json)
+        $bytes = ConvertTo-Utf8JsonBody $body -Depth 10
         $uri = "$script:FactoryReportUrl/runs/$RunId/events"
         Invoke-RestMethod -Method Post -Uri $uri -Body $bytes `
             -ContentType "application/json; charset=utf-8" `
