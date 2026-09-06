@@ -2,14 +2,14 @@ import { describe, it, expect } from "vitest";
 import { queueRowView } from "../../models/queueView.js";
 
 // Row view-model for one queue item: a single queueRowView call derives the
-// badge status text, its status-* class, and the running/failed gating the
-// RunQueueColumn template needs per row, so the runId/runStatus branching is
-// table-tested once through this seam instead of through four helpers.
+// badge status text and the running/failed gating the RunQueueColumn template
+// needs per row, so the runId/runStatus branching is table-tested once
+// through this seam instead of through four helpers. The status-* class lives
+// in the template (`status-${status}`), not in this model.
 describe("queueRowView", () => {
   it("views an item with no linked run as queued and idle", () => {
     expect(queueRowView({ runId: null })).toEqual({
       status: "queued",
-      statusClass: "status-queued",
       isRunning: false,
       isFailed: false,
     });
@@ -19,7 +19,6 @@ describe("queueRowView", () => {
     for (const runStatus of [null, undefined]) {
       expect(queueRowView({ runId: "r1", runStatus })).toEqual({
         status: "starting",
-        statusClass: "status-starting",
         isRunning: true,
         isFailed: false,
       });
@@ -30,7 +29,6 @@ describe("queueRowView", () => {
     for (const runStatus of ["launching", "running", "stalled", "starting"]) {
       expect(queueRowView({ runId: "r1", runStatus })).toEqual({
         status: "running",
-        statusClass: "status-running",
         isRunning: true,
         isFailed: false,
       });
@@ -40,7 +38,6 @@ describe("queueRowView", () => {
   it("views finished runs as done and not running", () => {
     expect(queueRowView({ runId: "r1", runStatus: "done" })).toEqual({
       status: "done",
-      statusClass: "status-done",
       isRunning: false,
       isFailed: false,
     });
@@ -49,7 +46,6 @@ describe("queueRowView", () => {
   it("views failed runs as failed and restartable", () => {
     expect(queueRowView({ runId: "r1", runStatus: "failed" })).toEqual({
       status: "failed",
-      statusClass: "status-failed",
       isRunning: false,
       isFailed: true,
     });

@@ -1,7 +1,8 @@
 import { describe, it, expect, vi } from "vitest";
-import { createSSRApp, h } from "vue";
+import { computed, createSSRApp, h, ref } from "vue";
 import { renderToString } from "vue/server-renderer";
 import RunQueueColumn from "../../components/RunQueueColumn.vue";
+import { useDragReorder } from "../../services/useDragReorder.js";
 import { useQueueHandlers } from "../../services/useQueueHandlers.js";
 
 // Rendered via SSR (mirroring ErrorBanner's test) so the column's markup
@@ -109,6 +110,49 @@ describe("RunQueueColumn", () => {
 function makeReloads() {
   return { reloadIssues: vi.fn(), reloadQueue: vi.fn() };
 }
+
+// Shadow convergence at the column seam: the column holds its localQueue
+// shadow while any queue save is in flight, so a poll landing mid-save cannot
+// overwrite the rows. Wired through the same pieces the column wires — the
+// useQueueHandlers busy refs folded into isSaving exactly as
+// RunQueueColumn.vue does, plus useDragReorder's syncFeed — with a gated
+// start-next standing in for the in-flight save. Regression pin for the
+// missing-isStartingNext incident: without that flag the mid-save syncFeed
+// below would take the feed.
+describe("RunQueueColumn shadow convergence", () => {
+  it("holds the shadow queue when a poll lands mid-start-next", async () => {
+    let release;
+    const gate = new Promise((r) => (release = r));
+    const handlers = useQueueHandlers({
+      fetchFn: vi.fn(() => gate.then(() => ({ ok: true, status: 200 }))),
+      ...makeReloads(),
+    });
+
+    const localQueue = ref([{ id: "q1" }, { id: "q2" }]);
+    const isSaving = computed(
+      () =>
+        handlers.isReordering.value ||
+        handlers.isRemoving.value ||
+        handlers.isStartingNext.value ||
+        handlers.isRestarting.value,
+    );
+    const { syncFeed } = useDragReorder({ items: localQueue, onReorder: handlers.reorder });
+
+    const pending = handlers.startNext({ id: "q1" });
+    await new Promise((r) => setTimeout(r, 0));
+    expect(handlers.isStartingNext.value).toBe(true);
+    expect(isSaving.value).toBe(true);
+
+    syncFeed([{ id: "q9" }], { isSaving: isSaving.value });
+    expect(localQueue.value.map((i) => i.id)).toEqual(["q1", "q2"]);
+
+    release();
+    await pending;
+
+    syncFeed([{ id: "q9" }], { isSaving: isSaving.value });
+    expect(localQueue.value.map((i) => i.id)).toEqual(["q9"]);
+  });
+});
 
 // The column's handlers are the shared composable itself (Block A):
 // RunQueueColumn wires useQueueHandlers with its two feed loads, so the

@@ -54,7 +54,14 @@ const {
 // out from under the pointer.
 const localQueue = ref([]);
 
-const isSaving = computed(() => isReordering.value || isRemoving.value || isRestarting.value);
+// ponytail: if another in-flight flag is ever missed in this disjunction
+// again, consolidate the shadow-queue state machine (localQueue + isSaving +
+// syncFeed watch) into a `useQueueFeedShadow` module instead of growing the
+// list here (grilled #109-C2 → minimal fix: enumerate the flags).
+const isSaving = computed(
+  () =>
+    isReordering.value || isRemoving.value || isStartingNext.value || isRestarting.value,
+);
 
 // The single reorder seam: onDrop orchestrates move → persist → reconverge
 // (persist via the wired `reorder` handler, which re-syncs the queue feed
@@ -80,12 +87,20 @@ watch(
 );
 
 const nextQueueItem = computed(() => localQueue.value[0] ?? null);
-const hasRunningItem = computed(() => props.queue.some((item) => queueRowView(item).isRunning));
+
+// Single status-inference path for the gate and the rows below: every
+// runId/runStatus branch funnels through queueRowView here, so the badge rows
+// and the start-next gate can never drift apart. The gate still reads the
+// feed (props.queue — server truth, since the shadow can lag mid-drag) while
+// the rows render the shadow (localQueue).
+const inferRowView = (item) => queueRowView(item);
+const hasRunningItem = computed(() => props.queue.some((item) => inferRowView(item).isRunning));
 
 // One row view-model per queue row (Block A): a single queueRowView call
-// drives the status badge text, its status class, and the Restart gating,
-// instead of the template consulting 3-4 separate helpers per row.
-const rows = computed(() => localQueue.value.map((item) => ({ item, view: queueRowView(item) })));
+// drives the status badge text and the Restart gating, instead of the
+// template consulting 3-4 separate helpers per row. The status-* class is
+// mapped inline in the template (`status-${view.status}`), not in the model.
+const rows = computed(() => localQueue.value.map((item) => ({ item, view: inferRowView(item) })));
 
 // Start-next gating is view state — the head of the shadow queue and whether
 // anything is already running — so the guard stays here; the write and its
@@ -152,7 +167,7 @@ async function onStartNext() {
             <span class="missing-issue">no longer eligible</span>
           </template>
         </div>
-        <span class="status-badge" :class="view.statusClass">
+        <span class="status-badge" :class="`status-${view.status}`">
           <span class="status-indicator"></span>
           {{ view.status }}
         </span>
