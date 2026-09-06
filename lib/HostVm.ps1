@@ -67,6 +67,21 @@ function Remove-Vm {
     Invoke-Multipass delete $Name --purge -Executor $Executor
 }
 
+function New-VmFromBlueprint {
+    param([string]$Name, [string]$CloudInit, [string]$Cpus = '4', [string]$Memory = '4G', [string]$Disk = '40G', [switch]$NoWait, [scriptblock]$Executor)
+    Write-Step "Launching VM $Name"
+    if ($CloudInit) {
+        Invoke-Multipass launch 24.04 --name $Name --cpus $Cpus --memory $Memory --disk $Disk --cloud-init $CloudInit -Executor $Executor
+    }
+    else {
+        Invoke-Multipass launch 24.04 --name $Name --cpus $Cpus --memory $Memory --disk $Disk -Executor $Executor
+    }
+    if (-not $NoWait) {
+        Write-Step "Waiting for cloud-init provisioning to complete"
+        Invoke-Multipass exec $Name '--' cloud-init status --wait -Executor $Executor
+    }
+}
+
 function Invoke-VmCapture {
     param([string]$Name, [string]$Command, [int]$TimeoutSeconds = 15, [int]$HostTimeoutSeconds = 25)
     $job = Start-Job -ScriptBlock {
@@ -86,22 +101,34 @@ function Invoke-VmCapture {
     return $r.Out
 }
 
+function Invoke-CaptureSafe {
+    param([string]$Name, [string]$Command, [scriptblock]$Capture)
+    try {
+        if ($Capture) { return (& $Capture $Command) }
+        return (Invoke-VmCapture $Name $Command)
+    }
+    catch {
+        return "<unavailable: $_>"
+    }
+}
+
 function Save-FreezeSnapshot {
-    param([string]$Name, [hashtable]$JobParams, [string]$RepoRoot)
+    param([string]$Name, [hashtable]$JobParams, [string]$RepoRoot, [scriptblock]$Capture, [string]$Timestamp, [string]$OutDir)
     Write-Step "Capturing freeze snapshot from $Name before teardown"
-    $stamp = Get-Date -Format 'yyyyMMdd-HHmmss'
-    $dir = Join-Path $RepoRoot ".scratch/freezes/$Name-$stamp"
+    if (-not $Timestamp) { $Timestamp = Get-Date -Format 'yyyyMMdd-HHmmss' }
+    if (-not $OutDir) { $OutDir = Join-Path $RepoRoot ".scratch/freezes/$Name-$Timestamp" }
+    $dir = $OutDir
     New-Item -ItemType Directory -Path $dir -Force | Out-Null
 
     $manifest = [ordered]@{
         vm             = $Name
         capturedAtUtc  = (Get-Date).ToUniversalTime().ToString("o")
         jobParams      = $JobParams
-        markerMtime    = (Invoke-VmCapture $Name 'stat -c %y /tmp/heartbeat 2>/dev/null || echo missing')
-        agentLogTail   = (Invoke-VmCapture $Name 'f=$(ls -t ~/.local/share/opencode/log/*.log 2>/dev/null | head -1); [ -n "$f" ] && tail -n 200 "$f" || echo "<no opencode log>"')
-        psAux          = (Invoke-VmCapture $Name 'ps aux')
-        freeM          = (Invoke-VmCapture $Name 'free -m')
-        dfH            = (Invoke-VmCapture $Name 'df -h')
+        markerMtime    = (Invoke-CaptureSafe $Name 'stat -c %y /tmp/heartbeat 2>/dev/null || echo missing' $Capture)
+        agentLogTail   = (Invoke-CaptureSafe $Name 'f=$(ls -t ~/.local/share/opencode/log/*.log 2>/dev/null | head -1); [ -n "$f" ] && tail -n 200 "$f" || echo "<no opencode log>"' $Capture)
+        psAux          = (Invoke-CaptureSafe $Name 'ps aux' $Capture)
+        freeM          = (Invoke-CaptureSafe $Name 'free -m' $Capture)
+        dfH            = (Invoke-CaptureSafe $Name 'df -h' $Capture)
     }
 
     $path = Join-Path $dir "manifest.json"
