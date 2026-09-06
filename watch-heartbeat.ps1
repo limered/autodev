@@ -40,8 +40,7 @@ param(
 
 $ErrorActionPreference = "Stop"
 
-. (Join-Path $PSScriptRoot "lib/HostVm.ps1")
-. (Join-Path $PSScriptRoot "lib/JobIntake.ps1")
+. (Join-Path $PSScriptRoot "lib/Heartbeat.ps1")
 
 # Dashboard reporting is optional: only if a RunId + RepoRoot were passed AND
 # the .secrets/ config exists. Send-FactoryEvent is a no-op otherwise.
@@ -50,42 +49,14 @@ if ($RunId -and $RepoRoot) {
     Initialize-FactoryReport -RepoRoot $RepoRoot
 }
 
-function Get-VmEpochSeconds {
-    param([string]$Name, [scriptblock]$Executor)
-    $output = Invoke-MultipassOutput -Arguments @('exec', $Name, '--', 'date', '+%s') -Executor $Executor
-    return [int]::Parse($output.Trim())
-}
-
-function Get-HeartbeatEpochSeconds {
-    param([string]$Name, [scriptblock]$Executor)
-    try {
-        $output = Invoke-MultipassOutput -Arguments @('exec', $Name, '--', 'stat', '-c', '%Y', '/tmp/heartbeat') -Executor $Executor
-        return [int]::Parse($output.Trim())
-    }
-    catch {
-        return $null
-    }
-}
-
-function Get-VmCurrentPhase {
-    param([string]$Name, [scriptblock]$Executor)
-    try {
-        $output = Invoke-MultipassOutput -Arguments @('exec', $Name, '--', 'cat', '/tmp/current-phase') -Executor $Executor
-        if ($output) { return ($output.Trim()) }
-        return $null
-    }
-    catch {
-        return $null
-    }
-}
-
 try {
     $vmStartEpoch = $null
     $lastReportedHeartbeat = $null
 
     while ($Job.State -eq "Running") {
-        $vmNow = Get-VmEpochSeconds -Name $VmName -Executor $Executor
-        $heartbeatEpoch = Get-HeartbeatEpochSeconds -Name $VmName -Executor $Executor
+        $sample = Get-HeartbeatSample -Name $VmName -Executor $Executor
+        $vmNow = $sample.VmNow
+        $heartbeatEpoch = $sample.HeartbeatEpoch
 
         # Report a heartbeat only when the marker mtime actually advanced since
         # last reported — an idle agent simply stops reporting. The current-phase
@@ -95,21 +66,14 @@ try {
             $lastReportedHeartbeat = $heartbeatEpoch
             $at = [DateTimeOffset]::FromUnixTimeSeconds($heartbeatEpoch).UtcDateTime.ToString("o")
             $fields = @{ at = $at }
-            $currentPhase = Get-VmCurrentPhase -Name $VmName -Executor $Executor
-            if ($currentPhase) { $fields["currentPhase"] = $currentPhase }
+            if ($sample.CurrentPhase) { $fields["currentPhase"] = $sample.CurrentPhase }
             Send-FactoryEvent -RunId $RunId -Type "heartbeat" -Fields $fields
         }
 
-        $referenceEpoch = if ($heartbeatEpoch -ne $null) {
-            $heartbeatEpoch
-        }
-        else {
-            if ($vmStartEpoch -eq $null) { $vmStartEpoch = $vmNow }
-            $vmStartEpoch
-        }
-
-        $staleSeconds = Get-StaleSeconds -VmNow $vmNow -ReferenceEpoch $referenceEpoch
-        if ($staleSeconds -gt $StallThresholdSeconds) {
+        $verdict = Test-HeartbeatStall -VmNow $vmNow -HeartbeatEpoch $heartbeatEpoch -VmStartEpoch $vmStartEpoch -StallThresholdSeconds $StallThresholdSeconds
+        $vmStartEpoch = $verdict.VmStartEpoch
+        $staleSeconds = $verdict.StaleSeconds
+        if ($verdict.IsStalled) {
             $stallReason = "Heartbeat stale for ${staleSeconds}s (threshold ${StallThresholdSeconds}s); job appears stalled"
             if ($RunId) {
                 Send-FactoryEvent -RunId $RunId -Type "stall-detected" -Fields @{ failureReason = $stallReason }
