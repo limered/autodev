@@ -10,8 +10,7 @@ function renderSection(props, slots) {
 }
 
 const rows = () => h("div", { class: "run-list" }, "rows");
-const banner = () =>
-  h("section", { class: "error-banner", role: "alert" }, "boom");
+const banner = () => h("section", { class: "error-banner", role: "alert" }, "boom");
 
 describe("RunSection", () => {
   it("renders the labelled section with prompt header and default slot", async () => {
