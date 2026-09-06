@@ -2,6 +2,8 @@ import { describe, it, expect, vi } from "vitest";
 import { createSSRApp, h } from "vue";
 import { renderToString } from "vue/server-renderer";
 import RunsList from "../../components/RunsList.vue";
+import ActiveRunsList from "../../components/ActiveRunsList.vue";
+import RunsHistoryList from "../../components/RunsHistoryList.vue";
 import { useActiveRuns } from "../../services/useActiveRuns.js";
 import { usePagedRuns } from "../../services/usePagedRuns.js";
 
@@ -111,5 +113,35 @@ describe("RunsList container markup", () => {
     expect(html).toContain('aria-label="Run history"');
     expect(html).toContain("No finished runs yet");
     expect(html).not.toContain('aria-label="Active runs"');
+  });
+
+  // Both lists share the RunSection shell (issue #104 Cards 2-3): one header
+  // shape modulo title, with history's empty state riding in the slot.
+  it("both lists render the shared RunSection shell", async () => {
+    const html = await renderToString(createSSRApp({ render: () => h(RunsList) }));
+
+    expect(html).toContain('class="run-section"');
+    expect(html).toContain('class="section-header"');
+    expect(html).toMatch(/class="prompt"[^>]*>&gt;<\/span>/);
+    expect(html).toContain("History</h2>");
+  });
+
+  it("history renders the shared shell with its empty state", async () => {
+    const html = await renderToString(
+      createSSRApp({ render: () => h(RunsHistoryList) }),
+    );
+
+    expect(html).toContain('aria-label="Run history"');
+    expect(html).toContain('class="run-section"');
+    expect(html).toContain("No finished runs yet");
+  });
+
+  it("active renders no section while idle", async () => {
+    const html = await renderToString(
+      createSSRApp({ render: () => h(ActiveRunsList) }),
+    );
+
+    expect(html).not.toContain("run-section");
+    expect(html).not.toContain("section-header");
   });
 });
