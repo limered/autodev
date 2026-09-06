@@ -154,4 +154,25 @@ describe("useQueueHandlers reload policy", () => {
     expect(reloads.reloadIssues).not.toHaveBeenCalled();
     expect(reorderError.value).toBe("HTTP 500");
   });
+
+  it("exposes isSaving while any queue write is in flight", async () => {
+    let release;
+    const gate = new Promise((r) => (release = r));
+    const reloads = makeReloads();
+    const handlers = makeHandlers(
+      vi.fn(() => gate),
+      reloads,
+    );
+
+    expect(handlers.isSaving.value).toBe(false);
+
+    const pending = handlers.startNext({ id: "q1" });
+    await new Promise((r) => setTimeout(r, 0));
+    expect(handlers.isStartingNext.value).toBe(true);
+    expect(handlers.isSaving.value).toBe(true);
+
+    release({ ok: true, status: 200 });
+    await pending;
+    expect(handlers.isSaving.value).toBe(false);
+  });
 });

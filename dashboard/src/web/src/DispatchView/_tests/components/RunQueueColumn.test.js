@@ -1,8 +1,8 @@
 import { describe, it, expect, vi } from "vitest";
-import { computed, createSSRApp, h, ref } from "vue";
+import { createSSRApp, h, nextTick, ref } from "vue";
 import { renderToString } from "vue/server-renderer";
 import RunQueueColumn from "../../components/RunQueueColumn.vue";
-import { useDragReorder } from "../../services/useDragReorder.js";
+import { useQueueFeedShadow } from "../../services/useQueueFeedShadow.js";
 import { useQueueHandlers } from "../../services/useQueueHandlers.js";
 
 // Rendered via SSR (mirroring ErrorBanner's test) so the column's markup
@@ -111,14 +111,9 @@ function makeReloads() {
   return { reloadIssues: vi.fn(), reloadQueue: vi.fn() };
 }
 
-// Shadow convergence at the column seam: the column holds its localQueue
-// shadow while any queue save is in flight, so a poll landing mid-save cannot
-// overwrite the rows. Wired through the same pieces the column wires — the
-// useQueueHandlers busy refs folded into isSaving exactly as
-// RunQueueColumn.vue does, plus useDragReorder's syncFeed — with a gated
-// start-next standing in for the in-flight save. Regression pin for the
-// missing-isStartingNext incident: without that flag the mid-save syncFeed
-// below would take the feed.
+// Shadow convergence through the column's modules: the shadow holds its rows
+// while any queue save is in flight, so a poll landing mid-save cannot
+// overwrite them, and takes the feed once idle again.
 describe("RunQueueColumn shadow convergence", () => {
   it("holds the shadow queue when a poll lands mid-start-next", async () => {
     let release;
@@ -128,29 +123,28 @@ describe("RunQueueColumn shadow convergence", () => {
       ...makeReloads(),
     });
 
-    const localQueue = ref([{ id: "q1" }, { id: "q2" }]);
-    const isSaving = computed(
-      () =>
-        handlers.isReordering.value ||
-        handlers.isRemoving.value ||
-        handlers.isStartingNext.value ||
-        handlers.isRestarting.value,
-    );
-    const { syncFeed } = useDragReorder({ items: localQueue, onReorder: handlers.reorder });
+    const feed = ref([{ id: "q1" }, { id: "q2" }]);
+    const shadow = useQueueFeedShadow({
+      feed: () => feed.value,
+      isSaving: handlers.isSaving,
+      onReorder: handlers.reorder,
+    });
 
     const pending = handlers.startNext({ id: "q1" });
     await new Promise((r) => setTimeout(r, 0));
     expect(handlers.isStartingNext.value).toBe(true);
-    expect(isSaving.value).toBe(true);
+    expect(handlers.isSaving.value).toBe(true);
 
-    syncFeed([{ id: "q9" }], { isSaving: isSaving.value });
-    expect(localQueue.value.map((i) => i.id)).toEqual(["q1", "q2"]);
+    feed.value = [{ id: "q9" }];
+    await nextTick();
+    expect(shadow.localQueue.value.map((i) => i.id)).toEqual(["q1", "q2"]);
 
     release();
     await pending;
 
-    syncFeed([{ id: "q9" }], { isSaving: isSaving.value });
-    expect(localQueue.value.map((i) => i.id)).toEqual(["q9"]);
+    feed.value = [{ id: "q9" }];
+    await nextTick();
+    expect(shadow.localQueue.value.map((i) => i.id)).toEqual(["q9"]);
   });
 });
 

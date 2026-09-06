@@ -1,4 +1,4 @@
-import { ref } from "vue";
+import { computed, ref } from "vue";
 
 // Write seam for the run queue, mirroring the read composables (use*Feed): the
 // caller injects fetch, so the same try/!res.ok/error/finally dance is written once
@@ -31,6 +31,15 @@ export function useQueueActions(fetchFn = fetch) {
   const removeA = action();
   const startNextA = action();
   const restartA = action();
+
+  const isSaving = computed(
+    () =>
+      enqueueA.isBusy.value ||
+      reorderA.isBusy.value ||
+      removeA.isBusy.value ||
+      startNextA.isBusy.value ||
+      restartA.isBusy.value,
+  );
 
   return {
     enqueue: (issueId) =>
@@ -66,5 +75,6 @@ export function useQueueActions(fetchFn = fetch) {
     restart: (id) => restartA.run(() => fetchFn(`/queue/${id}/restart`, { method: "POST" })),
     restartError: restartA.error,
     isRestarting: restartA.isBusy,
+    isSaving,
   };
 }
