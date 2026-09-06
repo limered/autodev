@@ -180,6 +180,11 @@ catch {
     $jobFailed = $true
     $failureReason = "$_"
     Write-Host "ERROR: $failureReason" -ForegroundColor Red
+    if (-not $vmCreated -and -not $KeepVmOnFailure) {
+        # A launch that times out on cloud-init still leaves the VM behind;
+        # purge it best-effort so retries don't pile up orphans.
+        try { Invoke-Multipass delete $VmName --purge } catch {}
+    }
     if ($vmCreated) {
         try {
             $freezePath = Save-FreezeSnapshot -Name $VmName -RepoRoot $RepoRoot -JobParams @{
