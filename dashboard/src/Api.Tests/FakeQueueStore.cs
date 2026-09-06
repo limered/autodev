@@ -4,18 +4,18 @@ namespace Api.Tests;
 
 public sealed class FakeQueueStore : IQueueStore
 {
-    private readonly List<QueueListItem> _items = new();
+    private readonly List<QueueRow> _items = new();
     private long _nextId = 1;
 
     /// <summary>
     /// The boundary projection: QueueRules sees only the queue row fields, so the
-    /// enrichments QueueListItem adds for the API response are dropped here.
+    /// enrichments the raw joined row carries from the LEFT JOIN are dropped here.
     /// </summary>
     private IEnumerable<QueueRuleItem> RuleItems() =>
         _items.Select(i => new QueueRuleItem(i.Id, i.IssueId, i.Rank, i.RunId, i.StartRequestedAt));
 
     /// <summary>The queue row attached to a run, or none — the run's slot.</summary>
-    public QueueListItem? FindByRunId(Guid runId) => _items.FirstOrDefault(i => i.RunId == runId);
+    public QueueRow? FindByRunId(Guid runId) => _items.FirstOrDefault(i => i.RunId == runId);
 
     /// <summary>
     /// Removes the queue row attached to a run, mirroring the resolver's
@@ -30,23 +30,25 @@ public sealed class FakeQueueStore : IQueueStore
         }
     }
 
-    public Task<IReadOnlyList<QueueListItem>> All()
+    public Task<IReadOnlyList<QueueRow>> All()
     {
         var ordered = _items.OrderBy(i => i.Rank).ToList();
-        return Task.FromResult<IReadOnlyList<QueueListItem>>(ordered);
+        return Task.FromResult<IReadOnlyList<QueueRow>>(ordered);
     }
 
-    public Task<QueueListItem?> Enqueue(long issueId)
+    public Task<QueueRow?> Enqueue(long issueId)
     {
         // Rank/dedup derivation is QueueRules', shared with the real SQL store; only
         // the storage here is fake.
         var existing = QueueRules.ExistingForIssue(RuleItems(), issueId);
         if (existing is not null)
         {
-            return Task.FromResult<QueueListItem?>(_items.Single(i => i.Id == existing.Id));
+            return Task.FromResult<QueueRow?>(_items.Single(i => i.Id == existing.Id));
         }
 
-        var item = new QueueListItem(
+        // The raw joined-row record for a queue row with no matching issues/runs
+        // rows: the LEFT JOIN enrichments are null and the row is not present.
+        var item = new QueueRow(
             _nextId++,
             issueId,
             QueueRules.NextRank(_items.Select(i => i.Rank)),
@@ -61,33 +63,33 @@ public sealed class FakeQueueStore : IQueueStore
             false);
 
         _items.Add(item);
-        return Task.FromResult<QueueListItem?>(item);
+        return Task.FromResult<QueueRow?>(item);
     }
 
-    public Task<QueueListItem?> StartNext(long id)
+    public Task<QueueRow?> StartNext(long id)
     {
         var item = _items.FirstOrDefault(i => i.Id == id);
         if (item is null)
         {
-            return Task.FromResult<QueueListItem?>(null);
+            return Task.FromResult<QueueRow?>(null);
         }
 
         var idx = _items.IndexOf(item);
         _items[idx] = item with { StartRequestedAt = DateTimeOffset.UtcNow };
-        return Task.FromResult<QueueListItem?>(_items[idx]);
+        return Task.FromResult<QueueRow?>(_items[idx]);
     }
 
-    public Task<QueueListItem?> Restart(long id)
+    public Task<QueueRow?> Restart(long id)
     {
         var item = _items.FirstOrDefault(i => i.Id == id);
         if (item is null)
         {
-            return Task.FromResult<QueueListItem?>(null);
+            return Task.FromResult<QueueRow?>(null);
         }
 
         var idx = _items.IndexOf(item);
         _items[idx] = item with { RunId = null, StartRequestedAt = null };
-        return Task.FromResult<QueueListItem?>(_items[idx]);
+        return Task.FromResult<QueueRow?>(_items[idx]);
     }
 
     public Task<ClaimedQueueItem?> ClaimNext()
