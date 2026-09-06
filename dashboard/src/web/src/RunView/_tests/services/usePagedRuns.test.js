@@ -187,4 +187,24 @@ describe("usePagedRuns", () => {
     expect(feed.runs.value.slice(0, 10)).toEqual(makeRuns(10, 100)); // fresh first page
     expect(feed.runs.value.slice(10)).toEqual(makeRuns(3, 10)); // appended rows kept
   });
+
+  it("exposes the terminal-only visible window while paging over the raw window", async () => {
+    const mixed = [
+      ...makeRuns(6, 0).map((r) => ({ ...r, status: "done" })),
+      { runId: "run-a", repo: "owner/repo", branch: "main", status: "running" },
+      { runId: "run-b", repo: "owner/repo", branch: "main", status: "stalled" },
+      { runId: "run-c", repo: "owner/repo", branch: "main", status: "launching" },
+      { runId: "run-x", repo: "owner/repo", branch: "main", status: "cancelled" },
+    ];
+    const fetchFn = vi.fn(() => Promise.resolve(pageResponse(mixed)));
+    const feed = usePagedRuns(fetchFn);
+
+    await feed.loadFirst();
+
+    expect(feed.runs.value).toHaveLength(10); // raw window drives skip/hasMore
+    expect(feed.historyRuns.value.map((r) => r.runId)).toEqual(
+      makeRuns(6, 0).map((r) => r.runId),
+    );
+    expect(feed.hasMore.value).toBe(true); // full raw page: end not reached
+  });
 });

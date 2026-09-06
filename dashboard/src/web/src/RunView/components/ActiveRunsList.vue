@@ -18,12 +18,11 @@ const { runs, error, load } = useActiveRuns((url) => fetch(url), {
 });
 
 // Delete a stuck run (e.g. wedged in "launching"), then re-poll so it drops
-// out of the list. History stays in sync through the service diff alone: the
-// post-delete load() flows through usePollingFeed's onLoaded into the
-// useActiveRuns id-set diff, which fires onSetChange exactly once when the set
-// actually changed — no manual emit here (it would double-refresh on real
-// changes and spuriously refresh when the set didn't change, e.g. deleting an
-// already-dropped run).
+// out of the list. History stays in sync through the set-change signal alone:
+// the post-delete load() re-evaluates the active set and fires set-change
+// exactly once when membership actually changed — no manual emit here (it
+// would double-refresh on real changes and spuriously refresh when the set
+// didn't change, e.g. deleting an already-dropped run).
 const { deleteRun, deleteError } = useRunActions();
 async function onDelete(runId) {
   if (await deleteRun(runId)) {

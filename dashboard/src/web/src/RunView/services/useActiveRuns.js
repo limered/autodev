@@ -1,5 +1,6 @@
 import { computed } from "vue";
 import { usePollingFeed } from "../../_shared/services/usePollingFeed.js";
+import { usePagedRuns } from "./usePagedRuns.js";
 import { isActiveRun } from "../models/runStatus.js";
 
 // Active-runs feed for the runs page split (issue #52). The active set is tiny
@@ -47,4 +48,21 @@ export function useActiveRuns(fetchFn = fetch, options = {}) {
   const runs = computed(() => feed.items.value.filter(isActiveRun));
 
   return { runs, error: feed.error, load: feed.load };
+}
+
+// One home for the active-set-change → history-first-page-refresh sync: the
+// id-set diff, the change signal and the first-page refresh wired through this
+// interface, so the refresh-once invariant is testable here instead of
+// re-implemented in callers. An optional onSetChange observer still fires
+// alongside the refresh for extra watchers.
+export function useActiveSync(activeFetch = fetch, historyFetch = fetch, options = {}) {
+  const history = usePagedRuns(historyFetch, options.history);
+  const active = useActiveRuns(activeFetch, {
+    ...options.active,
+    onSetChange: () => {
+      history.refreshFirst();
+      options.active?.onSetChange?.();
+    },
+  });
+  return { active, history };
 }

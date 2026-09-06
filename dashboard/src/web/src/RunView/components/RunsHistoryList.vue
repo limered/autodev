@@ -1,21 +1,17 @@
 <script setup>
-import { computed } from "vue";
 import ErrorBanner from "../../_shared/components/ErrorBanner.vue";
 import RunCard from "./RunCard.vue";
 import RunSection from "./RunSection.vue";
-import { isTerminalRun } from "../models/runStatus.js";
 import { usePagedRuns } from "../services/usePagedRuns.js";
 import { useNowTicker } from "../services/useNowTicker.js";
 
 const { now } = useNowTicker();
 
 // Deliberately not polled (issue #46): the raw /runs window drives the
-// skip/take paging, and only terminal runs are shown.
-const { runs, error, hasMore, isLoading, loadNext, refreshFirst } = usePagedRuns((url) =>
+// skip/take paging, and historyRuns is the terminal-only visible window.
+const { historyRuns, error, hasMore, isLoading, loadNext, refreshFirst } = usePagedRuns((url) =>
   fetch(url),
 );
-
-const historyRuns = computed(() => runs.value.filter(isTerminalRun));
 
 // Called by the container when the active set changes (a run started or
 // finished): re-fetches the first page once, leaving appended pages untouched.

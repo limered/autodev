@@ -4,8 +4,7 @@ import { renderToString } from "vue/server-renderer";
 import RunsList from "../../components/RunsList.vue";
 import ActiveRunsList from "../../components/ActiveRunsList.vue";
 import RunsHistoryList from "../../components/RunsHistoryList.vue";
-import { useActiveRuns } from "../../services/useActiveRuns.js";
-import { usePagedRuns } from "../../services/usePagedRuns.js";
+import { useActiveSync } from "../../services/useActiveRuns.js";
 
 function ok(items) {
   return { ok: true, status: 200, json: () => Promise.resolve(items) };
@@ -33,18 +32,16 @@ const run = (id, status) => ({
 
 // RunsList.vue wires the split as: ActiveRunsList's set-change event →
 // RunsHistoryList.refreshFirst(). The components fetch on mount, which needs a
-// DOM lifecycle this harness doesn't have, so the container's contract is
-// exercised here at the composable seam with exactly that wiring.
+// DOM lifecycle this harness doesn't have, so that same sync is exercised here
+// through the useActiveSync interface — the one home for the set-diff, the
+// change signal and the first-page refresh — rather than re-implemented
+// choreography.
 // The container's refresh handler is fire-and-forget (the UI never awaits it),
 // so tests flush one macrotask to let the triggered refresh land.
 const flush = () => new Promise((resolve) => setTimeout(resolve, 0));
 
 function makeWiredLists({ activeFetch, historyFetch }) {
-  const history = usePagedRuns(historyFetch);
-  const active = useActiveRuns(activeFetch, {
-    onSetChange: () => history.refreshFirst(),
-  });
-  return { active, history };
+  return useActiveSync(activeFetch, historyFetch);
 }
 
 describe("RunsList container wiring", () => {

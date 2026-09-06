@@ -1,6 +1,19 @@
 import { secondsSince, lastSeenLabel } from "../../_shared/models/time.js";
 import { isTerminalRun } from "./runStatus.js";
 
+// Single freshness verdict (issue #123): thresholds, terminal handling and the
+// missing-heartbeat case evolve here together. Both card readers (active and
+// history lists) go through runView, so this is the one seam staleness is
+// verified through; time.js stays a formatting primitive behind its own seam.
+export function freshnessFor(status, secs, terminal) {
+  if (secs === null) return "unknown";
+  if (terminal) return "settled";
+  if (status === "stalled") return "stale-warn";
+  if (secs > 120) return "stale-danger";
+  if (secs > 30) return "stale-warn";
+  return "fresh";
+}
+
 export function runView(run, nowMs) {
   // Terminal runs are no longer "seen": instead of a live relative label that
   // ticks upward forever, they show a fixed Completed timestamp derived from
@@ -8,15 +21,6 @@ export function runView(run, nowMs) {
   // so the value is stable across the 1s clock tick. Active runs keep the
   // live "Last seen" behaviour.
   const terminal = isTerminalRun(run);
-
-  function freshnessClass(secs) {
-    if (secs === null) return "unknown";
-    if (terminal) return "settled";
-    if (run.status === "stalled") return "stale-warn";
-    if (secs > 120) return "stale-danger";
-    if (secs > 30) return "stale-warn";
-    return "fresh";
-  }
 
   function formatTime(ts) {
     if (!ts) return "—";
@@ -55,7 +59,7 @@ export function runView(run, nowMs) {
     timeLabel: terminal ? "Completed" : "Last seen",
     lastSeen: terminal ? null : lastSeenLabel(secs),
     completed: terminal ? formatTime(run.finishedAt ?? run.lastHeartbeatAt) : null,
-    freshnessClass: freshnessClass(secs),
+    freshnessClass: freshnessFor(run.status, secs, terminal),
     statusClass: `status-${run.status}`,
     started: formatTime(run.startedAt),
     stages,

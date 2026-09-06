@@ -1,10 +1,13 @@
-import { getCurrentInstance, onMounted, ref } from "vue";
+import { computed, getCurrentInstance, onMounted, ref } from "vue";
+import { isTerminalRun } from "../models/runStatus.js";
 
 // RunView-local paged loader for the runs history list (issue #52 split). Loads
 // the first 10 runs, then appends the next 10 each time loadNext() is called
-// (driven by a "Load more" button). The caller filters rows to terminal runs
-// for display, but offsets and hasMore are computed over the raw window the
-// server returns, so the skip = runs.length paging math is untouched.
+// (driven by a "Load more" button). The terminal-only display gate lives here
+// next to the paging math: historyRuns is the visible window and runs is the
+// raw window the skip = runs.length offsets are computed over, so one module
+// owns which rows count toward the display and the end verdict (runStatus.js
+// stays the sole classifier it consults).
 //
 // There is deliberately NO background polling: a timer that re-fetched page 1
 // while later pages stayed put shifted every offset as new runs arrived at the
@@ -22,6 +25,9 @@ export function usePagedRuns(fetchFn = fetch, options = {}) {
   const error = ref(null);
   const isLoading = ref(false);
   const hasMore = ref(true);
+
+  // Visible window: terminal runs only. Unknown statuses land in neither list.
+  const historyRuns = computed(() => runs.value.filter(isTerminalRun));
 
   async function fetchPage(skip, take) {
     const res = await fetchFn(`/runs?skip=${skip}&take=${take}`);
@@ -85,5 +91,5 @@ export function usePagedRuns(fetchFn = fetch, options = {}) {
 
   if (getCurrentInstance()) onMounted(loadFirst);
 
-  return { runs, error, isLoading, hasMore, loadFirst, loadNext, refreshFirst };
+  return { runs, historyRuns, error, isLoading, hasMore, loadFirst, loadNext, refreshFirst };
 }

@@ -235,6 +235,8 @@ describe("runView", () => {
   });
 
   describe("run-to-card seam: pass-through display fields and show* gates", () => {
+    const v = (patch) => runView({ ...baseRun, ...patch }, nowMs);
+
     it("passes status, repo, branch, vm, pr and failure fields through to the card", () => {
       const run = {
         ...baseRun,
@@ -272,49 +274,33 @@ describe("runView", () => {
     });
 
     it("gates the VM stat on a truthy vmName", () => {
-      expect(runView({ ...baseRun, vmName: "vm-42" }, nowMs).showVm).toBe(true);
-      expect(runView({ ...baseRun, vmName: "" }, nowMs).showVm).toBe(false);
-      expect(runView({ ...baseRun, vmName: null }, nowMs).showVm).toBe(false);
-      expect(runView({ ...baseRun, vmName: undefined }, nowMs).showVm).toBe(false);
+      expect(v({ vmName: "vm-42" }).showVm).toBe(true);
+      expect(v({ vmName: "" }).showVm).toBe(false);
+      expect(v({ vmName: null }).showVm).toBe(false);
+      expect(v({ vmName: undefined }).showVm).toBe(false);
     });
 
     it("gates the PR row on a truthy prUrl", () => {
-      expect(
-        runView({ ...baseRun, prUrl: "https://github.com/owner/repo/pull/1" }, nowMs).showPr,
-      ).toBe(true);
-      expect(runView({ ...baseRun, prUrl: "" }, nowMs).showPr).toBe(false);
-      expect(runView({ ...baseRun, prUrl: null }, nowMs).showPr).toBe(false);
-      expect(runView({ ...baseRun, prUrl: undefined }, nowMs).showPr).toBe(false);
+      expect(v({ prUrl: "https://github.com/owner/repo/pull/1" }).showPr).toBe(true);
+      expect(v({ prUrl: "" }).showPr).toBe(false);
+      expect(v({ prUrl: null }).showPr).toBe(false);
+      expect(v({ prUrl: undefined }).showPr).toBe(false);
     });
 
     it("shows the failure row only for failed runs with a reason", () => {
-      expect(
-        runView({ ...baseRun, status: "failed", failureReason: "agent crashed" }, nowMs)
-          .showFailure,
-      ).toBe(true);
-      expect(runView({ ...baseRun, status: "failed", failureReason: "" }, nowMs).showFailure).toBe(
-        false,
-      );
-      expect(
-        runView({ ...baseRun, status: "failed", failureReason: null }, nowMs).showFailure,
-      ).toBe(false);
-      expect(
-        runView({ ...baseRun, status: "failed", failureReason: undefined }, nowMs).showFailure,
-      ).toBe(false);
-      expect(
-        runView({ ...baseRun, status: "done", failureReason: "agent crashed" }, nowMs).showFailure,
-      ).toBe(false);
-      expect(
-        runView({ ...baseRun, status: "running", failureReason: "agent crashed" }, nowMs)
-          .showFailure,
-      ).toBe(false);
+      expect(v({ status: "failed", failureReason: "agent crashed" }).showFailure).toBe(true);
+      expect(v({ status: "failed", failureReason: "" }).showFailure).toBe(false);
+      expect(v({ status: "failed", failureReason: null }).showFailure).toBe(false);
+      expect(v({ status: "failed", failureReason: undefined }).showFailure).toBe(false);
+      expect(v({ status: "done", failureReason: "agent crashed" }).showFailure).toBe(false);
+      expect(v({ status: "running", failureReason: "agent crashed" }).showFailure).toBe(false);
     });
 
     it("follows freezeCaptured for the freeze row", () => {
-      expect(runView({ ...baseRun, freezeCaptured: true }, nowMs).showFreeze).toBe(true);
-      expect(runView({ ...baseRun, freezeCaptured: false }, nowMs).showFreeze).toBe(false);
-      expect(runView({ ...baseRun, freezeCaptured: undefined }, nowMs).showFreeze).toBe(false);
-      expect(runView({ ...baseRun, freezeCaptured: null }, nowMs).showFreeze).toBe(false);
+      expect(v({ freezeCaptured: true }).showFreeze).toBe(true);
+      expect(v({ freezeCaptured: false }).showFreeze).toBe(false);
+      expect(v({ freezeCaptured: undefined }).showFreeze).toBe(false);
+      expect(v({ freezeCaptured: null }).showFreeze).toBe(false);
     });
   });
 });
