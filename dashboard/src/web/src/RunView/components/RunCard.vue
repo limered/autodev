@@ -30,12 +30,12 @@ const view = computed(() => runView(props.run, props.now));
     <div class="card-header">
       <div class="status-badge" :class="view.statusClass">
         <span class="status-indicator"></span>
-        {{ run.status }}
+        {{ view.statusText }}
       </div>
       <div class="repo-branch">
-        <span class="repo">{{ run.repo }}</span>
+        <span class="repo">{{ view.repo }}</span>
         <span class="sep">/</span>
-        <span class="branch mono">{{ run.branch }}</span>
+        <span class="branch mono">{{ view.branch }}</span>
       </div>
       <button
         v-if="deletable"
@@ -78,28 +78,26 @@ const view = computed(() => runView(props.run, props.now));
           <span class="stat-label">Started</span>
           <span class="stat-value mono">{{ view.started }}</span>
         </div>
-        <div v-if="run.vmName" class="stat">
+        <div v-if="view.showVm" class="stat">
           <span class="stat-label">VM</span>
-          <span class="stat-value mono">{{ run.vmName }}</span>
+          <span class="stat-value mono">{{ view.vmName }}</span>
         </div>
       </div>
 
       <div class="secondary">
-        <div v-if="run.prUrl" class="secondary-row">
+        <div v-if="view.showPr" class="secondary-row">
           <span class="secondary-label">PR</span>
-          <a :href="run.prUrl" target="_blank" rel="noopener" class="pr-link mono">{{
-            run.prUrl
+          <a :href="view.prUrl" target="_blank" rel="noopener" class="pr-link mono">{{
+            view.prUrl
           }}</a>
         </div>
-        <div v-if="run.status === 'failed' && run.failureReason" class="secondary-row failure-row">
+        <div v-if="view.showFailure" class="secondary-row failure-row">
           <span class="secondary-label">Failure</span>
-          <span class="failure-reason mono">{{ run.failureReason }}</span>
+          <span class="failure-reason mono">{{ view.failureReason }}</span>
         </div>
-        <div v-if="run.freezeCaptured" class="secondary-row">
+        <div v-if="view.showFreeze" class="secondary-row">
           <span class="secondary-label">Freeze</span>
-          <span class="freeze-path mono" title="Local snapshot path">{{
-            run.freezeLocalPath || "—"
-          }}</span>
+          <span class="freeze-path mono" title="Local snapshot path">{{ view.freezePath }}</span>
         </div>
       </div>
     </div>

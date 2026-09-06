@@ -39,6 +39,19 @@ export function runView(run, nowMs) {
   }));
 
   return {
+    // Run-to-card seam: pass-through display fields plus show* gates so
+    // RunCard.vue reads view.* everywhere except run.runId (delete emit).
+    statusText: run.status,
+    repo: run.repo,
+    branch: run.branch,
+    vmName: run.vmName,
+    prUrl: run.prUrl,
+    failureReason: run.failureReason,
+    freezePath: run.freezeLocalPath || "—",
+    showVm: Boolean(run.vmName),
+    showPr: Boolean(run.prUrl),
+    showFailure: Boolean(run.status === "failed" && run.failureReason),
+    showFreeze: Boolean(run.freezeCaptured),
     timeLabel: terminal ? "Completed" : "Last seen",
     lastSeen: terminal ? null : lastSeenLabel(secs),
     completed: terminal ? formatTime(run.finishedAt ?? run.lastHeartbeatAt) : null,
