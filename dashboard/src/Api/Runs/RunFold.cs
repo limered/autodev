@@ -33,9 +33,7 @@ public static class RunFold
     /// a terminal status and accepts no further transitions.
     /// </summary>
     public static bool IsBlocked(RunState? current, DateTimeOffset at) =>
-        IsStale(current, at) || IsTerminal(current!.Status);
-
-    private static bool IsTerminal(string status) => status is "done" or "failed";
+        IsStale(current, at) || RunStatus.IsTerminal(current!.Status);
 
     private static RunState? ApplyRunStarted(RunState? current, RunStartedEvent ev, DateTimeOffset at)
     {
@@ -51,7 +49,7 @@ public static class RunFold
             Spec: ev.Spec ?? string.Empty,
             Model: ev.Model ?? string.Empty,
             VmName: null,
-            Status: "launching",
+            Status: RunStatus.Launching,
             StartedAt: at,
             FinishedAt: null,
             LastHeartbeatAt: null,
@@ -72,7 +70,7 @@ public static class RunFold
 
         return current! with
         {
-            Status = "running",
+            Status = RunStatus.Running,
             VmName = ev.VmName,
             UpdatedAt = at,
         };
@@ -111,7 +109,7 @@ public static class RunFold
 
         return current! with
         {
-            Status = "stalled",
+            Status = RunStatus.Stalled,
             FailureReason = ev.FailureReason,
             UpdatedAt = at,
         };
@@ -155,7 +153,7 @@ public static class RunFold
 
         return current! with
         {
-            Status = "done",
+            Status = RunStatus.Done,
             FinishedAt = at,
             UpdatedAt = at,
         };
@@ -170,7 +168,7 @@ public static class RunFold
 
         return current! with
         {
-            Status = "failed",
+            Status = RunStatus.Failed,
             FinishedAt = at,
             FailureReason = ev.FailureReason,
             UpdatedAt = at,
