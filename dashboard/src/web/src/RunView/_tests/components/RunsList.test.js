@@ -127,9 +127,7 @@ describe("RunsList container markup", () => {
   });
 
   it("history renders the shared shell with its empty state", async () => {
-    const html = await renderToString(
-      createSSRApp({ render: () => h(RunsHistoryList) }),
-    );
+    const html = await renderToString(createSSRApp({ render: () => h(RunsHistoryList) }));
 
     expect(html).toContain('aria-label="Run history"');
     expect(html).toContain('class="run-section"');
@@ -137,9 +135,7 @@ describe("RunsList container markup", () => {
   });
 
   it("active renders no section while idle", async () => {
-    const html = await renderToString(
-      createSSRApp({ render: () => h(ActiveRunsList) }),
-    );
+    const html = await renderToString(createSSRApp({ render: () => h(ActiveRunsList) }));
 
     expect(html).not.toContain("run-section");
     expect(html).not.toContain("section-header");

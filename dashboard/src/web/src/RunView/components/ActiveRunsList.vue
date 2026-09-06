@@ -51,14 +51,7 @@ async function onDelete(runId) {
     </template>
 
     <div class="run-list">
-      <RunCard
-        v-for="r in runs"
-        :key="r.runId"
-        :run="r"
-        :now="now"
-        deletable
-        @delete="onDelete"
-      />
+      <RunCard v-for="r in runs" :key="r.runId" :run="r" :now="now" deletable @delete="onDelete" />
     </div>
   </RunSection>
 </template>
