@@ -35,18 +35,7 @@ param(
 $ErrorActionPreference = "Stop"
 
 . (Join-Path $PSScriptRoot "lib/JobIntake.ps1")
-
-function Read-SecretFile {
-    param([string]$Path)
-    if (-not (Test-Path -LiteralPath $Path)) { return $null }
-    try {
-        return (Get-Content -LiteralPath $Path -Raw).Trim()
-    }
-    catch {
-        Write-Warning "Failed to read secret file ${Path}: $_"
-        return $null
-    }
-}
+. (Join-Path $PSScriptRoot "lib/HttpJson.ps1")
 
 function Read-Config {
     param([string]$Path)

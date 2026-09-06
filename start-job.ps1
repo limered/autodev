@@ -114,7 +114,6 @@ try {
     if (-not (Test-Path $apiKeyFile)) { throw "opencode API key file not found: $apiKeyFile" }
     if (-not (Test-Path $opencodeDir)) { throw ".opencode directory not found: $opencodeDir" }
 
-    Write-Step "Launching VM $VmName"
     New-VmFromBlueprint -Name $VmName -CloudInit $cloudInit
     $vmCreated = $true
 

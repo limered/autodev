@@ -45,7 +45,7 @@ function ConvertTo-OwnerRepo {
 function Wait-ForPullRequest {
     param([string]$Repo, [string]$Owner, [string]$Branch, [scriptblock]$Poll, [int]$MaxAttempts = 10, [int]$SleepSeconds = 3)
     for ($i = 0; $i -lt $MaxAttempts; $i++) {
-        $prs = & $Poll $Repo $Owner $Branch
+        $prs = @(& $Poll $Repo $Owner $Branch)
         if ($prs.Count -gt 0) { return $prs[0] }
         if ($SleepSeconds -gt 0) { Start-Sleep -Seconds $SleepSeconds }
     }

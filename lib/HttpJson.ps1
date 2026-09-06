@@ -33,7 +33,10 @@ function ConvertTo-Utf8JsonBody {
     else {
         $json = $InputObject | ConvertTo-Json -Depth $Depth -Compress
     }
-    return [System.Text.Encoding]::UTF8.GetBytes($json)
+    # Unary comma keeps the byte[] intact: a bare return unrolls it into the
+    # pipeline and the caller recollects it as Object[], which Invoke-RestMethod
+    # cannot send as a raw body (it stringifies) → the dashboard 400s every event.
+    return , [System.Text.Encoding]::UTF8.GetBytes($json)
 }
 
 function Invoke-JsonRequest {
