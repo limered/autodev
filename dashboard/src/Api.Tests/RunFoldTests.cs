@@ -416,7 +416,8 @@ public class RunFoldTests
             OutputTokens: 50,
             Cost: 0.0123m,
             Status: "done",
-            Model: "opencode-go/glm-5.2") { At = T1, RunId = RunId });
+            Model: "opencode-go/glm-5.2")
+        { At = T1, RunId = RunId });
 
         Assert.NotNull(next);
         Assert.Equal("running", next.Status); // steps never touch run Status
@@ -439,18 +440,21 @@ public class RunFoldTests
         var first = RunFold.Apply(current, new PhaseFinishedEvent(
             Agent: "test-runner", Iteration: 0, DurationMs: 1000,
             InputTokens: 10, OutputTokens: 5, Status: "done",
-            Model: "m1") { At = T1, RunId = RunId });
+            Model: "m1")
+        { At = T1, RunId = RunId });
         Assert.NotNull(first);
         var second = RunFold.Apply(first, new PhaseFinishedEvent(
             Agent: "pr-author", Iteration: 0, DurationMs: 2000,
             InputTokens: 20, OutputTokens: 10, Status: "done",
-            Model: "m2") { At = T1.AddSeconds(1), RunId = RunId });
+            Model: "m2")
+        { At = T1.AddSeconds(1), RunId = RunId });
         Assert.NotNull(second);
 
         var next = RunFold.Apply(second, new PhaseFinishedEvent(
             Agent: "test-runner", Iteration: 0, DurationMs: 3000,
             InputTokens: 30, OutputTokens: 15, Status: "done",
-            Model: "m1") { At = T1.AddSeconds(2), RunId = RunId });
+            Model: "m1")
+        { At = T1.AddSeconds(2), RunId = RunId });
 
         Assert.NotNull(next);
         Assert.Equal(2, next.Steps!.Count);
@@ -478,7 +482,8 @@ public class RunFoldTests
             state = RunFold.Apply(state, new PhaseFinishedEvent(
                 Agent: agent, Iteration: iteration, DurationMs: 1000,
                 InputTokens: 10, OutputTokens: 5, Status: "done",
-                Model: "m") { At = t, RunId = RunId });
+                Model: "m")
+            { At = t, RunId = RunId });
             Assert.NotNull(state);
             t = t.AddSeconds(1);
         }
@@ -498,7 +503,8 @@ public class RunFoldTests
         var next = RunFold.Apply(current, new PhaseFinishedEvent(
             Agent: "test-runner", Iteration: 0, DurationMs: 1000,
             InputTokens: 10, OutputTokens: 5, Status: "failed",
-            Model: "m") { At = T1, RunId = RunId });
+            Model: "m")
+        { At = T1, RunId = RunId });
 
         Assert.NotNull(next);
         Assert.Equal("running", next.Status);
@@ -517,7 +523,8 @@ public class RunFoldTests
         var next = RunFold.Apply(current, new PhaseFinishedEvent(
             Agent: "feature-builder", Iteration: 0, DurationMs: 1000,
             InputTokens: 10, OutputTokens: 5, Status: "done",
-            Model: model) { At = T1, RunId = RunId });
+            Model: model)
+        { At = T1, RunId = RunId });
 
         Assert.Null(next);
     }
@@ -530,7 +537,8 @@ public class RunFoldTests
         var next = RunFold.Apply(current, new PhaseFinishedEvent(
             Agent: "feature-builder", DurationMs: 1000,
             InputTokens: 10, OutputTokens: 5, Status: "done",
-            Model: "m") { At = T1, RunId = RunId });
+            Model: "m")
+        { At = T1, RunId = RunId });
 
         Assert.Null(next);
     }
@@ -545,7 +553,8 @@ public class RunFoldTests
         var next = RunFold.Apply(current, new PhaseFinishedEvent(
             Agent: agent, Iteration: 0, DurationMs: 1000,
             InputTokens: 10, OutputTokens: 5, Status: "done",
-            Model: "m") { At = T1, RunId = RunId });
+            Model: "m")
+        { At = T1, RunId = RunId });
 
         Assert.Null(next);
     }
@@ -560,7 +569,8 @@ public class RunFoldTests
         var next = RunFold.Apply(current, new PhaseFinishedEvent(
             Agent: "feature-builder", Iteration: 0, DurationMs: 1000,
             InputTokens: 10, OutputTokens: 5, Status: "done",
-            Model: "m") { At = T1, RunId = RunId });
+            Model: "m")
+        { At = T1, RunId = RunId });
 
         Assert.Null(next);
     }
@@ -573,7 +583,8 @@ public class RunFoldTests
         var next = RunFold.Apply(current, new PhaseFinishedEvent(
             Agent: "feature-builder", Iteration: 0, DurationMs: 1000,
             InputTokens: 10, OutputTokens: 5, Status: "done",
-            Model: "m") { At = T1, RunId = RunId });
+            Model: "m")
+        { At = T1, RunId = RunId });
 
         Assert.Null(next);
     }
