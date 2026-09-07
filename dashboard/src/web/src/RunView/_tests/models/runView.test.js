@@ -303,4 +303,129 @@ describe("runView", () => {
       expect(v({ freezeCaptured: null }).showFreeze).toBe(false);
     });
   });
+
+  describe("steps", () => {
+    const step = (overrides = {}) => ({
+      agent: "feature-builder",
+      iteration: 0,
+      model: "m1",
+      status: "done",
+      inputTokens: 100,
+      outputTokens: 50,
+      durationMs: 61000,
+      cost: 0.0123,
+      ...overrides,
+    });
+
+    it("maps the flat steps list with tokens and duration", () => {
+      const run = {
+        ...baseRun,
+        steps: [step(), step({ agent: "test-runner", iteration: 0, model: "m2" })],
+      };
+
+      const view = runView(run, nowMs);
+
+      expect(view.hasSteps).toBe(true);
+      expect(view.steps).toHaveLength(2);
+      expect(view.steps[0]).toMatchObject({
+        agent: "feature-builder",
+        iteration: 0,
+        model: "m1",
+        statusClass: "stage-done",
+        isLoop: false,
+        showIteration: false,
+        inputTokens: 100,
+        outputTokens: 50,
+        durationMs: 61000,
+        cost: 0.0123,
+      });
+      expect(view.steps[0].stats).toBe("150 · 1m 01s");
+    });
+
+    it("marks loop rows by iteration and badges only repeated agents", () => {
+      const run = {
+        ...baseRun,
+        steps: [
+          step({ agent: "feature-builder", iteration: 0 }),
+          step({ agent: "static-analysis", iteration: 1, model: "m2" }),
+          step({ agent: "feature-builder", iteration: 1, model: "m1" }),
+        ],
+      };
+
+      const view = runView(run, nowMs);
+
+      expect(view.steps[0].isLoop).toBe(false);
+      expect(view.steps[0].showIteration).toBe(false);
+      expect(view.steps[1].isLoop).toBe(true);
+      expect(view.steps[1].showIteration).toBe(false);
+      expect(view.steps[2].isLoop).toBe(true);
+      expect(view.steps[2].showIteration).toBe(true);
+    });
+
+    it("maps failed steps to the failed colour class", () => {
+      const run = { ...baseRun, steps: [step({ status: "failed" })] };
+
+      expect(runView(run, nowMs).steps[0].statusClass).toBe("stage-failed");
+    });
+
+    it("falls back to seeded stages when steps are empty", () => {
+      const run = {
+        ...baseRun,
+        stages: [{ agent: "feature-builder", model: "m1", status: "done" }],
+        steps: [],
+      };
+
+      const view = runView(run, nowMs);
+
+      expect(view.hasSteps).toBe(false);
+      expect(view.hasDevLoop).toBe(true);
+      expect(view.devLoop).toHaveLength(1);
+      expect(view.devLoop[0]).toMatchObject({
+        agent: "feature-builder",
+        model: "m1",
+        statusClass: "stage-done",
+        isLoop: false,
+        showIteration: false,
+        stats: "—",
+      });
+    });
+
+    it("prefers steps over stages for the detail rows", () => {
+      const run = {
+        ...baseRun,
+        stages: [{ agent: "feature-builder", model: "m1", status: "done" }],
+        steps: [step({ agent: "test-runner", model: "m2" })],
+      };
+
+      const view = runView(run, nowMs);
+
+      expect(view.devLoop).toHaveLength(1);
+      expect(view.devLoop[0].agent).toBe("test-runner");
+    });
+
+    it("totals tokens and duration across the detail rows", () => {
+      const run = {
+        ...baseRun,
+        steps: [
+          step({ inputTokens: 1000, outputTokens: 500, durationMs: 60000 }),
+          step({ agent: "test-runner", inputTokens: 2000, outputTokens: 0, durationMs: 30000 }),
+        ],
+      };
+
+      const view = runView(run, nowMs);
+
+      expect(view.devLoopTotals.tokens).toBe(3500);
+      expect(view.devLoopTotals.ms).toBe(90000);
+      expect(view.devLoopTotals.tokensLabel).toBe("3.5k");
+      expect(view.devLoopTotals.durationLabel).toBe("1m 30s");
+    });
+
+    it("reports no detail rows when neither steps nor stages exist", () => {
+      const view = runView(baseRun, nowMs);
+
+      expect(view.hasSteps).toBe(false);
+      expect(view.hasDevLoop).toBe(false);
+      expect(view.devLoop).toEqual([]);
+    });
+  });
 });

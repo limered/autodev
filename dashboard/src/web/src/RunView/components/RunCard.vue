@@ -1,5 +1,5 @@
 <script setup>
-import { computed } from "vue";
+import { computed, ref } from "vue";
 import { runView } from "../models/runView.js";
 
 // A single run card, shared by the active list and the history list (issue #52
@@ -12,11 +12,22 @@ const props = defineProps({
   // Active-runs list opts in to the delete control; history runs are terminal
   // and left read-only.
   deletable: { type: Boolean, default: false },
+  initialExpanded: { type: Boolean, default: false },
 });
 
 defineEmits(["delete"]);
 
 const view = computed(() => runView(props.run, props.now));
+const expanded = ref(props.initialExpanded);
+
+function toggleDetail() {
+  expanded.value = !expanded.value;
+}
+
+function detailTitle(s) {
+  const name = s.showIteration ? `${s.agent} #${s.iteration}` : s.agent;
+  return `${name} — ${s.model} — ${s.stats}`;
+}
 </script>
 
 <template>
@@ -100,6 +111,42 @@ const view = computed(() => runView(props.run, props.now));
           <span class="freeze-path mono" title="Local snapshot path">{{ view.freezePath }}</span>
         </div>
       </div>
+    </div>
+
+    <div v-if="view.hasDevLoop" class="dev-loop-section">
+      <button
+        type="button"
+        class="dev-loop-toggle mono"
+        :aria-expanded="expanded ? 'true' : 'false'"
+        @click="toggleDetail"
+      >
+        {{ expanded ? "▾ hide dev-loop detail" : "▸ show dev-loop detail" }} ·
+        {{ view.devLoop.length }} steps · {{ view.devLoopTotals.tokensLabel }} tokens ·
+        {{ view.devLoopTotals.durationLabel }}
+      </button>
+      <ol v-if="expanded" class="dev-loop" aria-label="Dev-loop detail">
+        <li
+          v-for="(s, i) in view.devLoop"
+          :key="`${s.agent}-${s.iteration}-${i}`"
+          class="dev-loop-item"
+          :class="{ 'dev-loop-is-loop': s.isLoop }"
+        >
+          <span class="dev-loop-rail" aria-hidden="true"
+            ><span class="dev-loop-dot" :class="s.statusClass"></span
+            ><span v-if="i < view.devLoop.length - 1" class="dev-loop-arrow">↓</span></span
+          >
+          <div
+            class="dev-loop-chip"
+            :class="[s.statusClass, { loop: s.isLoop }]"
+            :title="detailTitle(s)"
+          >
+            <span class="dev-loop-agent mono">{{ s.isLoop ? `↺ ${s.agent}` : s.agent }}</span>
+            <span v-if="s.showIteration" class="dev-loop-iter mono">#{{ s.iteration }}</span>
+            <span class="dev-loop-model mono">{{ s.model }}</span>
+            <span class="dev-loop-stats mono">{{ s.stats }}</span>
+          </div>
+        </li>
+      </ol>
     </div>
   </article>
 </template>
@@ -213,6 +260,15 @@ const view = computed(() => runView(props.run, props.now));
 }
 .stage-done .stage-agent {
   color: var(--blue);
+}
+.stage-failed {
+  border-color: var(--red);
+}
+.stage-failed .stage-indicator {
+  background: var(--red);
+}
+.stage-failed .stage-agent {
+  color: var(--red);
 }
 .status-badge {
   display: inline-flex;
@@ -362,6 +418,122 @@ const view = computed(() => runView(props.run, props.now));
 .freeze-path {
   color: var(--text-muted);
   word-break: break-all;
+}
+.dev-loop-section {
+  border-top: 1px solid var(--border);
+  padding: 0.75rem 1.25rem 1.25rem;
+}
+.dev-loop-toggle {
+  width: 100%;
+  text-align: left;
+  background: var(--surface-2);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 0.5rem 0.75rem;
+  cursor: pointer;
+  font-size: 0.85rem;
+}
+.dev-loop {
+  list-style: none;
+  margin: 0.75rem 0 0;
+  padding: 0;
+}
+.dev-loop-item {
+  display: flex;
+  gap: 0.5rem;
+}
+.dev-loop-is-loop {
+  margin-left: 1.25rem;
+}
+.dev-loop-rail {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  width: 1rem;
+  flex-shrink: 0;
+}
+.dev-loop-dot {
+  width: 0.55rem;
+  height: 0.55rem;
+  border-radius: 50%;
+  background: var(--text-dim);
+  flex-shrink: 0;
+  margin-top: 0.45rem;
+}
+.dev-loop-dot.stage-done {
+  background: var(--blue);
+}
+.dev-loop-dot.stage-running {
+  background: var(--green);
+  animation: blink 1.4s infinite;
+}
+.dev-loop-dot.stage-pending {
+  background: var(--text-dim);
+}
+.dev-loop-dot.stage-failed {
+  background: var(--red);
+}
+.dev-loop-arrow {
+  color: var(--text-dim);
+  font-size: 0.8rem;
+  line-height: 1.6;
+}
+.dev-loop-chip {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 0.5rem;
+  width: fit-content;
+  max-width: 100%;
+  padding: 0.35rem 0.6rem;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--st, var(--text-dim));
+  border-radius: var(--radius);
+  margin-bottom: 0.15rem;
+}
+.dev-loop-chip.stage-done {
+  --st: var(--blue);
+}
+.dev-loop-chip.stage-running {
+  --st: var(--green);
+}
+.dev-loop-chip.stage-pending {
+  --st: var(--text-dim);
+}
+.dev-loop-chip.stage-failed {
+  --st: var(--red);
+}
+.dev-loop-chip.loop {
+  border-style: dashed;
+  border-color: var(--st, var(--text-dim));
+}
+.dev-loop-chip.stage-pending .dev-loop-agent {
+  color: var(--text-muted);
+}
+.dev-loop-agent {
+  font-weight: 600;
+  font-size: 0.85rem;
+  white-space: nowrap;
+}
+.dev-loop-iter {
+  font-size: 0.72rem;
+  color: var(--text-muted);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 0 0.4rem;
+  white-space: nowrap;
+}
+.dev-loop-model {
+  color: var(--cyan);
+  font-size: 0.76rem;
+  white-space: nowrap;
+}
+.dev-loop-stats {
+  margin-left: auto;
+  color: var(--text-muted);
+  font-size: 0.78rem;
+  white-space: nowrap;
 }
 .mono {
   font-family: var(--font-mono);
