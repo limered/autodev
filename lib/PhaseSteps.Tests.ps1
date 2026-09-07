@@ -36,6 +36,30 @@ Describe 'ConvertTo-PhaseTokens' {
         $other = ConvertTo-PhaseTokens -Content '{"type":"step_finish"}'
         $other.InputTokens | Should -Be 0
     }
+    It 'sums live part.tokens with part.cost and no usage key' {
+        $content = @'
+{"type":"step_finish","part":{"type":"step-finish","tokens":{"total":150,"input":100,"output":50,"reasoning":0,"cache":0},"cost":0.5}}
+{"type":"step_finish","part":{"type":"step-finish","tokens":{"total":30,"input":20,"output":10,"reasoning":0,"cache":0},"cost":0.25}}
+'@
+        $tokens = ConvertTo-PhaseTokens -Content $content
+        $tokens.InputTokens | Should -Be 120
+        $tokens.OutputTokens | Should -Be 60
+        $tokens.Cost | Should -Be 0.75
+    }
+    It 'picks up part.cost when usage and event cost are absent' {
+        $content = '{"type":"step_finish","usage":{"inputTokens":5,"outputTokens":2},"part":{"type":"step-finish","tokens":{"total":7,"input":5,"output":2},"cost":0.004}}'
+        $tokens = ConvertTo-PhaseTokens -Content $content
+        $tokens.InputTokens | Should -Be 5
+        $tokens.OutputTokens | Should -Be 2
+        $tokens.Cost | Should -Be 0.004
+    }
+    It 'prefers usage over part.tokens without double-counting' {
+        $content = '{"type":"step_finish","usage":{"inputTokens":10,"outputTokens":4,"cost":0.01},"part":{"type":"step-finish","tokens":{"input":100,"output":40},"cost":0.02},"cost":0.03}'
+        $tokens = ConvertTo-PhaseTokens -Content $content
+        $tokens.InputTokens | Should -Be 10
+        $tokens.OutputTokens | Should -Be 4
+        $tokens.Cost | Should -Be 0.01
+    }
 }
 
 Describe 'ConvertTo-PhaseMeta' {

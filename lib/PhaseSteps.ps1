@@ -53,10 +53,10 @@ function Get-PhaseNumericField {
 }
 
 # Sums per-phase token usage from opencode `--format json` NDJSON: one
-# `step_finish` object per turn, usage carried on the event (or a nested
-# step object, or the event itself for older shapes). Anything that is not
-# a step_finish JSON object — human stderr lines, progress lines, truncated
-# tails — is skipped, so a noisy file still yields its usage.
+# `step_finish` object per turn, usage carried on the event (a nested step
+# object, live part.tokens, or the event itself for older shapes). Anything
+# that is not a step_finish JSON object — human stderr lines, progress
+# lines, truncated tails — is skipped, so a noisy file still yields usage.
 function ConvertTo-PhaseTokens {
     param([string]$Content)
     $result = [PSCustomObject]@{ InputTokens = [long]0; OutputTokens = [long]0; Cost = $null }
@@ -71,18 +71,29 @@ function ConvertTo-PhaseTokens {
         if ($null -eq $obj -or $obj.type -ne 'step_finish') { continue }
         $usage = $obj.usage
         if ($null -eq $usage -and $null -ne $obj.step) { $usage = $obj.step.usage }
+        if ($null -eq $usage -and $null -ne $obj.part) { $usage = $obj.part.tokens }
         if ($null -eq $usage) { $usage = $obj }
         $result.InputTokens += Get-PhaseNumericField $usage @('inputTokens', 'input_tokens', 'input')
         $result.OutputTokens += Get-PhaseNumericField $usage @('outputTokens', 'output_tokens', 'output')
-        # Usage-level cost wins; event-level is the fallback (never both: when
-        # the usage fallback above resolved to the event itself they are the
-        # same object, so a two-holder sum would double-count).
-        $costProp = $null
-        if (-not [object]::ReferenceEquals($usage, $obj)) {
-            $costProp = $usage.PSObject.Properties['cost']
+        # Cost precedence: usage, part, event — first present wins. Holders
+        # are deduplicated by reference so a fallback that resolved to the
+        # same object (e.g. usage is the event itself) never double-counts.
+        $holders = @($usage)
+        if ($null -ne $obj.part) { $holders += $obj.part }
+        $holders += $obj
+        $distinct = @()
+        foreach ($h in $holders) {
+            if ($null -eq $h) { continue }
+            $dup = $false
+            foreach ($d in $distinct) {
+                if ([object]::ReferenceEquals($h, $d)) { $dup = $true; break }
+            }
+            if (-not $dup) { $distinct += $h }
         }
-        if (($null -eq $costProp -or $null -eq $costProp.Value) -and $null -ne $obj) {
-            $costProp = $obj.PSObject.Properties['cost']
+        $costProp = $null
+        foreach ($h in $distinct) {
+            $p = $h.PSObject.Properties['cost']
+            if ($null -ne $p -and $null -ne $p.Value) { $costProp = $p; break }
         }
         if ($null -ne $costProp -and $null -ne $costProp.Value) {
             try { $cost += [double]$costProp.Value; $hasCost = $true } catch { }
