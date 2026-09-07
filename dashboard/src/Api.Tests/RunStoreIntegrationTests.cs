@@ -170,7 +170,8 @@ public sealed class RunStoreIntegrationTests : IClassFixture<PostgresFixture>, I
 
         var at = started.AddSeconds(61);
         await _store.Apply(runId, new PhaseFinishedEvent(
-            "feature-builder", 0, 61000, 100, 50, 0.0123m, "done", "gpt-x") { At = at });
+            "feature-builder", 0, 61000, 100, 50, 0.0123m, "done", "gpt-x")
+        { At = at });
 
         var after = await _fixture.GetRunAsync(runId);
         var step = Assert.Single(after!.Steps!);
