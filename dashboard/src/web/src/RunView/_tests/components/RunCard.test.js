@@ -6,12 +6,11 @@ import RunCard from "../../components/RunCard.vue";
 // Rendered via SSR (mirroring ErrorBanner's test) so the card's markup
 // contract can be asserted without a DOM. The Variant C header (issue #99)
 // is the point of these tests: the meta line (status pill · repo/branch ·
-// abort) is the whole header, and the stage strip is a separate full-width
-// band below the header divider — pills and stages never share a flex row,
-// so a wrapping strip can never push the pill or the abort control around.
-// The delete click → emit wiring needs a DOM event lifecycle this harness
-// doesn't have (see RunQueueColumn.test.js); the abort control's contract
-// here is its markup: × glyph, title/aria-label, and `deletable` gating.
+// abort) is the whole header. Run detail lives only in the expandable
+// dev-loop section. The delete click → emit wiring needs a DOM event
+// lifecycle this harness doesn't have (see RunQueueColumn.test.js); the
+// abort control's contract here is its markup: × glyph, title/aria-label,
+// and `deletable` gating.
 
 // Fixed clock so renders are deterministic; freshness maths is covered at
 // the runView seam.
@@ -55,9 +54,9 @@ function findElement(html, tag, cls) {
   return null;
 }
 
-describe("RunCard header (Variant C: meta line + stage band)", () => {
+describe("RunCard header (Variant C: meta line)", () => {
   it("keeps the meta line to status pill, repo/branch, then abort control", async () => {
-    const html = await renderCard(run({ stages: [stage("triage", "done")] }), {
+    const html = await renderCard(run(), {
       deletable: true,
     });
     const header = findElement(html, "div", "card-header");
@@ -72,30 +71,6 @@ describe("RunCard header (Variant C: meta line + stage band)", () => {
     );
     expect(header.inner).toContain("owner/repo");
     expect(header.inner).toContain("main");
-  });
-
-  it("never nests the stage strip inside the meta line's flex row", async () => {
-    const html = await renderCard(
-      run({ stages: [stage("triage", "done"), stage("build", "running")] }),
-    );
-    const header = findElement(html, "div", "card-header");
-
-    expect(header).not.toBeNull();
-    expect(header.inner).not.toContain("stage-strip");
-  });
-
-  it("renders the stage strip as its own band below the header, above the body", async () => {
-    const html = await renderCard(
-      run({ stages: [stage("triage", "done"), stage("build", "running")] }),
-    );
-    const header = findElement(html, "div", "card-header");
-    const strip = findElement(html, "ul", "stage-strip");
-
-    expect(strip).not.toBeNull();
-    // Opens after the header element closes → below the header divider, on
-    // its own row rather than inside the meta flex row.
-    expect(strip.openStart).toBeGreaterThan(header.closeStart);
-    expect(strip.closeStart).toBeLessThan(html.indexOf('class="card-body"'));
   });
 
   it("keeps the meta line byte-identical as stage counts change, so the pill cannot shift", async () => {
@@ -157,20 +132,6 @@ describe("RunCard body and status (unchanged by the header rework)", () => {
     expect(html).toContain('class="run-card status-failed"');
     expect(pill).not.toBeNull();
     expect(pill.inner).toContain("status-indicator");
-  });
-
-  it("renders each stage with its status colour class", async () => {
-    const html = await renderCard(
-      run({
-        stages: [stage("triage", "done"), stage("build", "running"), stage("review", "pending")],
-      }),
-    );
-
-    expect(html).toContain("stage-done");
-    expect(html).toContain("stage-running");
-    expect(html).toContain("stage-pending");
-    expect(html).toContain("triage");
-    expect(html).toContain("glm-5.2");
   });
 
   it("renders secondary rows: PR link, failure reason, freeze snapshot", async () => {

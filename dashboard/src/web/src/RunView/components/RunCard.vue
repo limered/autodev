@@ -35,9 +35,7 @@ function detailTitle(s) {
     <!-- Variant C header (issue #99): the meta line — status pill ·
          repo/branch · abort — is the whole header, with the pill and the
          abort control fixed at the ends and repo/branch flexing to fill.
-         The stage strip is deliberately NOT in here: it renders as its own
-         full-width band below the header divider, so wrapping stages can
-         never push the pill or the abort control around. -->
+         Run detail lives only in the expandable dev-loop section below. -->
     <div class="card-header">
       <div class="status-badge" :class="view.statusClass">
         <span class="status-indicator"></span>
@@ -59,21 +57,6 @@ function detailTitle(s) {
         ×
       </button>
     </div>
-
-    <ul v-if="view.stages.length" class="stage-strip">
-      <li
-        v-for="stage in view.stages"
-        :key="stage.agent"
-        class="stage-badge"
-        :class="stage.statusClass"
-      >
-        <span class="stage-head">
-          <span class="stage-indicator"></span>
-          <span class="stage-agent">{{ stage.agent }}</span>
-        </span>
-        <span class="stage-model mono">{{ stage.model }}</span>
-      </li>
-    </ul>
 
     <div class="card-body">
       <div class="primary-stats">
@@ -192,83 +175,6 @@ function detailTitle(s) {
 }
 .branch {
   color: var(--cyan);
-}
-.stage-strip {
-  /* Full-width band below the header divider (issue #99 Variant C): its own
-     row, so it wraps freely without sharing a flex row with the pills. */
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.4rem;
-  margin: 0;
-  padding: 0.6rem 1.25rem;
-  list-style: none;
-  background: var(--surface-2);
-  border-bottom: 1px solid var(--border);
-}
-.stage-badge {
-  display: flex;
-  flex-direction: column;
-  gap: 0.15rem;
-  padding: 0.3rem 0.55rem;
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  line-height: 1.2;
-}
-.stage-head {
-  display: flex;
-  align-items: center;
-  gap: 0.3rem;
-}
-.stage-indicator {
-  width: 0.45rem;
-  height: 0.45rem;
-  border-radius: 50%;
-  background: var(--text-dim);
-  flex-shrink: 0;
-}
-.stage-agent {
-  font-size: 0.78rem;
-  font-weight: 600;
-  color: var(--text);
-}
-.stage-model {
-  font-size: 0.7rem;
-  color: var(--text-muted);
-}
-.stage-pending .stage-indicator {
-  background: var(--text-dim);
-}
-.stage-pending .stage-agent {
-  color: var(--text-muted);
-}
-.stage-running {
-  border-color: var(--green);
-}
-.stage-running .stage-indicator {
-  background: var(--green);
-  animation: blink 1.4s infinite;
-}
-.stage-running .stage-agent {
-  color: var(--green);
-}
-.stage-done {
-  border-color: var(--blue);
-}
-.stage-done .stage-indicator {
-  background: var(--blue);
-}
-.stage-done .stage-agent {
-  color: var(--blue);
-}
-.stage-failed {
-  border-color: var(--red);
-}
-.stage-failed .stage-indicator {
-  background: var(--red);
-}
-.stage-failed .stage-agent {
-  color: var(--red);
 }
 .status-badge {
   display: inline-flex;
