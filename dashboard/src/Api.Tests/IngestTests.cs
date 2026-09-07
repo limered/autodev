@@ -228,6 +228,55 @@ public class IngestTests
     }
 
     [Fact]
+    public async Task FromWire_PhaseFinished_IngestsStep()
+    {
+        var store = new FakeRunStore();
+        await store.Apply(RunId, new RunStartedEvent("r") { At = T0 });
+
+        var ev = FromWire(
+            """{"type":"phase-finished","at":"2024-02-01T00:01:00Z","agent":"feature-builder","iteration":0,"durationMs":61000,"inputTokens":100,"outputTokens":50,"cost":0.0123,"status":"done","model":"opencode-go/glm-5.2"}""");
+
+        var finished = Assert.IsType<PhaseFinishedEvent>(ev);
+        Assert.Equal("feature-builder", finished.Agent);
+        Assert.Equal(0, finished.Iteration);
+        Assert.Equal(61000, finished.DurationMs);
+        Assert.Equal(100, finished.InputTokens);
+        Assert.Equal(50, finished.OutputTokens);
+        Assert.Equal(0.0123m, finished.Cost);
+        Assert.Equal("done", finished.Status);
+        Assert.Equal("opencode-go/glm-5.2", finished.Model);
+
+        var state = await store.Apply(RunId, finished);
+        Assert.NotNull(state);
+        Assert.Equal("launching", state.Status); // steps never touch run Status
+        var step = Assert.Single(state.Steps!);
+        Assert.Equal("feature-builder", step.Agent);
+        Assert.Equal(0, step.Iteration);
+        Assert.Equal(61000, step.DurationMs);
+        Assert.Equal(100, step.InputTokens);
+        Assert.Equal(50, step.OutputTokens);
+        Assert.Equal("opencode-go/glm-5.2", step.Model);
+    }
+
+    [Fact]
+    public async Task FromWire_PhaseFinished_WithoutModel_IsDropped()
+    {
+        var store = new FakeRunStore();
+        await store.Apply(RunId, new RunStartedEvent("r") { At = T0 });
+
+        var ev = FromWire(
+            """{"type":"phase-finished","at":"2024-02-01T00:01:00Z","agent":"feature-builder","iteration":0,"durationMs":1000,"inputTokens":1,"outputTokens":1,"status":"done"}""");
+
+        var finished = Assert.IsType<PhaseFinishedEvent>(ev);
+        Assert.Null(finished.Model);
+
+        var before = await store.GetRun(RunId);
+        var state = await store.Apply(RunId, finished);
+        Assert.NotNull(state);
+        Assert.Equal(before, state); // nothing folded, nothing persisted
+    }
+
+    [Fact]
     public async Task FromWire_UnknownType_IngestsNoOp()
     {
         var store = new FakeRunStore();
@@ -274,6 +323,7 @@ public class IngestTests
             (new StallDetectedEvent("stuck") { At = T1 }, "stall-detected"),
             (new FreezeCapturedEvent("/freeze") { At = T1 }, "freeze-captured"),
             (new PrVerifiedEvent("https://pr") { At = T1 }, "pr-verified"),
+            (new PhaseFinishedEvent("feature-builder", 0, 61000, 100, 50, 0.0123m, "done", "m1") { At = T1 }, "phase-finished"),
             (new RunFinishedEvent { At = T1 }, "run-finished"),
             (new RunFailedEvent("oops") { At = T1 }, "run-failed"),
         ];

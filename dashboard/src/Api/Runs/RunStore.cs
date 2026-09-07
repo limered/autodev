@@ -26,7 +26,7 @@ public sealed class RunStore : IRunStore
     private readonly IIssueResolver _resolver;
 
     private const string RunColumns =
-        "run_id, repo, branch, spec, model, vm_name, status, started_at, finished_at, last_heartbeat_at, pr_url, failure_reason, freeze_captured, freeze_local_path, updated_at, stages, current_phase";
+        "run_id, repo, branch, spec, model, vm_name, status, started_at, finished_at, last_heartbeat_at, pr_url, failure_reason, freeze_captured, freeze_local_path, updated_at, stages, current_phase, steps";
 
     private static readonly JsonSerializerOptions StagesJsonOptions = new(JsonSerializerDefaults.Web);
 
@@ -38,7 +38,7 @@ public sealed class RunStore : IRunStore
     // cheap-path pair (last_heartbeat_at + current_phase, which rides it); everything
     // else diffs on the ordered path. Identity/stages columns never change post-insert
     // and stay out of both paths.
-    private sealed record ColumnSync(string Column, string Param, Func<RunState, object?> Get, bool Heartbeat = false);
+    private sealed record ColumnSync(string Column, string Param, Func<RunState, object?> Get, bool Heartbeat = false, NpgsqlDbType? DbType = null);
 
     private static readonly ColumnSync[] SyncColumns =
     [
@@ -50,6 +50,10 @@ public sealed class RunStore : IRunStore
         new("freeze_captured", "freezeCaptured", s => s.FreezeCaptured),
         new("freeze_local_path", "freezeLocalPath", s => s.FreezeLocalPath),
         new("updated_at", "updatedAt", s => s.UpdatedAt),
+        // Steps ride the ordered diff path, never the heartbeat cheap path: the
+        // getter returns the canonical JSON so unchanged steps compare equal
+        // and are not rewritten on unrelated ordered updates.
+        new("steps", "steps", s => SerializeSteps(s.Steps), DbType: NpgsqlDbType.Jsonb),
         new("last_heartbeat_at", "lastHeartbeatAt", s => s.LastHeartbeatAt, Heartbeat: true),
         new("current_phase", "currentPhase", s => s.CurrentPhase, Heartbeat: true),
     ];
@@ -242,8 +246,8 @@ public sealed class RunStore : IRunStore
     {
         await using var cmd = new NpgsqlCommand(
             """
-            INSERT INTO runs (run_id, repo, branch, spec, model, status, started_at, updated_at, stages)
-            VALUES (@id, @repo, @branch, @spec, @model, @status, @startedAt, @updatedAt, @stages)
+            INSERT INTO runs (run_id, repo, branch, spec, model, status, started_at, updated_at, stages, steps)
+            VALUES (@id, @repo, @branch, @spec, @model, @status, @startedAt, @updatedAt, @stages, @steps)
             ON CONFLICT (run_id) DO NOTHING;
             """, conn, tx);
         cmd.Parameters.AddWithValue("id", next.RunId);
@@ -258,6 +262,10 @@ public sealed class RunStore : IRunStore
         {
             Value = (object?)SerializeStages(next.Stages) ?? DBNull.Value,
         });
+        cmd.Parameters.Add(new NpgsqlParameter("steps", NpgsqlDbType.Jsonb)
+        {
+            Value = (object?)SerializeSteps(next.Steps) ?? DBNull.Value,
+        });
         await cmd.ExecuteNonQueryAsync();
     }
 
@@ -269,6 +277,16 @@ public sealed class RunStore : IRunStore
         }
 
         return JsonSerializer.Serialize(stages, StagesJsonOptions);
+    }
+
+    private static string? SerializeSteps(IReadOnlyList<RunStep>? steps)
+    {
+        if (steps is null || steps.Count == 0)
+        {
+            return null;
+        }
+
+        return JsonSerializer.Serialize(steps, StagesJsonOptions);
     }
 
     private static bool IsHeartbeatOnly(RunState current, RunState next)
@@ -290,7 +308,7 @@ public sealed class RunStore : IRunStore
         cmd.Parameters.AddWithValue("id", next.RunId);
         foreach (var c in hb)
         {
-            cmd.Parameters.AddWithValue(c.Param, c.Get(next) ?? DBNull.Value);
+            AddParam(cmd, c, c.Get(next));
         }
         await cmd.ExecuteNonQueryAsync();
     }
@@ -313,9 +331,23 @@ public sealed class RunStore : IRunStore
         cmd.Parameters.AddWithValue("id", next.RunId);
         foreach (var c in changes)
         {
-            cmd.Parameters.AddWithValue(c.Param, c.Get(next) ?? DBNull.Value);
+            AddParam(cmd, c, c.Get(next));
         }
         await cmd.ExecuteNonQueryAsync();
+    }
+
+    private static void AddParam(NpgsqlCommand cmd, ColumnSync column, object? value)
+    {
+        if (column.DbType.HasValue)
+        {
+            cmd.Parameters.Add(new NpgsqlParameter(column.Param, column.DbType.Value)
+            {
+                Value = value ?? DBNull.Value,
+            });
+            return;
+        }
+
+        cmd.Parameters.AddWithValue(column.Param, value ?? DBNull.Value);
     }
 
     private async Task<IReadOnlyList<RunState>> Query(string sql, params NpgsqlParameter[] parameters)
@@ -362,7 +394,8 @@ public sealed class RunStore : IRunStore
             GetStringOrNull(r, "freeze_local_path"),
             r.GetFieldValue<DateTimeOffset>(r.GetOrdinal("updated_at")),
             GetStagesOrNull(r, "stages"),
-            GetStringOrNull(r, "current_phase"));
+            GetStringOrNull(r, "current_phase"),
+            GetStepsOrNull(r, "steps"));
     }
 
     private static string? GetStringOrNull(NpgsqlDataReader r, string column)
@@ -392,5 +425,22 @@ public sealed class RunStore : IRunStore
         }
 
         return JsonSerializer.Deserialize<List<RunStage>>(json, StagesJsonOptions);
+    }
+
+    private static List<RunStep>? GetStepsOrNull(NpgsqlDataReader r, string column)
+    {
+        var ordinal = r.GetOrdinal(column);
+        if (r.IsDBNull(ordinal))
+        {
+            return null;
+        }
+
+        var json = r.GetString(ordinal);
+        if (string.IsNullOrWhiteSpace(json))
+        {
+            return null;
+        }
+
+        return JsonSerializer.Deserialize<List<RunStep>>(json, StagesJsonOptions);
     }
 }

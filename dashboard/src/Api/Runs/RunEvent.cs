@@ -68,6 +68,17 @@ public sealed record FreezeCapturedEvent(string? FreezeLocalPath = null) : RunEv
 [RunEventDiscriminator("pr-verified")]
 public sealed record PrVerifiedEvent(string? PrUrl = null) : RunEvent;
 
+[RunEventDiscriminator("phase-finished")]
+public sealed record PhaseFinishedEvent(
+    string? Agent = null,
+    int? Iteration = null,
+    long? DurationMs = null,
+    long? InputTokens = null,
+    long? OutputTokens = null,
+    decimal? Cost = null,
+    string? Status = null,
+    string? Model = null) : RunEvent;
+
 [RunEventDiscriminator("run-finished")]
 public sealed record RunFinishedEvent : RunEvent;
 

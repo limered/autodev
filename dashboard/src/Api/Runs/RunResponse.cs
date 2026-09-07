@@ -23,7 +23,8 @@ public record RunResponse(
     string? FreezeLocalPath,
     DateTimeOffset UpdatedAt,
     IReadOnlyList<RunStageView> Stages,
-    string? CurrentPhase)
+    string? CurrentPhase,
+    IReadOnlyList<RunStepView> Steps)
 {
     public static RunResponse From(RunState r) => new(
         r.RunId,
@@ -42,5 +43,9 @@ public record RunResponse(
         r.FreezeLocalPath,
         r.UpdatedAt,
         RunStageStatus.Derive(r.Stages, r.CurrentPhase, r.Status),
-        r.CurrentPhase);
+        r.CurrentPhase,
+        r.Steps?.Select(s => new RunStepView(
+            s.Agent, s.Iteration, s.Model, s.Status,
+            s.InputTokens, s.OutputTokens, s.DurationMs, s.Cost)).ToArray()
+            ?? Array.Empty<RunStepView>());
 }

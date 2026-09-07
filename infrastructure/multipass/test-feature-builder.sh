@@ -105,6 +105,17 @@ trap stop_ticker EXIT
 # as it begins, so the host heartbeat poller can relay the current phase up to
 # the backend without any new secrets crossing into the VM.
 #
+# Per-step instrumentation (dev-loop detail): wall time is measured in-VM around
+# the opencode call and the `--format json` NDJSON is redirected to
+# /tmp/phase-<agent>-<iteration>.jsonl, so the host can sum per-phase token
+# usage from `step_finish` events and relay duration + tokens as a
+# phase-finished event. A small meta sidecar
+# (/tmp/phase-<agent>-<iteration>.meta.json) carries durationMs + status for the
+# same relay. Iteration is 0 for single-run phases; the quality loop passes its
+# loop index, so each scan/fix pass gets its own file pair. The model is never
+# written here: the host attaches it from the agent frontmatter at relay time,
+# so no secret crosses into the VM.
+#
 # Liveness = "the opencode process is alive", not "it printed a line this minute".
 # A long silent model turn (final commit/PR generation) emits no lines for minutes
 # and was false-killing healthy runs. So: a ticker touches the marker every 30s
@@ -117,21 +128,39 @@ trap stop_ticker EXIT
 run_agent_phase() {
   local agent="$1"
   local prompt="$2"
+  local iteration="${3:-0}"
+  local jsonl="/tmp/phase-${agent}-${iteration}.jsonl"
+  local meta="/tmp/phase-${agent}-${iteration}.meta.json"
   # Write the phase marker before touching the heartbeat so the host reads a
   # consistent (phase, heartbeat-mtime) pair when it observes the mtime advance.
   printf '%s' "$agent" > /tmp/current-phase
   touch /tmp/heartbeat
+  # Truncate first so a retry never mixes two runs; a tail follows the file so
+  # the NDJSON stays visible live on the console while landing verbatim on disk.
+  # stdout (the NDJSON stream) lands in the file; stderr stays on the console.
+  : > "$jsonl"
+  tail -n +1 -F "$jsonl" 2>/dev/null &
+  local tail_pid=$!
   # No --model: each agent resolves its own model from the unpacked opencode
   # config (~/.config/opencode), so feature-builder, test-runner,
   # static-analysis, agentic-review and pr-author can differ. $MODEL is
   # reporting-only.
-  $OPENCODE_BIN run --agent "$agent" --auto --print-logs "$prompt" </dev/null &
+  local start_ms end_ms
+  start_ms=$(date +%s%3N)
+  $OPENCODE_BIN run --agent "$agent" --auto --format json "$prompt" </dev/null >>"$jsonl" &
   local phase_pid=$!
   ( while kill -0 "$phase_pid" 2>/dev/null; do sleep 30; touch /tmp/heartbeat 2>/dev/null; done ) &
   TICKER_PID=$!
   local rc=0
   wait "$phase_pid" || rc=$?
+  end_ms=$(date +%s%3N)
   stop_ticker
+  kill "$tail_pid" 2>/dev/null || true
+  wait "$tail_pid" 2>/dev/null || true
+  local status="done"
+  [[ "$rc" -eq 0 ]] || status="failed"
+  printf '{"agent":"%s","iteration":%d,"durationMs":%d,"status":"%s"}\n' \
+    "$agent" "$iteration" "$((end_ms - start_ms))" "$status" > "$meta"
   return "$rc"
 }
 
@@ -145,11 +174,11 @@ run_agent_phase() {
 # fix pass).
 run_quality_loop() {
   for i in 1 2 3; do
-    run_agent_phase static-analysis "$QUALITY_SPEC" || fail "static-analysis agent crashed"
+    run_agent_phase static-analysis "$QUALITY_SPEC" "$i" || fail "static-analysis agent crashed"
     status=$(tail -n1 .factory/static-analysis-result.json | jq -r .status) || fail "static-analysis agent crashed: cannot read status sentinel from .factory/static-analysis-result.json"
     case "$status" in
       clean|hitl-only) return 0 ;;                      # nothing left to auto-fix
-      fixed)  run_agent_phase feature-builder "$FIX_SPEC" || fail "fix pass crashed" ;;
+      fixed)  run_agent_phase feature-builder "$FIX_SPEC" "$i" || fail "fix pass crashed" ;;
     esac
   done
   # ponytail: 3x is a backstop, not the real exit. Ticket 06 self-escalation
@@ -160,8 +189,8 @@ run_quality_loop() {
   return 0
 }
 
-echo "Running phase 1/6 (implement): OPENCODE_API_KEY=*** $OPENCODE_BIN run --agent feature-builder --auto --print-logs \"...\""
-if ! run_agent_phase feature-builder "$IMPL_SPEC"; then
+echo "Running phase 1/6 (implement): OPENCODE_API_KEY=*** $OPENCODE_BIN run --agent feature-builder --auto --format json \"...\""
+if ! run_agent_phase feature-builder "$IMPL_SPEC" 0; then
   fail "implement phase failed: opencode run exited non-zero (see log above)"
 fi
 pass "implement phase completed (feature-builder exited 0)"
@@ -194,8 +223,8 @@ TEST_SPEC="BRANCH: $BRANCH
 BASE: $BASE
 REPO: $REPO"
 
-echo "Running phase 2/6 (test): OPENCODE_API_KEY=*** $OPENCODE_BIN run --agent test-runner --auto --print-logs \"...\""
-if ! run_agent_phase test-runner "$TEST_SPEC"; then
+echo "Running phase 2/6 (test): OPENCODE_API_KEY=*** $OPENCODE_BIN run --agent test-runner --auto --format json \"...\""
+if ! run_agent_phase test-runner "$TEST_SPEC" 0; then
   fail "test phase failed: a declared harness is red or no harness was declared (see log above)"
 fi
 pass "test phase completed (test-runner exited 0, every harness green)"
@@ -228,7 +257,7 @@ BRANCH: $BRANCH
 BASE: $BASE
 REPO: $REPO"
 
-echo "Running phase 3/6 (quality-loop): OPENCODE_API_KEY=*** $OPENCODE_BIN run --agent static-analysis --auto --print-logs \"...\" (then --agent feature-builder in fix-findings mode while status is fixed)"
+echo "Running phase 3/6 (quality-loop): OPENCODE_API_KEY=*** $OPENCODE_BIN run --agent static-analysis --auto --format json \"...\" (then --agent feature-builder in fix-findings mode while status is fixed)"
 run_quality_loop
 pass "quality loop completed (status clean/hitl-only, or 3-iteration cap exhausted - never a red gate)"
 
@@ -237,10 +266,12 @@ pass "quality loop completed (status clean/hitl-only, or 3-iteration cap exhaust
 #     clone, after the quality loop. The loop's autofix checkpoint commits
 #     and fix-findings refactors can change behaviour, so every declared
 #     harness must be green again before review and PR. Same failure
-#     semantics as phase 2: a red harness fails the run here.
+#     semantics as phase 2: a red harness fails the run here. Iteration 1
+#     (phase 2 used 0): the backend keys steps on (agent, iteration), so the
+#     re-run lands as its own row instead of overwriting the phase-2 step.
 #     -----------------------------------------------------------------------
-echo "Running phase 4/6 (test re-run): OPENCODE_API_KEY=*** $OPENCODE_BIN run --agent test-runner --auto --print-logs \"...\""
-if ! run_agent_phase test-runner "$TEST_SPEC"; then
+echo "Running phase 4/6 (test re-run): OPENCODE_API_KEY=*** $OPENCODE_BIN run --agent test-runner --auto --format json \"...\""
+if ! run_agent_phase test-runner "$TEST_SPEC" 1; then
   fail "test re-run phase failed: a declared harness is red after the quality loop (see log above)"
 fi
 pass "test re-run phase completed (test-runner exited 0, every harness still green)"
@@ -258,8 +289,8 @@ BRANCH: $BRANCH
 BASE: $BASE
 REPO: $REPO"
 
-echo "Running phase 5/6 (agentic-review): OPENCODE_API_KEY=*** $OPENCODE_BIN run --agent agentic-review --auto --print-logs \"...\""
-if ! run_agent_phase agentic-review "$AR_SPEC"; then
+echo "Running phase 5/6 (agentic-review): OPENCODE_API_KEY=*** $OPENCODE_BIN run --agent agentic-review --auto --format json \"...\""
+if ! run_agent_phase agentic-review "$AR_SPEC" 0; then
   fail "agentic-review phase failed: opencode run exited non-zero (operational failure, see log above)"
 fi
 pass "agentic-review phase completed (agentic-review exited 0)"
@@ -271,8 +302,8 @@ PR_SPEC="BRANCH: $BRANCH
 BASE: $BASE
 REPO: $REPO"
 
-echo "Running phase 6/6 (PR): OPENCODE_API_KEY=*** $OPENCODE_BIN run --agent pr-author --auto --print-logs \"...\""
-if ! run_agent_phase pr-author "$PR_SPEC"; then
+echo "Running phase 6/6 (PR): OPENCODE_API_KEY=*** $OPENCODE_BIN run --agent pr-author --auto --format json \"...\""
+if ! run_agent_phase pr-author "$PR_SPEC" 0; then
   fail "pr phase failed: opencode run exited non-zero (see log above)"
 fi
 pass "pr phase completed (pr-author exited 0, PR created)"
