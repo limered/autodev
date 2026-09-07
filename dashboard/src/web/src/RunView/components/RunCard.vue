@@ -114,9 +114,9 @@ function detailTitle(s) {
           class="dev-loop-item"
           :class="{ 'dev-loop-is-loop': s.isLoop }"
         >
-          <span class="dev-loop-rail" aria-hidden="true"
-            ><span class="dev-loop-dot" :class="s.statusClass"></span
-            ><span v-if="i < view.devLoop.length - 1" class="dev-loop-arrow">↓</span></span
+          <span class="dev-loop-rail" aria-hidden="true">
+            <span class="dev-loop-dot" :class="s.statusClass"></span>
+            <span v-if="i < view.devLoop.length - 1" class="dev-loop-arrow">↓</span></span
           >
           <div
             class="dev-loop-chip"
