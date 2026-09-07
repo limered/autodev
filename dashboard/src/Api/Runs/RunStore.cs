@@ -28,7 +28,7 @@ public sealed class RunStore : IRunStore
     private const string RunColumns =
         "run_id, repo, branch, spec, model, vm_name, status, started_at, finished_at, last_heartbeat_at, pr_url, failure_reason, freeze_captured, freeze_local_path, updated_at, stages, current_phase, steps";
 
-    private static readonly JsonSerializerOptions StagesJsonOptions = new(JsonSerializerDefaults.Web);
+    private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
 
     private static readonly string[] Columns = RunColumns.Split(',').Select(c => c.Trim()).ToArray();
     private static readonly string SelectSql = $"SELECT {RunColumns} FROM runs";
@@ -53,7 +53,7 @@ public sealed class RunStore : IRunStore
         // Steps ride the ordered diff path, never the heartbeat cheap path: the
         // getter returns the canonical JSON so unchanged steps compare equal
         // and are not rewritten on unrelated ordered updates.
-        new("steps", "steps", s => SerializeSteps(s.Steps), DbType: NpgsqlDbType.Jsonb),
+        new("steps", "steps", s => SerializeJson(s.Steps), DbType: NpgsqlDbType.Jsonb),
         new("last_heartbeat_at", "lastHeartbeatAt", s => s.LastHeartbeatAt, Heartbeat: true),
         new("current_phase", "currentPhase", s => s.CurrentPhase, Heartbeat: true),
     ];
@@ -260,33 +260,23 @@ public sealed class RunStore : IRunStore
         cmd.Parameters.AddWithValue("updatedAt", next.UpdatedAt);
         cmd.Parameters.Add(new NpgsqlParameter("stages", NpgsqlDbType.Jsonb)
         {
-            Value = (object?)SerializeStages(next.Stages) ?? DBNull.Value,
+            Value = (object?)SerializeJson(next.Stages) ?? DBNull.Value,
         });
         cmd.Parameters.Add(new NpgsqlParameter("steps", NpgsqlDbType.Jsonb)
         {
-            Value = (object?)SerializeSteps(next.Steps) ?? DBNull.Value,
+            Value = (object?)SerializeJson(next.Steps) ?? DBNull.Value,
         });
         await cmd.ExecuteNonQueryAsync();
     }
 
-    private static string? SerializeStages(IReadOnlyList<RunStage>? stages)
+    private static string? SerializeJson<T>(IReadOnlyList<T>? value)
     {
-        if (stages is null || stages.Count == 0)
+        if (value is null || value.Count == 0)
         {
             return null;
         }
 
-        return JsonSerializer.Serialize(stages, StagesJsonOptions);
-    }
-
-    private static string? SerializeSteps(IReadOnlyList<RunStep>? steps)
-    {
-        if (steps is null || steps.Count == 0)
-        {
-            return null;
-        }
-
-        return JsonSerializer.Serialize(steps, StagesJsonOptions);
+        return JsonSerializer.Serialize(value, JsonOptions);
     }
 
     private static bool IsHeartbeatOnly(RunState current, RunState next)
@@ -393,9 +383,9 @@ public sealed class RunStore : IRunStore
             r.GetBoolean(r.GetOrdinal("freeze_captured")),
             GetStringOrNull(r, "freeze_local_path"),
             r.GetFieldValue<DateTimeOffset>(r.GetOrdinal("updated_at")),
-            GetStagesOrNull(r, "stages"),
+            GetJsonList<RunStage>(r, "stages"),
             GetStringOrNull(r, "current_phase"),
-            GetStepsOrNull(r, "steps"));
+            GetJsonList<RunStep>(r, "steps"));
     }
 
     private static string? GetStringOrNull(NpgsqlDataReader r, string column)
@@ -410,7 +400,7 @@ public sealed class RunStore : IRunStore
         return r.IsDBNull(ordinal) ? null : r.GetFieldValue<DateTimeOffset>(ordinal);
     }
 
-    private static List<RunStage>? GetStagesOrNull(NpgsqlDataReader r, string column)
+    private static List<T>? GetJsonList<T>(NpgsqlDataReader r, string column)
     {
         var ordinal = r.GetOrdinal(column);
         if (r.IsDBNull(ordinal))
@@ -424,23 +414,6 @@ public sealed class RunStore : IRunStore
             return null;
         }
 
-        return JsonSerializer.Deserialize<List<RunStage>>(json, StagesJsonOptions);
-    }
-
-    private static List<RunStep>? GetStepsOrNull(NpgsqlDataReader r, string column)
-    {
-        var ordinal = r.GetOrdinal(column);
-        if (r.IsDBNull(ordinal))
-        {
-            return null;
-        }
-
-        var json = r.GetString(ordinal);
-        if (string.IsNullOrWhiteSpace(json))
-        {
-            return null;
-        }
-
-        return JsonSerializer.Deserialize<List<RunStep>>(json, StagesJsonOptions);
+        return JsonSerializer.Deserialize<List<T>>(json, JsonOptions);
     }
 }
