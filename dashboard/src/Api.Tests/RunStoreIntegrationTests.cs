@@ -161,6 +161,37 @@ public sealed class RunStoreIntegrationTests : IClassFixture<PostgresFixture>, I
     }
 
     [SkippableFact]
+    public async Task PhaseFinished_PersistsSteps_OnOrderedPath_HeartbeatKeepsThem()
+    {
+        Skip.IfNot(_fixture.IsDockerAvailable, "Docker is not available; skipping RunStore integration tests.");
+        var runId = Guid.NewGuid();
+        var started = UtcNowAtMicrosecondPrecision();
+        await _store.Apply(runId, Started(started));
+
+        var at = started.AddSeconds(61);
+        await _store.Apply(runId, new PhaseFinishedEvent(
+            "feature-builder", 0, 61000, 100, 50, 0.0123m, "done", "gpt-x") { At = at });
+
+        var after = await _fixture.GetRunAsync(runId);
+        var step = Assert.Single(after!.Steps!);
+        Assert.Equal("feature-builder", step.Agent);
+        Assert.Equal(0, step.Iteration);
+        Assert.Equal(61000, step.DurationMs);
+        Assert.Equal(100, step.InputTokens);
+        Assert.Equal(50, step.OutputTokens);
+        Assert.Equal(0.0123m, step.Cost);
+        Assert.Equal("gpt-x", step.Model);
+        Assert.Equal("launching", after.Status); // steps never touch run Status
+
+        // The heartbeat cheap path must not wipe the ordered-path steps.
+        await _store.Apply(runId, new HeartbeatEvent("test-runner") { At = at.AddSeconds(5) });
+        var beat = await _fixture.GetRunAsync(runId);
+        Assert.Equal("test-runner", beat!.CurrentPhase);
+        Assert.Equal(at, beat.UpdatedAt);
+        Assert.Equal("feature-builder", Assert.Single(beat.Steps!).Agent);
+    }
+
+    [SkippableFact]
     public async Task All_SkipTake_ReturnsWindowInStartedAtDescOrder_AndShortFinalPage()
     {
         Skip.IfNot(_fixture.IsDockerAvailable, "Docker is not available; skipping RunStore integration tests.");

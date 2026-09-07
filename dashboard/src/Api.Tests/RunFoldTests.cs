@@ -402,4 +402,179 @@ public class RunFoldTests
 
         Assert.Null(next);
     }
+
+    [Fact]
+    public void PhaseFinished_StoresStep()
+    {
+        var current = State("running");
+
+        var next = RunFold.Apply(current, new PhaseFinishedEvent(
+            Agent: "feature-builder",
+            Iteration: 0,
+            DurationMs: 61000,
+            InputTokens: 100,
+            OutputTokens: 50,
+            Cost: 0.0123m,
+            Status: "done",
+            Model: "opencode-go/glm-5.2") { At = T1, RunId = RunId });
+
+        Assert.NotNull(next);
+        Assert.Equal("running", next.Status); // steps never touch run Status
+        Assert.Equal(T1, next.UpdatedAt);
+        var step = Assert.Single(next.Steps!);
+        Assert.Equal("feature-builder", step.Agent);
+        Assert.Equal(0, step.Iteration);
+        Assert.Equal(61000, step.DurationMs);
+        Assert.Equal(100, step.InputTokens);
+        Assert.Equal(50, step.OutputTokens);
+        Assert.Equal(0.0123m, step.Cost);
+        Assert.Equal("done", step.Status);
+        Assert.Equal("opencode-go/glm-5.2", step.Model);
+    }
+
+    [Fact]
+    public void PhaseFinished_ReEmit_ReplacesInPlace_LastWriteWins()
+    {
+        var current = State("running");
+        var first = RunFold.Apply(current, new PhaseFinishedEvent(
+            Agent: "test-runner", Iteration: 0, DurationMs: 1000,
+            InputTokens: 10, OutputTokens: 5, Status: "done",
+            Model: "m1") { At = T1, RunId = RunId });
+        Assert.NotNull(first);
+        var second = RunFold.Apply(first, new PhaseFinishedEvent(
+            Agent: "pr-author", Iteration: 0, DurationMs: 2000,
+            InputTokens: 20, OutputTokens: 10, Status: "done",
+            Model: "m2") { At = T1.AddSeconds(1), RunId = RunId });
+        Assert.NotNull(second);
+
+        var next = RunFold.Apply(second, new PhaseFinishedEvent(
+            Agent: "test-runner", Iteration: 0, DurationMs: 3000,
+            InputTokens: 30, OutputTokens: 15, Status: "done",
+            Model: "m1") { At = T1.AddSeconds(2), RunId = RunId });
+
+        Assert.NotNull(next);
+        Assert.Equal(2, next.Steps!.Count);
+        Assert.Equal("test-runner", next.Steps[0].Agent); // position stable, values replaced
+        Assert.Equal(3000, next.Steps[0].DurationMs);
+        Assert.Equal(30, next.Steps[0].InputTokens);
+        Assert.Equal("pr-author", next.Steps[1].Agent);
+    }
+
+    [Fact]
+    public void PhaseFinished_LoopIterations_CoexistAsSeparateSteps()
+    {
+        var current = State("running");
+        var t = T1;
+        RunState? state = current;
+        (string agent, int iteration)[] emissions =
+        [
+            ("static-analysis", 1),
+            ("feature-builder", 1),
+            ("static-analysis", 2),
+            ("feature-builder", 2),
+        ];
+        foreach (var (agent, iteration) in emissions)
+        {
+            state = RunFold.Apply(state, new PhaseFinishedEvent(
+                Agent: agent, Iteration: iteration, DurationMs: 1000,
+                InputTokens: 10, OutputTokens: 5, Status: "done",
+                Model: "m") { At = t, RunId = RunId });
+            Assert.NotNull(state);
+            t = t.AddSeconds(1);
+        }
+
+        Assert.Equal(4, state!.Steps!.Count);
+        Assert.Equal(("static-analysis", 1), (state.Steps[0].Agent, state.Steps[0].Iteration));
+        Assert.Equal(("feature-builder", 1), (state.Steps[1].Agent, state.Steps[1].Iteration));
+        Assert.Equal(("static-analysis", 2), (state.Steps[2].Agent, state.Steps[2].Iteration));
+        Assert.Equal(("feature-builder", 2), (state.Steps[3].Agent, state.Steps[3].Iteration));
+    }
+
+    [Fact]
+    public void PhaseFinished_FailedStep_DoesNotTouchRunStatus()
+    {
+        var current = State("running");
+
+        var next = RunFold.Apply(current, new PhaseFinishedEvent(
+            Agent: "test-runner", Iteration: 0, DurationMs: 1000,
+            InputTokens: 10, OutputTokens: 5, Status: "failed",
+            Model: "m") { At = T1, RunId = RunId });
+
+        Assert.NotNull(next);
+        Assert.Equal("running", next.Status);
+        Assert.Null(next.FinishedAt);
+        Assert.Equal("failed", Assert.Single(next.Steps!).Status);
+    }
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData("")]
+    [InlineData("   ")]
+    public void PhaseFinished_MissingModel_IsNoOp(string? model)
+    {
+        var current = State("running");
+
+        var next = RunFold.Apply(current, new PhaseFinishedEvent(
+            Agent: "feature-builder", Iteration: 0, DurationMs: 1000,
+            InputTokens: 10, OutputTokens: 5, Status: "done",
+            Model: model) { At = T1, RunId = RunId });
+
+        Assert.Null(next);
+    }
+
+    [Fact]
+    public void PhaseFinished_MissingIteration_IsNoOp()
+    {
+        var current = State("running");
+
+        var next = RunFold.Apply(current, new PhaseFinishedEvent(
+            Agent: "feature-builder", DurationMs: 1000,
+            InputTokens: 10, OutputTokens: 5, Status: "done",
+            Model: "m") { At = T1, RunId = RunId });
+
+        Assert.Null(next);
+    }
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData("  ")]
+    public void PhaseFinished_MissingAgent_IsNoOp(string? agent)
+    {
+        var current = State("running");
+
+        var next = RunFold.Apply(current, new PhaseFinishedEvent(
+            Agent: agent, Iteration: 0, DurationMs: 1000,
+            InputTokens: 10, OutputTokens: 5, Status: "done",
+            Model: "m") { At = T1, RunId = RunId });
+
+        Assert.Null(next);
+    }
+
+    [Theory]
+    [InlineData("done")]
+    [InlineData("failed")]
+    public void PhaseFinished_AfterTerminal_IsNoOp(string terminalStatus)
+    {
+        var current = State(terminalStatus);
+
+        var next = RunFold.Apply(current, new PhaseFinishedEvent(
+            Agent: "feature-builder", Iteration: 0, DurationMs: 1000,
+            InputTokens: 10, OutputTokens: 5, Status: "done",
+            Model: "m") { At = T1, RunId = RunId });
+
+        Assert.Null(next);
+    }
+
+    [Fact]
+    public void PhaseFinished_OutOfOrder_IsNoOp()
+    {
+        var current = State("running", updatedAt: T2);
+
+        var next = RunFold.Apply(current, new PhaseFinishedEvent(
+            Agent: "feature-builder", Iteration: 0, DurationMs: 1000,
+            InputTokens: 10, OutputTokens: 5, Status: "done",
+            Model: "m") { At = T1, RunId = RunId });
+
+        Assert.Null(next);
+    }
 }

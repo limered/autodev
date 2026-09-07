@@ -32,6 +32,7 @@ public static class RunFold
             PrVerifiedEvent e => IsStale(current, at) ? null : ApplyPrVerified(current!, e, at),
             AgentStartedEvent e => IsBlocked(current, at) ? null : ApplyAgentStarted(current!, e, at),
             StallDetectedEvent e => IsBlocked(current, at) ? null : ApplyStallDetected(current!, e, at),
+            PhaseFinishedEvent e => IsBlocked(current, at) ? null : ApplyPhaseFinished(current!, e, at),
             RunFinishedEvent => IsBlocked(current, at) ? null : ApplyRunFinished(current!, at),
             RunFailedEvent e => IsBlocked(current, at) ? null : ApplyRunFailed(current!, e, at),
             _ => null, // unknown/unmapped event type (a bare RunEvent): no-op
@@ -128,6 +129,48 @@ public static class RunFold
         return current with
         {
             PrUrl = ev.PrUrl,
+            UpdatedAt = at,
+        };
+    }
+
+    private static RunState? ApplyPhaseFinished(RunState current, PhaseFinishedEvent ev, DateTimeOffset at)
+    {
+        // Model is required: a model-less step is a no-op drop, never stored.
+        // Iteration is required: 0 for single-run phases, 1..N for loop iterations.
+        if (string.IsNullOrWhiteSpace(ev.Agent) || !ev.Iteration.HasValue || string.IsNullOrWhiteSpace(ev.Model))
+        {
+            return null;
+        }
+
+        var step = new RunStep(
+            ev.Agent!,
+            ev.Iteration.Value,
+            ev.DurationMs ?? 0,
+            ev.InputTokens ?? 0,
+            ev.OutputTokens ?? 0,
+            ev.Cost,
+            ev.Status ?? "done",
+            ev.Model!);
+
+        // Last-write-wins on (agent, iteration): a re-emit replaces the earlier
+        // step in place, so arrival order (phase order, then loop iterations)
+        // stays stable across re-emits. Steps never touch run Status: a failed
+        // step is display-only on its row.
+        var steps = (current.Steps ?? Array.Empty<RunStep>()).ToList();
+        var index = steps.FindIndex(s =>
+            string.Equals(s.Agent, step.Agent, StringComparison.Ordinal) && s.Iteration == step.Iteration);
+        if (index >= 0)
+        {
+            steps[index] = step;
+        }
+        else
+        {
+            steps.Add(step);
+        }
+
+        return current with
+        {
+            Steps = steps,
             UpdatedAt = at,
         };
     }

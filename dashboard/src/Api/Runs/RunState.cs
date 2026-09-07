@@ -17,4 +17,5 @@ public record RunState(
     string? FreezeLocalPath,
     DateTimeOffset UpdatedAt,
     IReadOnlyList<RunStage>? Stages,
-    string? CurrentPhase = null);
+    string? CurrentPhase = null,
+    IReadOnlyList<RunStep>? Steps = null);

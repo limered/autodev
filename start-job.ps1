@@ -157,6 +157,18 @@ try {
     # A dead model never recovers, so the extra 5 min only costs a rare real stall.
     & $watchScript -VmName $VmName -Job $vmJob -RunId $RunId -RepoRoot $RepoRoot -StallThresholdSeconds 600
 
+    # V1 per-step pull (not streaming): the VM is still up and no terminal
+    # event has been sent, so every phase-finished lands before run-finished.
+    # The model rides from the host-side agent frontmatter via Get-AgentModel.
+    Write-Step "Relaying per-phase timing + tokens to the dashboard"
+    try {
+        $modelLookup = { param($agent) Get-AgentModel -Agent $agent -RepoRoot $RepoRoot }.GetNewClosure()
+        Send-PhaseFinishedSteps -RunId $RunId -VmName $VmName -ModelLookup $modelLookup
+    }
+    catch {
+        Write-Host "WARN: per-phase step relay failed: $_" -ForegroundColor Yellow
+    }
+
     Write-Step "Polling GitHub for the pull request on branch $Branch"
     $pat = (Get-Content -LiteralPath $patFile -Raw).Trim()
     $owner = $Repo.Split('/')[0]
@@ -186,6 +198,16 @@ catch {
         try { Invoke-Multipass delete $VmName --purge } catch {}
     }
     if ($vmCreated) {
+        # Best-effort step relay before the terminal event: phases that
+        # finished before the failure still land (re-emits are safe,
+        # last-write-wins); steps must precede run-failed or they are dropped.
+        try {
+            $modelLookup = { param($agent) Get-AgentModel -Agent $agent -RepoRoot $RepoRoot }.GetNewClosure()
+            Send-PhaseFinishedSteps -RunId $RunId -VmName $VmName -ModelLookup $modelLookup
+        }
+        catch {
+            Write-Host "WARN: per-phase step relay failed: $_" -ForegroundColor Yellow
+        }
         try {
             $freezePath = Save-FreezeSnapshot -Name $VmName -RepoRoot $RepoRoot -JobParams @{
                 repo   = $Repo
