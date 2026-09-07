@@ -196,3 +196,102 @@ describe("RunCard body and status (unchanged by the header rework)", () => {
     expect(html).toContain("vm-42");
   });
 });
+
+describe("RunCard dev-loop detail (C3 stepped rail)", () => {
+  const apiStep = (overrides = {}) => ({
+    agent: "feature-builder",
+    iteration: 0,
+    model: "m1",
+    status: "done",
+    inputTokens: 18200,
+    outputTokens: 6400,
+    durationMs: 552000,
+    cost: null,
+    ...overrides,
+  });
+
+  const finishedSteps = () => [
+    apiStep(),
+    apiStep({
+      agent: "test-runner",
+      model: "m2",
+      inputTokens: 9400,
+      outputTokens: 1800,
+      durationMs: 220000,
+    }),
+    apiStep({
+      agent: "static-analysis",
+      iteration: 1,
+      model: "m3",
+      inputTokens: 6100,
+      outputTokens: 900,
+      durationMs: 68000,
+    }),
+    apiStep({
+      agent: "feature-builder",
+      iteration: 1,
+      model: "m1",
+      inputTokens: 3000,
+      outputTokens: 1500,
+      durationMs: 90000,
+    }),
+  ];
+
+  it("offers the expandable detail with step count and totals, collapsed by default", async () => {
+    const html = await renderCard(run({ steps: finishedSteps() }));
+
+    expect(html).toContain("dev-loop-toggle");
+    expect(html).toContain("show dev-loop detail");
+    expect(html).toContain("4 steps");
+    expect(html).not.toContain("dev-loop-item");
+  });
+
+  it("expands to every phase plus each loop iteration with tokens and duration", async () => {
+    const html = await renderCard(run({ steps: finishedSteps() }), { initialExpanded: true });
+    const list = findElement(html, "ol", "dev-loop");
+
+    expect(list).not.toBeNull();
+    expect(html).toContain("feature-builder");
+    expect(html).toContain("test-runner");
+    expect(html).toContain("static-analysis");
+    expect(html).toContain("m1");
+    expect(html).toContain("m2");
+    expect((html.match(/dev-loop-item/g) ?? []).length).toBeGreaterThanOrEqual(4);
+  });
+
+  it("badges the iteration only when the agent repeats", async () => {
+    const html = await renderCard(run({ steps: finishedSteps() }), { initialExpanded: true });
+
+    expect(html).toContain("dev-loop-iter");
+    expect(html).not.toContain("#0");
+    expect(html).toContain("#1");
+  });
+
+  it("keeps the rail styling: spine dots, step arrows, loop indent and loop-back badge", async () => {
+    const html = await renderCard(run({ steps: finishedSteps() }), { initialExpanded: true });
+
+    expect(html).toContain("dev-loop-rail");
+    expect(html).toContain("dev-loop-dot");
+    expect(html).toContain("dev-loop-arrow");
+    expect(html).toContain("dev-loop-is-loop");
+    expect(html).toContain("↺");
+    expect(html).toContain("stage-done");
+  });
+
+  it("falls back to seeded stages when steps are empty", async () => {
+    const html = await renderCard(run({ stages: [stage("triage", "done")], steps: [] }), {
+      initialExpanded: true,
+    });
+
+    expect(html).toContain("dev-loop-toggle");
+    expect(html).toContain("triage");
+    expect(html).toContain("glm-5.2");
+  });
+
+  it("omits the detail section when neither steps nor stages exist", async () => {
+    const html = await renderCard(run());
+
+    expect(html).not.toContain("dev-loop-toggle");
+    expect(html).not.toContain("dev-loop-item");
+  });
+});
