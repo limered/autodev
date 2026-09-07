@@ -3,31 +3,32 @@ import { computed, onMounted, onUnmounted, ref } from "vue";
 import RunCard from "./RunCard.vue";
 
 // PROTOTYPE — throwaway for #137 (branch prototype/dev-loop-timeline, do not
-// promote as-is). Round 2: B rail won, tables dropped. Three rail variations
-// (B1/B2/B3) with model per step, full-width rows, step-to-step arrows and a
-// loop-back arrow for quality-loop iterations. ?variant=B1|B2|B3 (B → B1).
+// promote as-is). Round 3: B2 chain won. Three compact variants (C1/C2/C3):
+// status as color only (no "done" text; pending grey, running green, done
+// blue — same seam as RunCard stage badges), chips fit their content so the
+// model text sets the length. ?variant=C1|C2|C3 (legacy B* → C1).
 
 const VARIANTS = [
-  { key: "B1", name: "Spine" },
-  { key: "B2", name: "Chain" },
-  { key: "B3", name: "Loop box" },
+  { key: "C1", name: "Compact chain" },
+  { key: "C2", name: "Flow" },
+  { key: "C3", name: "Stepped rail" },
 ];
 
 const showPrototype = import.meta.env.DEV;
 const open = ref(true);
-const variantKey = ref("B1");
+const variantKey = ref("C1");
 
 function normalize(v) {
-  const u = String(v ?? "B1").toUpperCase();
-  if (u === "B") return "B1";
-  return VARIANTS.some((x) => x.key === u) ? u : "B1";
+  const u = String(v ?? "C1").toUpperCase();
+  if (u.startsWith("B")) return "C1";
+  return VARIANTS.some((x) => x.key === u) ? u : "C1";
 }
 
 function readVariant() {
   try {
     return normalize(new URLSearchParams(window.location.search).get("variant"));
   } catch {
-    return "B1";
+    return "C1";
   }
 }
 
@@ -69,31 +70,31 @@ onUnmounted(() => window.removeEventListener("keydown", onKey));
 const now = Date.now();
 const mockRun = {
   runId: "prototype",
-  status: "done",
+  status: "running",
   repo: "limered/autodev",
   branch: "prototype/dev-loop-timeline",
   vmName: "factory-proto",
-  prUrl: "https://github.com/limered/autodev/pull/0",
+  prUrl: null,
   failureReason: null,
   freezeCaptured: false,
   startedAt: new Date(now - 42 * 60 * 1000).toISOString(),
-  finishedAt: new Date(now - 4 * 60 * 1000).toISOString(),
-  lastHeartbeatAt: new Date(now - 4 * 60 * 1000).toISOString(),
+  finishedAt: null,
+  lastHeartbeatAt: new Date(now - 3000).toISOString(),
   stages: [],
 };
 
+// Mixed statuses to show the color coding (active run mid quality-loop).
+// Long model ids on purpose: chip length follows the text.
 const steps = [
-  { agent: "feature-builder", iteration: null, status: "done", model: "claude-opus", inputTokens: 18200, outputTokens: 6400, durationMs: 9 * 60 * 1000 + 12000 },
-  { agent: "test-runner", iteration: null, status: "done", model: "claude-sonnet", inputTokens: 9400, outputTokens: 1800, durationMs: 3 * 60 * 1000 + 40000 },
-  { agent: "static-analysis", iteration: 0, status: "done", model: "claude-haiku", inputTokens: 6100, outputTokens: 900, durationMs: 1 * 60 * 1000 + 8000 },
-  { agent: "fix-findings", iteration: 0, status: "done", model: "claude-sonnet", inputTokens: 12300, outputTokens: 4100, durationMs: 5 * 60 * 1000 + 20000 },
-  { agent: "static-analysis", iteration: 1, status: "done", model: "claude-haiku", inputTokens: 6200, outputTokens: 400, durationMs: 1 * 60 * 1000 + 5000 },
-  { agent: "test-runner", iteration: null, status: "done", model: "claude-sonnet", inputTokens: 9600, outputTokens: 700, durationMs: 3 * 60 * 1000 + 10000 },
-  { agent: "agentic-review", iteration: null, status: "done", model: "claude-opus", inputTokens: 14800, outputTokens: 2300, durationMs: 4 * 60 * 1000 + 30000 },
-  { agent: "pr-author", iteration: null, status: "done", model: "claude-sonnet", inputTokens: 7200, outputTokens: 1900, durationMs: 2 * 60 * 1000 + 15000 },
+  { agent: "feature-builder", iteration: null, status: "done", model: "anthropic/claude-opus-4-1", inputTokens: 18200, outputTokens: 6400, durationMs: 9 * 60 * 1000 + 12000 },
+  { agent: "test-runner", iteration: null, status: "done", model: "openai/gpt-5", inputTokens: 9400, outputTokens: 1800, durationMs: 3 * 60 * 1000 + 40000 },
+  { agent: "static-analysis", iteration: 0, status: "done", model: "google/gemini-2.5-flash", inputTokens: 6100, outputTokens: 900, durationMs: 1 * 60 * 1000 + 8000 },
+  { agent: "fix-findings", iteration: 0, status: "running", model: "anthropic/claude-sonnet-4", inputTokens: 12300, outputTokens: 4100, durationMs: 5 * 60 * 1000 + 20000 },
+  { agent: "static-analysis", iteration: 1, status: "pending", model: "google/gemini-2.5-flash", inputTokens: 0, outputTokens: 0, durationMs: 0 },
+  { agent: "test-rerun", iteration: null, status: "pending", model: "openai/gpt-5", inputTokens: 0, outputTokens: 0, durationMs: 0 },
+  { agent: "agentic-review", iteration: null, status: "pending", model: "anthropic/claude-opus-4-1", inputTokens: 0, outputTokens: 0, durationMs: 0 },
+  { agent: "pr-author", iteration: null, status: "pending", model: "xai/grok-code-fast-1", inputTokens: 0, outputTokens: 0, durationMs: 0 },
 ];
-
-const loopSteps = computed(() => steps.map((s, i) => ({ ...s, idx: i })).filter((s) => s.iteration !== null));
 
 const totals = computed(() => ({
   tokens: steps.reduce((n, s) => n + s.inputTokens + s.outputTokens, 0),
@@ -114,82 +115,64 @@ function label(s) {
 function isLoop(s) {
   return s.iteration !== null;
 }
+function stats(s) {
+  if (s.status === "pending") return "—";
+  return `${fmtTokens(s.inputTokens + s.outputTokens)} · ${fmtMs(s.durationMs)}`;
+}
 </script>
 
 <template>
   <section v-if="showPrototype" class="proto" aria-label="Dev-loop detail prototype">
-    <div class="proto-flag mono">PROTOTYPE #137 r2 — throwaway, ?variant=B1|B2|B3</div>
+    <div class="proto-flag mono">PROTOTYPE #137 r3 — throwaway, ?variant=C1|C2|C3</div>
     <RunCard :run="mockRun" :now="now" />
     <button type="button" class="proto-toggle mono" @click="open = !open">
       {{ open ? "▾ hide dev-loop detail" : "▸ show dev-loop detail" }} · {{ steps.length }} steps ·
       {{ fmtTokens(totals.tokens) }} tokens · {{ fmtMs(totals.ms) }}
     </button>
 
-    <!-- B1: connected spine — dots joined by ↓, loop rows carry a ↺ badge -->
-    <ol v-if="open && variant === 'B1'" class="spine">
-      <li v-for="(s, i) in steps" :key="i" class="sp-row">
-        <span class="sp-rail" aria-hidden="true"><span class="sp-dot"></span><span v-if="i < steps.length - 1" class="sp-arrow">↓</span></span>
-        <div class="sp-body">
-          <div class="sp-top">
-            <span class="sp-agent mono">{{ label(s) }}</span>
-            <span v-if="isLoop(s)" class="sp-loop mono">↺ loop</span>
-            <span class="sp-model mono">{{ s.model }}</span>
-          </div>
-          <div class="sp-sub mono">{{ fmtTokens(s.inputTokens + s.outputTokens) }} tok · {{ fmtMs(s.durationMs) }} · {{ s.status }}</div>
+    <!-- C1: vertical compact chain — fit-content cards joined by ↓ -->
+    <ol v-if="open && variant === 'C1'" class="c1">
+      <li v-for="(s, i) in steps" :key="i" class="c1-item">
+        <div class="chip" :class="[`st-${s.status}`, { loop: isLoop(s) }]" :title="`${label(s)} — ${s.status}`">
+          <span class="chip-dot" aria-hidden="true"></span>
+          <span class="chip-agent mono">{{ isLoop(s) ? `↺ ${label(s)}` : label(s) }}</span>
+          <span class="chip-model mono">{{ s.model }}</span>
+          <span class="chip-stats mono">{{ stats(s) }}</span>
         </div>
+        <div v-if="i < steps.length - 1" class="c1-arrow" aria-hidden="true">↓</div>
       </li>
     </ol>
 
-    <!-- B2: full-width chain cards with ↓ connectors between them -->
-    <ol v-else-if="open && variant === 'B2'" class="chain">
-      <li v-for="(s, i) in steps" :key="i" class="ch-item">
-        <div class="ch-card" :class="{ 'ch-loop': isLoop(s) }">
-          <div class="ch-top">
-            <span class="ch-agent mono">{{ isLoop(s) ? `↺ ${label(s)}` : label(s) }}</span>
-            <span class="ch-right mono">{{ fmtTokens(s.inputTokens + s.outputTokens) }} · {{ fmtMs(s.durationMs) }}</span>
-          </div>
-          <div class="ch-sub mono">{{ s.model }} · {{ s.status }}</div>
+    <!-- C2: horizontal wrapping flow — chips connected by → -->
+    <div v-else-if="open && variant === 'C2'" class="c2">
+      <template v-for="(s, i) in steps" :key="i">
+        <div class="chip" :class="[`st-${s.status}`, { loop: isLoop(s) }]" :title="`${label(s)} — ${s.status}`">
+          <span class="chip-dot" aria-hidden="true"></span>
+          <span class="chip-agent mono">{{ isLoop(s) ? `↺ ${label(s)}` : label(s) }}</span>
+          <span class="chip-model mono">{{ s.model }}</span>
+          <span class="chip-stats mono">{{ stats(s) }}</span>
         </div>
-        <div v-if="i < steps.length - 1" class="ch-arrow" aria-hidden="true">↓</div>
-      </li>
-    </ol>
-
-    <!-- B3: loop iterations grouped in a ↺ loop box, rest as full-width rail rows -->
-    <div v-else-if="open && variant === 'B3'" class="lbox">
-      <ol class="lbox-list">
-        <li v-for="(s, i) in steps.slice(0, 2)" :key="i" class="lbox-row">
-          <span class="lbox-agent mono">{{ label(s) }}</span>
-          <span class="lbox-model mono">{{ s.model }}</span>
-          <span class="lbox-right mono">{{ fmtTokens(s.inputTokens + s.outputTokens) }} · {{ fmtMs(s.durationMs) }}</span>
-        </li>
-      </ol>
-      <div class="lbox-arrow" aria-hidden="true">↓ into quality-loop</div>
-      <div class="lbox-loop">
-        <div class="lbox-loophead mono">↺ quality-loop ×{{ loopSteps.length }}</div>
-        <ol class="lbox-list">
-          <li v-for="s in loopSteps" :key="s.idx" class="lbox-row lbox-inner">
-            <span class="lbox-agent mono">{{ label(s) }}</span>
-            <span class="lbox-model mono">{{ s.model }}</span>
-            <span class="lbox-right mono">{{ fmtTokens(s.inputTokens + s.outputTokens) }} · {{ fmtMs(s.durationMs) }}</span>
-          </li>
-        </ol>
-        <div class="lbox-loopfoot mono">↺ loop back until static-analysis passes</div>
-      </div>
-      <div class="lbox-arrow" aria-hidden="true">↓ out of loop</div>
-      <ol class="lbox-list">
-        <li v-for="(s, i) in steps.slice(2 + loopSteps.length)" :key="i" class="lbox-row">
-          <span class="lbox-agent mono">{{ label(s) }}</span>
-          <span class="lbox-model mono">{{ s.model }}</span>
-          <span class="lbox-right mono">{{ fmtTokens(s.inputTokens + s.outputTokens) }} · {{ fmtMs(s.durationMs) }}</span>
-        </li>
-      </ol>
+        <span v-if="i < steps.length - 1" class="c2-arrow" aria-hidden="true">→</span>
+      </template>
     </div>
+
+    <!-- C3: stepped rail — spine with ↓, compact cards, loop rows indented -->
+    <ol v-else-if="open && variant === 'C3'" class="c3">
+      <li v-for="(s, i) in steps" :key="i" class="c3-item" :class="{ 'c3-loop': isLoop(s) }">
+        <span class="c3-rail" aria-hidden="true"><span class="chip-dot" :class="`st-${s.status}`"></span><span v-if="i < steps.length - 1" class="c3-arrow">↓</span></span>
+        <div class="chip" :class="[`st-${s.status}`, { loop: isLoop(s) }]" :title="`${label(s)} — ${s.status}`">
+          <span class="chip-agent mono">{{ isLoop(s) ? `↺ ${label(s)}` : label(s) }}</span>
+          <span class="chip-model mono">{{ s.model }}</span>
+          <span class="chip-stats mono">{{ stats(s) }}</span>
+        </div>
+      </li>
+    </ol>
 
     <div class="proto-switcher mono" role="navigation" aria-label="Prototype variant switcher">
       <button type="button" aria-label="Previous variant" @click="step(-1)">←</button>
-      <button type="button" :aria-current="variant === 'B1' ? 'true' : null" @click="setVariant('B1')">B1 Spine</button>
-      <button type="button" :aria-current="variant === 'B2' ? 'true' : null" @click="setVariant('B2')">B2 Chain</button>
-      <button type="button" :aria-current="variant === 'B3' ? 'true' : null" @click="setVariant('B3')">B3 Loop</button>
+      <button type="button" :aria-current="variant === 'C1' ? 'true' : null" @click="setVariant('C1')">C1 Chain</button>
+      <button type="button" :aria-current="variant === 'C2' ? 'true' : null" @click="setVariant('C2')">C2 Flow</button>
+      <button type="button" :aria-current="variant === 'C3' ? 'true' : null" @click="setVariant('C3')">C3 Rail</button>
       <span class="proto-current">{{ variant }} — {{ variantName }}</span>
       <button type="button" aria-label="Next variant" @click="step(1)">→</button>
     </div>
@@ -200,37 +183,29 @@ function isLoop(s) {
 .proto { margin-top: 2rem; border: 2px dashed var(--amber); border-radius: var(--radius); padding: 1rem; }
 .proto-flag { color: var(--amber); font-size: 0.75rem; margin-bottom: 0.75rem; }
 .proto-toggle { margin-top: 0.75rem; width: 100%; text-align: left; background: var(--surface-2); color: var(--text); border: 1px solid var(--border); border-radius: var(--radius); padding: 0.5rem 0.75rem; cursor: pointer; font-size: 0.85rem; }
-.spine { list-style: none; margin: 0.75rem 0 0; padding: 0; }
-.sp-row { display: flex; gap: 0.6rem; }
-.sp-rail { display: flex; flex-direction: column; align-items: center; width: 1rem; flex-shrink: 0; }
-.sp-dot { width: 0.6rem; height: 0.6rem; margin-top: 0.35rem; border-radius: 50%; background: var(--blue); }
-.sp-arrow { color: var(--text-dim); font-size: 0.8rem; line-height: 1.6; }
-.sp-body { flex: 1; min-width: 0; padding-bottom: 0.35rem; }
-.sp-top { display: flex; align-items: baseline; gap: 0.5rem; }
-.sp-agent { font-size: 0.88rem; font-weight: 600; }
-.sp-loop { color: var(--amber); font-size: 0.75rem; }
-.sp-model { margin-left: auto; color: var(--text-muted); font-size: 0.78rem; }
-.sp-sub { color: var(--text-muted); font-size: 0.78rem; }
-.chain { list-style: none; margin: 0.75rem 0 0; padding: 0; }
-.ch-item { margin: 0; }
-.ch-card { border: 1px solid var(--border); border-radius: var(--radius); padding: 0.5rem 0.75rem; background: var(--surface-2); }
-.ch-loop { border-left: 3px solid var(--amber); }
-.ch-top { display: flex; justify-content: space-between; gap: 0.75rem; }
-.ch-agent { font-weight: 600; font-size: 0.88rem; }
-.ch-right { color: var(--text); font-size: 0.82rem; white-space: nowrap; }
-.ch-sub { color: var(--text-muted); font-size: 0.78rem; margin-top: 0.15rem; }
-.ch-arrow { text-align: center; color: var(--text-dim); line-height: 1.4; }
-.lbox { margin-top: 0.75rem; }
-.lbox-list { list-style: none; margin: 0; padding: 0; }
-.lbox-row { display: flex; align-items: baseline; gap: 0.5rem; padding: 0.4rem 0; border-bottom: 1px solid var(--border); }
-.lbox-agent { font-weight: 600; font-size: 0.88rem; }
-.lbox-model { color: var(--text-muted); font-size: 0.78rem; }
-.lbox-right { margin-left: auto; font-size: 0.82rem; white-space: nowrap; }
-.lbox-arrow { text-align: center; color: var(--text-dim); font-size: 0.8rem; padding: 0.25rem 0; }
-.lbox-loop { border: 1px dashed var(--amber); border-radius: var(--radius); padding: 0.5rem 0.75rem; }
-.lbox-loophead { color: var(--amber); font-size: 0.8rem; margin-bottom: 0.25rem; }
-.lbox-loopfoot { color: var(--amber); font-size: 0.78rem; margin-top: 0.25rem; }
-.lbox-inner { border-bottom-color: var(--border); }
+.chip { display: inline-flex; align-items: baseline; gap: 0.5rem; width: fit-content; max-width: 100%; padding: 0.35rem 0.6rem; background: var(--surface-2); border: 1px solid var(--border); border-left: 3px solid var(--st, var(--text-dim)); border-radius: var(--radius); }
+.chip.loop { border-style: dashed; border-color: var(--st, var(--text-dim)); }
+.chip-dot { width: 0.55rem; height: 0.55rem; border-radius: 50%; background: var(--st, var(--text-dim)); flex-shrink: 0; align-self: center; }
+.st-done { --st: var(--blue); }
+.st-running { --st: var(--green); }
+.st-running.chip-dot, .st-running .chip-dot { animation: blink 1.4s infinite; }
+.st-pending { --st: var(--text-dim); }
+.st-pending .chip-agent { color: var(--text-muted); }
+.chip-agent { font-weight: 600; font-size: 0.85rem; white-space: nowrap; }
+.chip-model { color: var(--cyan); font-size: 0.76rem; white-space: nowrap; }
+.chip-stats { margin-left: auto; color: var(--text-muted); font-size: 0.78rem; white-space: nowrap; }
+@keyframes blink { 0%, 100% { opacity: 1; } 50% { opacity: 0.35; } }
+.c1 { list-style: none; margin: 0.75rem 0 0; padding: 0; }
+.c1-arrow { color: var(--text-dim); line-height: 1.3; padding-left: 0.4rem; }
+.c2 { display: flex; flex-wrap: wrap; align-items: center; gap: 0.35rem; margin-top: 0.75rem; }
+.c2-arrow { color: var(--text-dim); }
+.c3 { list-style: none; margin: 0.75rem 0 0; padding: 0; }
+.c3-item { display: flex; gap: 0.5rem; }
+.c3-loop { margin-left: 1.25rem; }
+.c3-rail { display: flex; flex-direction: column; align-items: center; width: 1rem; flex-shrink: 0; }
+.c3-rail .chip-dot { margin-top: 0.45rem; }
+.c3-arrow { color: var(--text-dim); font-size: 0.8rem; line-height: 1.6; }
+.c3-item .chip { margin-bottom: 0.15rem; }
 .proto-switcher { position: fixed; bottom: 1rem; left: 50%; transform: translateX(-50%); display: flex; align-items: center; gap: 0.5rem; background: #000; color: #fff; border: 2px solid #fff; border-radius: 999px; padding: 0.4rem 0.8rem; z-index: 50; box-shadow: 0 8px 24px rgba(0,0,0,0.5); }
 .proto-switcher button { background: transparent; color: #fff; border: 1px solid transparent; border-radius: 999px; padding: 0.2rem 0.5rem; cursor: pointer; font: inherit; }
 .proto-switcher button[aria-current="true"] { border-color: #fff; }
