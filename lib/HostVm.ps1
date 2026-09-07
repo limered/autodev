@@ -45,20 +45,34 @@ function Invoke-Multipass {
 function Invoke-MultipassOutput {
     param(
         [Parameter(Mandatory = $true)][string[]]$Arguments,
-        [scriptblock]$Executor
+        [scriptblock]$Executor,
+        [int]$TimeoutSeconds = 20
     )
     if ($Executor) {
         return (& $Executor $Arguments)
     }
-    $prev = $ErrorActionPreference
-    $ErrorActionPreference = "Continue"
-    $output = & multipass @Arguments 2>&1
-    $exitCode = $LASTEXITCODE
-    $ErrorActionPreference = $prev
-    if ($exitCode -ne 0) {
-        throw "multipass failed with exit code ${exitCode}: multipass $Arguments : $output"
+    # Bounded so a wedged VM can never hang the caller forever: the
+    # per-phase relay does 22 back-to-back cats after the job is done, and
+    # one stuck `multipass exec` there stalled teardown + PR polling.
+    $job = Start-Job -ScriptBlock {
+        param($Arguments)
+        $out = & multipass @Arguments 2>&1 | ForEach-Object { "$_" }
+        [PSCustomObject]@{ Code = $LASTEXITCODE; Out = ($out -join "`n") }
+    } -ArgumentList (,$Arguments)
+    if (-not (Wait-Job -Job $job -Timeout $TimeoutSeconds)) {
+        Stop-Job -Job $job -ErrorAction SilentlyContinue
+        Remove-Job -Job $job -Force -ErrorAction SilentlyContinue
+        throw "multipass timed out after ${TimeoutSeconds}s: multipass $Arguments"
     }
-    return ($output | ForEach-Object { "$_" }) -join "`n"
+    $r = Receive-Job -Job $job
+    Remove-Job -Job $job -Force -ErrorAction SilentlyContinue
+    if ($null -eq $r) {
+        throw "multipass failed with no result: multipass $Arguments"
+    }
+    if ($r.Code -ne 0) {
+        throw "multipass failed with exit code $($r.Code): multipass $Arguments : $($r.Out)"
+    }
+    return $r.Out
 }
 
 function Remove-Vm {

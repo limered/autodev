@@ -113,7 +113,7 @@ function Get-VmPhaseTokens {
     param([string]$VmName, [string]$Agent, [int]$Iteration, [scriptblock]$Executor)
     $path = "/tmp/phase-$Agent-$Iteration.jsonl"
     try {
-        $content = Invoke-MultipassOutput -Arguments @('exec', $VmName, '--', 'cat', $path) -Executor $Executor
+        $content = Invoke-MultipassOutput -Arguments @('exec', $VmName, '--', 'cat', $path) -Executor $Executor -TimeoutSeconds 15
     }
     catch {
         return $null
@@ -128,7 +128,7 @@ function Get-VmPhaseMeta {
     param([string]$VmName, [string]$Agent, [int]$Iteration, [scriptblock]$Executor)
     $path = "/tmp/phase-$Agent-$Iteration.meta.json"
     try {
-        $content = Invoke-MultipassOutput -Arguments @('exec', $VmName, '--', 'cat', $path) -Executor $Executor
+        $content = Invoke-MultipassOutput -Arguments @('exec', $VmName, '--', 'cat', $path) -Executor $Executor -TimeoutSeconds 15
     }
     catch {
         return $null
