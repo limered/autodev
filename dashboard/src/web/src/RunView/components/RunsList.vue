@@ -15,6 +15,7 @@
 import { ref } from "vue";
 import ActiveRunsList from "./ActiveRunsList.vue";
 import RunsHistoryList from "./RunsHistoryList.vue";
+import PrototypeDevLoopHost from "./PrototypeDevLoopHost.vue";
 
 const history = ref(null);
 
@@ -27,6 +28,7 @@ function onActiveSetChange() {
   <div class="runs-page">
     <ActiveRunsList @set-change="onActiveSetChange" />
     <RunsHistoryList ref="history" />
+    <PrototypeDevLoopHost />
   </div>
 </template>
 
