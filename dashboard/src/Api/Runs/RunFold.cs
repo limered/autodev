@@ -149,7 +149,7 @@ public static class RunFold
             ev.InputTokens ?? 0,
             ev.OutputTokens ?? 0,
             ev.Cost,
-            ev.Status ?? "done",
+            ev.Status == "failed" ? "failed" : "done",
             ev.Model!);
 
         // Last-write-wins on (agent, iteration): a re-emit replaces the earlier

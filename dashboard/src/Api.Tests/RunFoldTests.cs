@@ -575,6 +575,25 @@ public class RunFoldTests
         Assert.Null(next);
     }
 
+    [Theory]
+    [InlineData(null, "done")]
+    [InlineData("done", "done")]
+    [InlineData("failed", "failed")]
+    [InlineData("running", "done")]
+    [InlineData("weird", "done")]
+    public void PhaseFinished_UnknownStatus_CoercesToDone(string? status, string expected)
+    {
+        var current = State("running");
+
+        var next = RunFold.Apply(current, new PhaseFinishedEvent(
+            Agent: "feature-builder", Iteration: 0, DurationMs: 1000,
+            InputTokens: 10, OutputTokens: 5, Status: status,
+            Model: "m")
+        { At = T1, RunId = RunId });
+
+        Assert.Equal(expected, Assert.Single(next!.Steps!).Status);
+    }
+
     [Fact]
     public void PhaseFinished_OutOfOrder_IsNoOp()
     {
