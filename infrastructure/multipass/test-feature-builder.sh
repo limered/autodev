@@ -13,6 +13,9 @@
 # The calling PowerShell harness verifies the resulting branch/PR.
 set -euo pipefail
 
+rm -f /tmp/factory-done
+trap 'rc=$?; printf "%s" "$rc" > /tmp/factory-done 2>/dev/null || true' EXIT
+
 BRANCH="$1"
 ISSUE="$(printf '%s' "${ISSUE_B64:?ISSUE_B64 env var must be set by the host launcher}" | base64 -d)"
 REPO="$2"                       # owner/name, e.g. limered/autodev
@@ -96,7 +99,7 @@ stop_ticker() {
     TICKER_PID=""
   fi
 }
-trap stop_ticker EXIT
+trap 'rc=$?; printf "%s" "$rc" > /tmp/factory-done 2>/dev/null || true; stop_ticker' EXIT
 
 # Runs one agent phase headlessly and returns the opencode exit code.
 # stdin from /dev/null so opencode never blocks waiting on a TTY.

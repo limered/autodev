@@ -70,6 +70,19 @@ try {
             Send-FactoryEvent -RunId $RunId -Type "heartbeat" -Fields $fields
         }
 
+        # /tmp/factory-done is written by the VM on EXIT; when present the
+        # streaming client hung, so stop it and continue from the marker.
+        $doneExit = Get-VmDoneExit -Name $VmName -Executor $Executor
+        if ($doneExit -ne $null) {
+            Stop-Job -Job $Job -ErrorAction SilentlyContinue
+            Receive-Job -Job $Job -ErrorAction SilentlyContinue
+            Remove-Job -Job $Job -Force -ErrorAction SilentlyContinue
+            if ($doneExit -ne 0) {
+                throw "VM script exited with code ${doneExit} (streaming client stopped)"
+            }
+            return
+        }
+
         $verdict = Test-HeartbeatStall -VmNow $vmNow -HeartbeatEpoch $heartbeatEpoch -VmStartEpoch $vmStartEpoch -StallThresholdSeconds $StallThresholdSeconds
         $vmStartEpoch = $verdict.VmStartEpoch
         $staleSeconds = $verdict.StaleSeconds

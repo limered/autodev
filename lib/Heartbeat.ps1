@@ -43,6 +43,20 @@ function Get-VmCurrentPhase {
     }
 }
 
+function Get-VmDoneExit {
+    param([string]$Name, [scriptblock]$Executor)
+    try {
+        $output = Invoke-MultipassOutput -Arguments @('exec', $Name, '--', 'cat', '/tmp/factory-done') -Executor $Executor
+        $trimmed = "$output".Trim()
+        $code = 0
+        if ([int]::TryParse($trimmed, [ref]$code)) { return $code }
+        return $null
+    }
+    catch {
+        return $null
+    }
+}
+
 function Get-HeartbeatSample {
     param([string]$Name, [scriptblock]$Executor)
     $vmNow = Get-VmEpochSeconds -Name $Name -Executor $Executor

@@ -30,6 +30,25 @@ Describe 'Heartbeat poll helpers' {
     }
 }
 
+Describe 'Get-VmDoneExit' {
+    It 'returns the VM exit code when the done marker lands' {
+        $fake = { param($a) return '0' }
+        Get-VmDoneExit -Name 'v' -Executor $fake | Should -Be 0
+    }
+    It 'returns non-zero exit codes so failures still fail the run' {
+        $fake = { param($a) return '1' }
+        Get-VmDoneExit -Name 'v' -Executor $fake | Should -Be 1
+    }
+    It 'returns null when the marker is absent' {
+        $fake = { param($a) throw 'no such file' }
+        Get-VmDoneExit -Name 'v' -Executor $fake | Should -Be $null
+    }
+    It 'returns null for a non-numeric marker' {
+        $fake = { param($a) return 'oops' }
+        Get-VmDoneExit -Name 'v' -Executor $fake | Should -Be $null
+    }
+}
+
 Describe 'Test-HeartbeatStall' {
     It 'is not stalled when fresh' {
         $r = Test-HeartbeatStall -VmNow 1000 -HeartbeatEpoch 990 -VmStartEpoch $null -StallThresholdSeconds 300
