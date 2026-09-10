@@ -182,6 +182,7 @@ run_quality_loop() {
     case "$status" in
       clean|hitl-only) return 0 ;;                      # nothing left to auto-fix
       fixed)  run_agent_phase feature-builder "$FIX_SPEC" "$i" || fail "fix pass crashed" ;;
+      *) fail "static-analysis returned unknown status sentinel: $status" ;;
     esac
   done
   # ponytail: 3x is a backstop, not the real exit. Ticket 06 self-escalation
