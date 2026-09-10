@@ -16,6 +16,14 @@ Describe 'Heartbeat poll helpers' {
         $fake = { param($a) throw 'no such file' }
         Get-VmCurrentPhase -Name 'v' -Executor $fake | Should -Be $null
     }
+    It 'returns null when category file is missing' {
+        $fake = { param($a) throw 'no such file' }
+        Get-VmCurrentCategory -Name 'v' -Executor $fake | Should -Be $null
+    }
+    It 'reads the category marker via Executor' {
+        $fake = { param($a) return 'quality-loop' }
+        Get-VmCurrentCategory -Name 'v' -Executor $fake | Should -Be 'quality-loop'
+    }
     It 'samples epoch + phase together' {
         $fake = {
             param($a)
@@ -27,6 +35,29 @@ Describe 'Heartbeat poll helpers' {
         $s.VmNow | Should -Be 1000
         $s.HeartbeatEpoch | Should -Be 990
         $s.CurrentPhase | Should -Be 'feature-builder'
+    }
+    It 'samples the loop category alongside the worker phase' {
+        $fake = {
+            param($a)
+            if ($a -contains 'date') { return '1000' }
+            if ($a -contains 'stat') { return '990' }
+            if ($a -contains '/tmp/current-category') { return 'quality-loop' }
+            return 'static-analysis'
+        }
+        $s = Get-HeartbeatSample -Name 'v' -Executor $fake
+        $s.CurrentPhase | Should -Be 'static-analysis'
+        $s.CurrentCategory | Should -Be 'quality-loop'
+    }
+    It 'leaves phase and category null when no heartbeat marker exists' {
+        $fake = {
+            param($a)
+            if ($a -contains 'date') { return '1000' }
+            throw 'no such file'
+        }
+        $s = Get-HeartbeatSample -Name 'v' -Executor $fake
+        $s.HeartbeatEpoch | Should -Be $null
+        $s.CurrentPhase | Should -Be $null
+        $s.CurrentCategory | Should -Be $null
     }
 }
 

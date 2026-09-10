@@ -27,13 +27,16 @@ public static class RunsSchema
                 updated_at        timestamptz NOT NULL DEFAULT now(),
                 stages            jsonb,
                 current_phase     text,
-                steps             jsonb
+                steps             jsonb,
+                current_category  text
             );
             CREATE INDEX IF NOT EXISTS runs_status_started_idx ON runs (status, started_at DESC);
             -- Idempotent migration: add the stages JSON column to pre-existing runs tables.
             ALTER TABLE runs ADD COLUMN IF NOT EXISTS stages jsonb;
             -- Idempotent migration: add the current_phase column to pre-existing runs tables.
             ALTER TABLE runs ADD COLUMN IF NOT EXISTS current_phase text;
+            -- Idempotent migration: add the current_category column to pre-existing runs tables.
+            ALTER TABLE runs ADD COLUMN IF NOT EXISTS current_category text;
             -- Idempotent migration: add the steps JSON column to pre-existing runs tables.
             ALTER TABLE runs ADD COLUMN IF NOT EXISTS steps jsonb;
             """, conn);

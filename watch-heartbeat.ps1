@@ -60,13 +60,15 @@ try {
 
         # Report a heartbeat only when the marker mtime actually advanced since
         # last reported — an idle agent simply stops reporting. The current-phase
-        # marker is read alongside it and attached as currentPhase so the phase
-        # name advances through the event stream as the run progresses.
+        # and current-category markers are read alongside it and attached so the
+        # worker name and the category slot advance through the event stream as
+        # the run progresses.
         if ($RunId -and $heartbeatEpoch -ne $null -and $heartbeatEpoch -ne $lastReportedHeartbeat) {
             $lastReportedHeartbeat = $heartbeatEpoch
             $at = [DateTimeOffset]::FromUnixTimeSeconds($heartbeatEpoch).UtcDateTime.ToString("o")
             $fields = @{ at = $at }
             if ($sample.CurrentPhase) { $fields["currentPhase"] = $sample.CurrentPhase }
+            if ($sample.CurrentCategory) { $fields["currentCategory"] = $sample.CurrentCategory }
             Send-FactoryEvent -RunId $RunId -Type "heartbeat" -Fields $fields
         }
 

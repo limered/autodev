@@ -76,12 +76,15 @@ if (-not $Model) {
 # Seeded pipeline shape mirrors the six VM phases in
 # infrastructure/multipass/test-feature-builder.sh: the quality loop is one
 # generic row (its model rides from static-analysis) and test-runner appears
-# twice (phase 2 and the phase-4 re-run).
+# twice (phase 2 and the phase-4 re-run). Each row carries the category slot
+# the stage lights under beside the worker name: the VM reports liveness by
+# category, so the quality-loop row lights while the analysis and rebuild
+# workers run inside it instead of staying dark on the name mismatch.
 $phaseOrder = @('feature-builder', 'test-runner', 'quality-loop', 'test-runner', 'agentic-review', 'pr-author')
 $stages = @(foreach ($agent in $phaseOrder) {
     $lookup = $agent
     if ($lookup -eq 'quality-loop') { $lookup = 'static-analysis' }
-    [ordered]@{ agent = $agent; model = (Get-AgentModel -Agent $lookup -RepoRoot $RepoRoot) }
+    [ordered]@{ agent = $agent; model = (Get-AgentModel -Agent $lookup -RepoRoot $RepoRoot); category = $agent }
 })
 
 # The run id is either supplied by the dispatch client or defaulted above to a

@@ -101,12 +101,32 @@ stop_ticker() {
 }
 trap 'rc=$?; printf "%s" "$rc" > /tmp/factory-done 2>/dev/null || true; stop_ticker' EXIT
 
+# Maps a reporting worker to the seeded category slot it lights: the quality
+# loop's scan (static-analysis) and fix (feature-builder with a loop
+# iteration) workers both fill the quality-loop category; every other phase
+# fills the category named after itself.
+phase_category() {
+  local agent="$1"
+  local iteration="${2:-0}"
+  if [[ "$agent" == "static-analysis" ]]; then
+    printf 'quality-loop'
+  elif [[ "$agent" == "feature-builder" && "$iteration" != "0" ]]; then
+    printf 'quality-loop'
+  else
+    printf '%s' "$agent"
+  fi
+}
+
 # Runs one agent phase headlessly and returns the opencode exit code.
 # stdin from /dev/null so opencode never blocks waiting on a TTY.
 # /tmp/heartbeat is the liveness marker contract consumed by the host-side poller.
 # /tmp/current-phase is the phase marker: each phase writes its agent name here
 # as it begins, so the host heartbeat poller can relay the current phase up to
 # the backend without any new secrets crossing into the VM.
+# /tmp/current-category is the category marker: each phase writes the seeded
+# slot it fills here as it begins (quality-loop for the loop's scan and fix
+# workers), so the host relays liveness by category and the dashboard lights
+# the seeded slot even when the worker name differs from it.
 #
 # Per-step instrumentation (dev-loop detail): wall time is measured in-VM around
 # the opencode call and the `--format json` NDJSON is redirected to
@@ -136,7 +156,9 @@ run_agent_phase() {
   local meta="/tmp/phase-${agent}-${iteration}.meta.json"
   # Write the phase marker before touching the heartbeat so the host reads a
   # consistent (phase, heartbeat-mtime) pair when it observes the mtime advance.
+  # The category marker rides alongside it for the same read.
   printf '%s' "$agent" > /tmp/current-phase
+  phase_category "$agent" "$iteration" > /tmp/current-category
   touch /tmp/heartbeat
   # Truncate first so a retry never mixes two runs; a tail follows the file so
   # the NDJSON stays visible live on the console while landing verbatim on disk.

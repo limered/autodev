@@ -10,8 +10,8 @@ public class RunFoldTests
     private static readonly DateTimeOffset T1 = T0.AddMinutes(1);
     private static readonly DateTimeOffset T2 = T0.AddMinutes(2);
 
-    private static RunState State(string status = "launching", DateTimeOffset? updatedAt = null, DateTimeOffset? lastHeartbeatAt = null, string? currentPhase = null) =>
-        new(RunId, "repo", "branch", "spec", "model", null, status, T0, null, lastHeartbeatAt, null, null, false, null, updatedAt ?? T0, null, currentPhase);
+    private static RunState State(string status = "launching", DateTimeOffset? updatedAt = null, DateTimeOffset? lastHeartbeatAt = null, string? currentPhase = null, string? currentCategory = null) =>
+        new(RunId, "repo", "branch", "spec", "model", null, status, T0, null, lastHeartbeatAt, null, null, false, null, updatedAt ?? T0, null, currentPhase, null, currentCategory);
 
     [Fact]
     public void RunStarted_CreatesNewRun()
@@ -59,6 +59,25 @@ public class RunFoldTests
         Assert.Equal("opencode-go/kimi-k2.7-code", next.Stages[1].Model);
         Assert.Equal("pr-author", next.Stages[2].Agent);
         Assert.Equal("opencode-go/kimi-k2.7-code", next.Stages[2].Model);
+    }
+
+    [Fact]
+    public void RunStarted_CarriesStageCategories()
+    {
+        var stages = new[]
+        {
+            new RunStage("feature-builder", "opencode-go/glm-5.2", "feature-builder"),
+            new RunStage("quality-loop", "opencode-go/kimi-k2.7-code", "quality-loop"),
+        };
+
+        var next = RunFold.Apply(null, new RunStartedEvent(Repo: "r", Stages: stages) { At = T1, RunId = RunId });
+
+        Assert.NotNull(next);
+        Assert.NotNull(next.Stages);
+        Assert.Equal(2, next.Stages.Count);
+        Assert.Equal("quality-loop", next.Stages[1].Category);
+        Assert.Equal("quality-loop", next.Stages[1].Agent);
+        Assert.Null(next.CurrentCategory);
     }
 
     [Fact]
@@ -187,6 +206,44 @@ public class RunFoldTests
 
         Assert.NotNull(next);
         Assert.Equal("feature-builder", next.CurrentPhase);
+        Assert.Equal(T1, next.LastHeartbeatAt);
+    }
+
+    [Fact]
+    public void Heartbeat_CarriesCurrentCategory()
+    {
+        var current = State("running", updatedAt: T0, currentPhase: "static-analysis", currentCategory: null);
+
+        var next = RunFold.Apply(current, new HeartbeatEvent("static-analysis", "quality-loop") { At = T1, RunId = RunId });
+
+        Assert.NotNull(next);
+        Assert.Equal(T1, next.LastHeartbeatAt);
+        Assert.Equal("static-analysis", next.CurrentPhase);
+        Assert.Equal("quality-loop", next.CurrentCategory);
+        Assert.Equal(T0, next.UpdatedAt); // heartbeat never bumps UpdatedAt
+    }
+
+    [Fact]
+    public void Heartbeat_AdvancesCurrentCategory()
+    {
+        var current = State("running", updatedAt: T0, lastHeartbeatAt: T0, currentPhase: "feature-builder", currentCategory: "feature-builder");
+
+        var next = RunFold.Apply(current, new HeartbeatEvent("static-analysis", "quality-loop") { At = T1, RunId = RunId });
+
+        Assert.NotNull(next);
+        Assert.Equal("quality-loop", next.CurrentCategory);
+        Assert.Equal("static-analysis", next.CurrentPhase);
+    }
+
+    [Fact]
+    public void Heartbeat_WithoutCurrentCategory_KeepsExistingCategory()
+    {
+        var current = State("running", updatedAt: T0, lastHeartbeatAt: T0, currentPhase: "static-analysis", currentCategory: "quality-loop");
+
+        var next = RunFold.Apply(current, new HeartbeatEvent("static-analysis") { At = T1, RunId = RunId });
+
+        Assert.NotNull(next);
+        Assert.Equal("quality-loop", next.CurrentCategory);
         Assert.Equal(T1, next.LastHeartbeatAt);
     }
 

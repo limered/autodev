@@ -26,7 +26,7 @@ public sealed class RunStore : IRunStore
     private readonly IIssueResolver _resolver;
 
     private const string RunColumns =
-        "run_id, repo, branch, spec, model, vm_name, status, started_at, finished_at, last_heartbeat_at, pr_url, failure_reason, freeze_captured, freeze_local_path, updated_at, stages, current_phase, steps";
+        "run_id, repo, branch, spec, model, vm_name, status, started_at, finished_at, last_heartbeat_at, pr_url, failure_reason, freeze_captured, freeze_local_path, updated_at, stages, current_phase, steps, current_category";
 
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
 
@@ -35,9 +35,9 @@ public sealed class RunStore : IRunStore
 
     // Single description of the mutable shape: drives IsHeartbeatOnly, UpdateHeartbeat
     // and UpdateDiff, so adding a column touches one list. Heartbeat:true marks the
-    // cheap-path pair (last_heartbeat_at + current_phase, which rides it); everything
-    // else diffs on the ordered path. Identity/stages columns never change post-insert
-    // and stay out of both paths.
+    // cheap-path trio (last_heartbeat_at + current_phase + current_category, which
+    // ride it); everything else diffs on the ordered path. Identity/stages columns
+    // never change post-insert and stay out of both paths.
     private sealed record ColumnSync(string Column, string Param, Func<RunState, object?> Get, bool Heartbeat = false, NpgsqlDbType? DbType = null);
 
     private static readonly ColumnSync[] SyncColumns =
@@ -56,6 +56,7 @@ public sealed class RunStore : IRunStore
         new("steps", "steps", s => SerializeJson(s.Steps), DbType: NpgsqlDbType.Jsonb),
         new("last_heartbeat_at", "lastHeartbeatAt", s => s.LastHeartbeatAt, Heartbeat: true),
         new("current_phase", "currentPhase", s => s.CurrentPhase, Heartbeat: true),
+        new("current_category", "currentCategory", s => s.CurrentCategory, Heartbeat: true),
     ];
 
     // Active set derived from the fold's single source; statuses are codebase constants.
@@ -287,9 +288,10 @@ public sealed class RunStore : IRunStore
 
     private static async Task UpdateHeartbeat(RunState next, NpgsqlConnection conn, NpgsqlTransaction tx)
     {
-        // currentPhase rides the heartbeat: it advances only at phase transitions,
-        // so it is written on the same cheap path as last_heartbeat_at. The
-        // last_heartbeat_at guard rejects out-of-order heartbeats wholesale.
+        // currentPhase and currentCategory ride the heartbeat: they advance only
+        // at phase transitions, so both are written on the same cheap path as
+        // last_heartbeat_at. The last_heartbeat_at guard rejects out-of-order
+        // heartbeats wholesale.
         var hb = SyncColumns.Where(c => c.Heartbeat).ToArray();
         var beatAt = hb.Single(c => c.Column == "last_heartbeat_at");
         var sql = $"UPDATE runs SET {string.Join(", ", hb.Select(c => $"{c.Column} = @{c.Param}"))} " +
@@ -385,7 +387,8 @@ public sealed class RunStore : IRunStore
             r.GetFieldValue<DateTimeOffset>(r.GetOrdinal("updated_at")),
             GetJsonList<RunStage>(r, "stages"),
             GetStringOrNull(r, "current_phase"),
-            GetJsonList<RunStep>(r, "steps"));
+            GetJsonList<RunStep>(r, "steps"),
+            GetStringOrNull(r, "current_category"));
     }
 
     private static string? GetStringOrNull(NpgsqlDataReader r, string column)
