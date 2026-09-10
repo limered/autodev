@@ -16,6 +16,8 @@
 
   Pure converters (ConvertTo-PhaseTokens, ConvertTo-PhaseMeta,
   Get-PhaseStepCandidates) take strings and need no VM at all.
+  Get-PhaseTurnUsage is the single place that decides which opencode shape
+  won for tokens and for cost on one step_finish turn.
 #>
 
 . (Join-Path $PSScriptRoot "HostVm.ps1")
@@ -52,14 +54,72 @@ function Get-PhaseNumericField {
     return 0
 }
 
+# Decides which shape won for one step_finish turn. TokensShape is one of
+# usage, step.usage, event, unknown; CostShape is one of usage, event, none.
+# A turn counts as parsed when either side won, skipped when neither did.
+function Get-PhaseTurnUsage {
+    param($Turn)
+    $inputNames = @('inputTokens', 'input_tokens', 'input')
+    $outputNames = @('outputTokens', 'output_tokens', 'output')
+    $holder = $null
+    $tokensShape = 'unknown'
+    if ($null -ne $Turn.usage) {
+        $holder = $Turn.usage
+        $tokensShape = 'usage'
+    }
+    elseif ($null -ne $Turn.step -and $null -ne $Turn.step.usage) {
+        $holder = $Turn.step.usage
+        $tokensShape = 'step.usage'
+    }
+    else {
+        foreach ($name in ($inputNames + $outputNames)) {
+            if ($null -ne $Turn.PSObject.Properties[$name]) {
+                $holder = $Turn
+                $tokensShape = 'event'
+                break
+            }
+        }
+    }
+    $inputTokens = [long]0
+    $outputTokens = [long]0
+    if ($null -ne $holder) {
+        $inputTokens = Get-PhaseNumericField $holder $inputNames
+        $outputTokens = Get-PhaseNumericField $holder $outputNames
+    }
+    $cost = $null
+    $costShape = 'none'
+    if ($null -ne $holder -and -not [object]::ReferenceEquals($holder, $Turn)) {
+        $costProp = $holder.PSObject.Properties['cost']
+        if ($null -ne $costProp -and $null -ne $costProp.Value) {
+            try { $cost = [double]$costProp.Value; $costShape = 'usage' } catch { }
+        }
+    }
+    if ($costShape -eq 'none' -and $null -ne $Turn) {
+        $costProp = $Turn.PSObject.Properties['cost']
+        if ($null -ne $costProp -and $null -ne $costProp.Value) {
+            try { $cost = [double]$costProp.Value; $costShape = 'event' } catch { }
+        }
+    }
+    return [PSCustomObject]@{
+        InputTokens  = $inputTokens
+        OutputTokens = $outputTokens
+        Cost         = $cost
+        TokensShape  = $tokensShape
+        CostShape    = $costShape
+    }
+}
+
 # Sums per-phase token usage from opencode `--format json` NDJSON: one
 # `step_finish` object per turn, usage carried on the event (or a nested
 # step object, or the event itself for older shapes). Anything that is not
 # a step_finish JSON object — human stderr lines, progress lines, truncated
 # tails — is skipped, so a noisy file still yields its usage.
+# TurnCount is the step_finish turns seen; ParsedTurnCount won a shape,
+# SkippedTurnCount won neither, so callers tell parsed zeros apart from
+# drift to an unrecognized shape.
 function ConvertTo-PhaseTokens {
     param([string]$Content)
-    $result = [PSCustomObject]@{ InputTokens = [long]0; OutputTokens = [long]0; Cost = $null }
+    $result = [PSCustomObject]@{ InputTokens = [long]0; OutputTokens = [long]0; Cost = $null; TurnCount = 0; ParsedTurnCount = 0; SkippedTurnCount = 0 }
     if ([string]::IsNullOrWhiteSpace($Content)) { return $result }
     $hasCost = $false
     $cost = 0.0
@@ -69,23 +129,19 @@ function ConvertTo-PhaseTokens {
         $obj = $null
         try { $obj = $trimmed | ConvertFrom-Json -ErrorAction Stop } catch { continue }
         if ($null -eq $obj -or $obj.type -ne 'step_finish') { continue }
-        $usage = $obj.usage
-        if ($null -eq $usage -and $null -ne $obj.step) { $usage = $obj.step.usage }
-        if ($null -eq $usage) { $usage = $obj }
-        $result.InputTokens += Get-PhaseNumericField $usage @('inputTokens', 'input_tokens', 'input')
-        $result.OutputTokens += Get-PhaseNumericField $usage @('outputTokens', 'output_tokens', 'output')
-        # Usage-level cost wins; event-level is the fallback (never both: when
-        # the usage fallback above resolved to the event itself they are the
-        # same object, so a two-holder sum would double-count).
-        $costProp = $null
-        if (-not [object]::ReferenceEquals($usage, $obj)) {
-            $costProp = $usage.PSObject.Properties['cost']
+        $result.TurnCount++
+        $turn = Get-PhaseTurnUsage $obj
+        $result.InputTokens += $turn.InputTokens
+        $result.OutputTokens += $turn.OutputTokens
+        if ($turn.TokensShape -ne 'unknown' -or $turn.CostShape -ne 'none') {
+            $result.ParsedTurnCount++
         }
-        if (($null -eq $costProp -or $null -eq $costProp.Value) -and $null -ne $obj) {
-            $costProp = $obj.PSObject.Properties['cost']
+        else {
+            $result.SkippedTurnCount++
         }
-        if ($null -ne $costProp -and $null -ne $costProp.Value) {
-            try { $cost += [double]$costProp.Value; $hasCost = $true } catch { }
+        if ($turn.CostShape -ne 'none') {
+            $cost += $turn.Cost
+            $hasCost = $true
         }
     }
     if ($hasCost) { $result.Cost = $cost }

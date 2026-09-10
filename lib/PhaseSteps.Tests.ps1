@@ -36,6 +36,31 @@ Describe 'ConvertTo-PhaseTokens' {
         $other = ConvertTo-PhaseTokens -Content '{"type":"step_finish"}'
         $other.InputTokens | Should -Be 0
     }
+    It 'sums nested step.usage and event-level token shapes' {
+        $content = @'
+{"type":"step_finish","step":{"usage":{"inputTokens":6,"outputTokens":2}}}
+{"type":"step_finish","inputTokens":3,"outputTokens":1}
+'@
+        $tokens = ConvertTo-PhaseTokens -Content $content
+        $tokens.InputTokens | Should -Be 9
+        $tokens.OutputTokens | Should -Be 3
+        $tokens.ParsedTurnCount | Should -Be 2
+        $tokens.SkippedTurnCount | Should -Be 0
+    }
+    It 'marks an unrecognized shape as skipped instead of silent zeros' {
+        $tokens = ConvertTo-PhaseTokens -Content '{"type":"step_finish","metrics":{"in":5,"out":2}}'
+        $tokens.InputTokens | Should -Be 0
+        $tokens.OutputTokens | Should -Be 0
+        $tokens.TurnCount | Should -Be 1
+        $tokens.ParsedTurnCount | Should -Be 0
+        $tokens.SkippedTurnCount | Should -Be 1
+    }
+    It 'keeps parsed zeros distinct from skipped shapes' {
+        $tokens = ConvertTo-PhaseTokens -Content '{"type":"step_finish","usage":{"inputTokens":0,"outputTokens":0}}'
+        $tokens.InputTokens | Should -Be 0
+        $tokens.ParsedTurnCount | Should -Be 1
+        $tokens.SkippedTurnCount | Should -Be 0
+    }
 }
 
 Describe 'ConvertTo-PhaseMeta' {
@@ -151,5 +176,28 @@ Describe 'Send-PhaseFinishedSteps relay' {
         $fakeRelay = { param($fields) $script:relayed += $fields }
         { Send-PhaseFinishedSteps -RunId 'r1' -VmName 'v1' -ModelLookup { param($a) return 'm' } -Executor $fakeCat -Relay $fakeRelay } | Should -Not -Throw
         $script:relayed.Count | Should -Be 0
+    }
+    It 'skips phases whose shape is unrecognized so drift shows as a gap' {
+        $files = @{
+            '/tmp/phase-feature-builder-0.meta.json' = '{"agent":"feature-builder","iteration":0,"durationMs":61000,"status":"done"}'
+            '/tmp/phase-feature-builder-0.jsonl'     = '{"type":"step_finish","metrics":{"in":5,"out":2}}'
+        }
+        $fakeCat = { param($a) $path = $a[-1]; if ($files.ContainsKey($path)) { return $files[$path] }; throw "missing $path" }
+        $script:relayed = @()
+        $fakeRelay = { param($fields) $script:relayed += $fields }
+        Send-PhaseFinishedSteps -RunId 'r1' -VmName 'v1' -ModelLookup { param($a) return 'm' } -Executor $fakeCat -Relay $fakeRelay
+        $script:relayed.Count | Should -Be 0
+    }
+    It 'still relays parsed zeros' {
+        $files = @{
+            '/tmp/phase-feature-builder-0.meta.json' = '{"agent":"feature-builder","iteration":0,"durationMs":61000,"status":"done"}'
+            '/tmp/phase-feature-builder-0.jsonl'     = '{"type":"step_finish","usage":{"inputTokens":0,"outputTokens":0}}'
+        }
+        $fakeCat = { param($a) $path = $a[-1]; if ($files.ContainsKey($path)) { return $files[$path] }; throw "missing $path" }
+        $script:relayed = @()
+        $fakeRelay = { param($fields) $script:relayed += $fields }
+        Send-PhaseFinishedSteps -RunId 'r1' -VmName 'v1' -ModelLookup { param($a) return 'm' } -Executor $fakeCat -Relay $fakeRelay
+        $script:relayed.Count | Should -Be 1
+        $script:relayed[0]['inputTokens'] | Should -Be 0
     }
 }

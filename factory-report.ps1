@@ -109,8 +109,9 @@ function Send-PhaseFinishedSteps {
             if ($null -eq $meta) { continue } # phase never ran (or VM gone): skip
             $tokens = Get-VmPhaseTokens -VmName $VmName -Agent $candidate.Agent -Iteration $candidate.Iteration -Executor $Executor
             if ($null -eq $tokens) {
-                $tokens = [PSCustomObject]@{ InputTokens = [long]0; OutputTokens = [long]0; Cost = $null }
+                $tokens = [PSCustomObject]@{ InputTokens = [long]0; OutputTokens = [long]0; Cost = $null; TurnCount = 0; ParsedTurnCount = 0; SkippedTurnCount = 0 }
             }
+            elseif ($tokens.TurnCount -gt 0 -and $tokens.ParsedTurnCount -eq 0) { continue }
             $model = $null
             if ($ModelLookup) {
                 try { $model = & $ModelLookup $candidate.Agent } catch { $model = $null }
