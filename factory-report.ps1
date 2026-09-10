@@ -89,7 +89,10 @@ function Send-FactoryEvent {
   phases that never ran are skipped. The model is attached here on the host
   via -ModelLookup (existing Get-AgentModel over the agent frontmatter) and
   a model-less step is never sent — the backend drops it as a no-op. The
-  event clock is the host clock (Send-FactoryEvent's default `at`).
+  event clock is the host clock (Send-FactoryEvent's default `at`). The seeded
+  category rides the same way via -CategoryLookup (built from the repo-root
+  agents.json at launch), so detail groups under its header without ever
+  feeding the liveness derivation.
 
   Best-effort throughout: a missing file, an unknown model, or a reporting
   outage skips that step, never the job. Pass -Executor to drive scripted VM
@@ -101,7 +104,8 @@ function Send-PhaseFinishedSteps {
         [Parameter(Mandatory = $true)][string]$VmName,
         [scriptblock]$ModelLookup,
         [scriptblock]$Executor,
-        [scriptblock]$Relay
+        [scriptblock]$Relay,
+        [scriptblock]$CategoryLookup
     )
     foreach ($candidate in (Get-PhaseStepCandidates)) {
         try {
@@ -124,6 +128,15 @@ function Send-PhaseFinishedSteps {
                 outputTokens = $tokens.OutputTokens
                 status       = $meta.Status
                 model        = $model
+            }
+            # The seeded slot the worker filled, so post-run detail groups under
+            # its category header. A lookup miss (or no lookup) sends the step
+            # without a category: grouping falls back to the worker name and the
+            # lights — derived from the heartbeat category only — never notice.
+            if ($CategoryLookup) {
+                $category = $null
+                try { $category = & $CategoryLookup $candidate.Agent $candidate.Iteration } catch { $category = $null }
+                if (-not [string]::IsNullOrWhiteSpace("$category")) { $fields['category'] = "$category" }
             }
             if ($null -ne $tokens.Cost) { $fields['cost'] = $tokens.Cost }
             if ($Relay) {

@@ -176,4 +176,38 @@ Describe 'Send-PhaseFinishedSteps relay' {
         { Send-PhaseFinishedSteps -RunId 'r1' -VmName 'v1' -ModelLookup { param($a) return 'm' } -Executor $fakeCat -Relay $fakeRelay } | Should -Not -Throw
         $script:relayed.Count | Should -Be 0
     }
+    It 'attaches the seeded category from the lookup' {
+        $files = @{
+            '/tmp/phase-feature-builder-0.meta.json' = '{"agent":"feature-builder","iteration":0,"durationMs":61000,"status":"done"}'
+            '/tmp/phase-feature-builder-0.jsonl'     = '{"type":"step_finish","usage":{"inputTokens":100,"outputTokens":50}}'
+            '/tmp/phase-test-runner-1.meta.json'     = '{"agent":"test-runner","iteration":1,"durationMs":2000,"status":"done"}'
+            '/tmp/phase-test-runner-1.jsonl'         = '{"type":"step_finish","usage":{"inputTokens":9,"outputTokens":1}}'
+        }
+        $fakeCat = { param($a) $path = $a[-1]; if ($files.ContainsKey($path)) { return $files[$path] }; throw "missing $path" }
+        $lookup = { param($agent, $iteration) if ($agent -eq 'test-runner') { return 'test-rerun' }; return 'implementation' }
+        $script:relayed = @()
+        $fakeRelay = { param($fields) $script:relayed += $fields }
+        Send-PhaseFinishedSteps -RunId 'r1' -VmName 'v1' -ModelLookup { param($a) return 'm' } -Executor $fakeCat -Relay $fakeRelay -CategoryLookup $lookup
+        $script:relayed.Count | Should -Be 2
+        $script:relayed[0]['category'] | Should -Be 'implementation'
+        $script:relayed[1]['category'] | Should -Be 'test-rerun'
+    }
+    It 'omits the category when there is no lookup or it misses' {
+        $files = @{
+            '/tmp/phase-feature-builder-0.meta.json' = '{"agent":"feature-builder","iteration":0,"durationMs":61000,"status":"done"}'
+            '/tmp/phase-feature-builder-0.jsonl'     = '{"type":"step_finish","usage":{"inputTokens":100,"outputTokens":50}}'
+        }
+        $fakeCat = { param($a) $path = $a[-1]; if ($files.ContainsKey($path)) { return $files[$path] }; throw "missing $path" }
+        $script:relayed = @()
+        $fakeRelay = { param($fields) $script:relayed += $fields }
+        Send-PhaseFinishedSteps -RunId 'r1' -VmName 'v1' -ModelLookup { param($a) return 'm' } -Executor $fakeCat -Relay $fakeRelay
+        $script:relayed[0].ContainsKey('category') | Should -Be $false
+        $script:relayed = @()
+        Send-PhaseFinishedSteps -RunId 'r1' -VmName 'v1' -ModelLookup { param($a) return 'm' } -Executor $fakeCat -Relay $fakeRelay -CategoryLookup { param($a, $i) return $null }
+        $script:relayed[0].ContainsKey('category') | Should -Be $false
+        $script:relayed = @()
+        Send-PhaseFinishedSteps -RunId 'r1' -VmName 'v1' -ModelLookup { param($a) return 'm' } -Executor $fakeCat -Relay $fakeRelay -CategoryLookup { param($a, $i) throw 'lookup broke' }
+        $script:relayed.Count | Should -Be 1
+        $script:relayed[0].ContainsKey('category') | Should -Be $false
+    }
 }
