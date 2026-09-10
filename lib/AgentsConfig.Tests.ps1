@@ -94,6 +94,18 @@ Describe 'ConvertTo-SeededStages' {
         $config = ConvertFrom-AgentsConfigJson -Json $script:V1Json
         { ConvertTo-SeededStages -Config $config -ModelLookup { param($a) return $null } } | Should -Throw
     }
+    It 'surfaces the lookup failure inside the throw' {
+        $config = ConvertFrom-AgentsConfigJson -Json $script:V1Json
+        $failing = { param($a) throw "Agent definition not found: /x/$a.md" }
+        try {
+            ConvertTo-SeededStages -Config $config -ModelLookup $failing
+            throw "expected ConvertTo-SeededStages to throw"
+        }
+        catch {
+            "$_" | Should -Match "feature-builder"
+            "$_" | Should -Match "Agent definition not found"
+        }
+    }
 }
 
 Describe 'Read-AgentsConfig' {
