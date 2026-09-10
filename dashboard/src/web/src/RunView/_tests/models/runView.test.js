@@ -225,7 +225,9 @@ describe("runView", () => {
     it("carries the seeded category beside the worker name", () => {
       const run = {
         ...baseRun,
-        stages: [{ agent: "quality-loop", category: "quality-loop", model: "m2", status: "running" }],
+        stages: [
+          { agent: "quality-loop", category: "quality-loop", model: "m2", status: "running" },
+        ],
       };
 
       const view = runView(run, nowMs);
@@ -239,7 +241,10 @@ describe("runView", () => {
     });
 
     it("falls back to the worker name when the stage carries no category", () => {
-      const run = { ...baseRun, stages: [{ agent: "quality-loop", model: "m2", status: "running" }] };
+      const run = {
+        ...baseRun,
+        stages: [{ agent: "quality-loop", model: "m2", status: "running" }],
+      };
 
       const view = runView(run, nowMs);
 
@@ -437,7 +442,9 @@ describe("runView", () => {
     it("carries the category into the seeded fallback rows", () => {
       const run = {
         ...baseRun,
-        stages: [{ agent: "quality-loop", category: "quality-loop", model: "m2", status: "running" }],
+        stages: [
+          { agent: "quality-loop", category: "quality-loop", model: "m2", status: "running" },
+        ],
         steps: [],
       };
 
