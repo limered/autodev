@@ -58,7 +58,8 @@ public class RunResponseTests
 
     [Fact]
     public void From_ProjectsFlatStepsList()
-    {        var steps = new[]
+    {
+        var steps = new[]
         {
             new RunStep("feature-builder", 0, 61000, 100, 50, 0.0123m, "done", "m1"),
             new RunStep("static-analysis", 1, 2000, 10, 5, null, "done", "m2"),
