@@ -314,6 +314,24 @@ public class IngestTests
     }
 
     [Fact]
+    public async Task FromWire_PhaseFinished_WithCategory_IngestsCategory()
+    {
+        var store = new FakeRunStore();
+        await store.Apply(RunId, new RunStartedEvent("r") { At = T0 });
+
+        var ev = FromWire(
+            """{"type":"phase-finished","at":"2024-02-01T00:01:00Z","agent":"static-analysis","iteration":1,"durationMs":2000,"inputTokens":10,"outputTokens":5,"status":"done","model":"m","category":"quality-loop"}""");
+
+        var finished = Assert.IsType<PhaseFinishedEvent>(ev);
+        Assert.Equal("quality-loop", finished.Category);
+
+        var state = await store.Apply(RunId, finished);
+        Assert.NotNull(state);
+        Assert.Equal("launching", state.Status); // steps never touch run Status
+        Assert.Equal("quality-loop", Assert.Single(state.Steps!).Category);
+    }
+
+    [Fact]
     public async Task FromWire_PhaseFinished_WithoutModel_IsDropped()
     {
         var store = new FakeRunStore();
@@ -380,6 +398,7 @@ public class IngestTests
             (new FreezeCapturedEvent("/freeze") { At = T1 }, "freeze-captured"),
             (new PrVerifiedEvent("https://pr") { At = T1 }, "pr-verified"),
             (new PhaseFinishedEvent("feature-builder", 0, 61000, 100, 50, 0.0123m, "done", "m1") { At = T1 }, "phase-finished"),
+            (new PhaseFinishedEvent("static-analysis", 1, 2000, 10, 5, null, "done", "m2", "quality-loop") { At = T1 }, "phase-finished"),
             (new RunFinishedEvent { At = T1 }, "run-finished"),
             (new RunFailedEvent("oops") { At = T1 }, "run-failed"),
         ];

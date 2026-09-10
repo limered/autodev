@@ -116,6 +116,47 @@ public class RunResponseTests
     }
 
     [Fact]
+    public void From_ProjectsStepCategoriesForGroupedDetail()
+    {
+        var steps = new[]
+        {
+            new RunStep("feature-builder", 0, 61000, 100, 50, null, "done", "m1", "implementation"),
+            new RunStep("static-analysis", 1, 2000, 10, 5, null, "done", "m2", "quality-loop"),
+            new RunStep("feature-builder", 1, 3000, 30, 15, null, "done", "m1", "quality-loop"),
+        };
+        var stages = new[]
+        {
+            new RunStage("implementation", "m1", "implementation"),
+            new RunStage("quality-loop", "m2", "quality-loop"),
+        };
+        var state = State(status: "done", currentPhase: "pr-author", stages: stages, steps: steps, currentCategory: "pr-author");
+
+        var response = RunResponse.From(state);
+
+        Assert.Equal(3, response.Steps.Count);
+        Assert.Equal("implementation", response.Steps[0].Category);
+        Assert.Equal("quality-loop", response.Steps[1].Category);
+        Assert.Equal("quality-loop", response.Steps[2].Category);
+        // Detail granularity is unchanged and the lights still collapse to done.
+        Assert.Equal(new RunStepView("feature-builder", 0, "m1", "done", 100, 50, 61000, null, "implementation"), response.Steps[0]);
+        Assert.All(response.Stages, s => Assert.Equal("done", s.Status));
+    }
+
+    [Fact]
+    public void From_LegacyStepsWithoutCategory_ProjectNull()
+    {
+        var steps = new[]
+        {
+            new RunStep("feature-builder", 0, 61000, 100, 50, null, "done", "m1"),
+        };
+        var state = State(status: "done", currentPhase: "feature-builder", stages: Pipeline, steps: steps);
+
+        var response = RunResponse.From(state);
+
+        Assert.Null(Assert.Single(response.Steps).Category);
+    }
+
+    [Fact]
     public void From_LegacyRunWithoutCategories_FallsBackToWorkerName()
     {
         var state = State(status: "running", currentPhase: "test-runner", stages: Pipeline);

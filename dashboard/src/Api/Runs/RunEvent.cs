@@ -80,7 +80,8 @@ public sealed record PhaseFinishedEvent(
     long? OutputTokens = null,
     decimal? Cost = null,
     string? Status = null,
-    string? Model = null) : RunEvent;
+    string? Model = null,
+    string? Category = null) : RunEvent;
 
 [RunEventDiscriminator("run-finished")]
 public sealed record RunFinishedEvent : RunEvent;

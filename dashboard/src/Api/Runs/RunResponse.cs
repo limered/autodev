@@ -47,7 +47,7 @@ public record RunResponse(
         r.CurrentPhase,
         r.Steps?.Select(s => new RunStepView(
             s.Agent, s.Iteration, s.Model, s.Status,
-            s.InputTokens, s.OutputTokens, s.DurationMs, s.Cost)).ToArray()
+            s.InputTokens, s.OutputTokens, s.DurationMs, s.Cost, s.Category)).ToArray()
             ?? Array.Empty<RunStepView>(),
         r.CurrentCategory);
 }

@@ -491,6 +491,48 @@ public class RunFoldTests
     }
 
     [Fact]
+    public void PhaseFinished_StoresCategoryForPostRunGrouping()
+    {
+        var current = State("running");
+
+        var next = RunFold.Apply(current, new PhaseFinishedEvent(
+            Agent: "static-analysis",
+            Iteration: 1,
+            DurationMs: 2000,
+            InputTokens: 10,
+            OutputTokens: 5,
+            Status: "done",
+            Model: "m",
+            Category: "quality-loop")
+        { At = T1, RunId = RunId });
+
+        Assert.NotNull(next);
+        Assert.Equal("running", next.Status); // detail never feeds liveness
+        Assert.Equal("quality-loop", Assert.Single(next.Steps!).Category);
+    }
+
+    [Fact]
+    public void PhaseFinished_WithoutCategory_StoresNull()
+    {
+        // Steps relayed before categories carry none; grouping falls back to
+        // the worker name and the lights never notice.
+        var current = State("running");
+
+        var next = RunFold.Apply(current, new PhaseFinishedEvent(
+            Agent: "feature-builder",
+            Iteration: 0,
+            DurationMs: 61000,
+            InputTokens: 100,
+            OutputTokens: 50,
+            Status: "done",
+            Model: "m")
+        { At = T1, RunId = RunId });
+
+        Assert.NotNull(next);
+        Assert.Null(Assert.Single(next.Steps!).Category);
+    }
+
+    [Fact]
     public void PhaseFinished_ReEmit_ReplacesInPlace_LastWriteWins()
     {
         var current = State("running");
