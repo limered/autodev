@@ -28,6 +28,35 @@ OPENCODE_DIR="/tmp/.opencode"
 # deepseek-v4-flash needs region opt-in; grok-4.5 works over the API today.
 MODEL="${MODEL:-opencode-go/grok-4.5}"
 
+# Category set (run categories): the host transfers the repo-root agents.json
+# to /tmp/agents.json before this script runs. The VM builds its category list
+# on startup from that file and reports liveness by category (phase_category
+# below) over the existing heartbeat channel. When the file is absent or
+# unreadable (an old launcher), the list stays empty and phase_category falls
+# back to the hardcoded mapping, so liveness keeps working.
+AGENTS_JSON="/tmp/agents.json"
+CATEGORY_SPECS=()  # entries "id|type|member1,member2" in stages-map order
+
+load_category_specs() {
+  CATEGORY_SPECS=()
+  [[ -f "$AGENTS_JSON" ]] || return 0
+  command -v jq >/dev/null 2>&1 || return 0
+  local ids
+  ids=$(jq -r '.stages | keys_unsorted[]' "$AGENTS_JSON" 2>/dev/null) || return 0
+  [[ -n "$ids" ]] || return 0
+  local id type members
+  while IFS= read -r id; do
+    [[ -n "$id" ]] || continue
+    type=$(jq -r --arg id "$id" '.stages[$id].type // empty' "$AGENTS_JSON" 2>/dev/null) || continue
+    members=$(jq -r --arg id "$id" '(.stages[$id].agents // []) | join(",")' "$AGENTS_JSON" 2>/dev/null) || continue
+    [[ -n "$type" && -n "$members" ]] || continue
+    [[ "$type" == "parallel" ]] && type="sequential"
+    CATEGORY_SPECS+=("$id|$type|$members")
+  done <<< "$ids"
+}
+
+load_category_specs
+
 fail() {
   echo "FAIL: $1" >&2
   exit 1
@@ -101,13 +130,19 @@ stop_ticker() {
 }
 trap 'rc=$?; printf "%s" "$rc" > /tmp/factory-done 2>/dev/null || true; stop_ticker' EXIT
 
-# Maps a reporting worker to the seeded category slot it lights: the quality
-# loop's scan (static-analysis) and fix (feature-builder with a loop
-# iteration) workers both fill the quality-loop category; every other phase
-# fills the category named after itself.
+# Maps a reporting worker to the seeded category slot it lights. The slot comes
+# from the startup category list (load_category_specs): a loop member on a loop
+# pass fills the loop slot, every other pass fills sequential slots in map order
+# with the pass index selecting among repeated workers (test-runner/0 lands in
+# implementation, test-runner/1 in test-rerun). With no category list (old
+# launcher, unreadable config) the hardcoded v1 mapping below applies, so
+# liveness keeps working.
 phase_category() {
   local agent="$1"
   local iteration="${2:-0}"
+  if [[ "${#CATEGORY_SPECS[@]}" -gt 0 ]]; then
+    config_phase_category "$agent" "$iteration" && return 0
+  fi
   if [[ "$agent" == "static-analysis" ]]; then
     printf 'quality-loop'
   elif [[ "$agent" == "feature-builder" && "$iteration" != "0" ]]; then
@@ -115,6 +150,44 @@ phase_category() {
   else
     printf '%s' "$agent"
   fi
+}
+
+# Config-driven slot lookup for phase_category. Prints the slot and returns 0
+# on a hit; returns 1 on a miss so the caller falls back to the legacy mapping.
+config_phase_category() {
+  local agent="$1"
+  local iteration="$2"
+  local entry id type members
+  if [[ "$iteration" != "0" ]]; then
+    for entry in "${CATEGORY_SPECS[@]}"; do
+      IFS='|' read -r id type members <<< "$entry"
+      if [[ "$type" == "loop" && ",$members," == *",$agent,"* ]]; then
+        printf '%s' "$id"
+        return 0
+      fi
+    done
+  fi
+  local seq=()
+  for entry in "${CATEGORY_SPECS[@]}"; do
+    IFS='|' read -r id type members <<< "$entry"
+    if [[ "$type" != "loop" && ",$members," == *",$agent,"* ]]; then
+      seq+=("$id")
+    fi
+  done
+  if [[ "${#seq[@]}" -gt 0 && "$iteration" -ge 0 && "$iteration" -lt "${#seq[@]}" ]]; then
+    printf '%s' "${seq[$iteration]}"
+    return 0
+  fi
+  if [[ "${#seq[@]}" -eq 0 ]]; then
+    for entry in "${CATEGORY_SPECS[@]}"; do
+      IFS='|' read -r id type members <<< "$entry"
+      if [[ ",$members," == *",$agent,"* ]]; then
+        printf '%s' "$id"
+        return 0
+      fi
+    done
+  fi
+  return 1
 }
 
 # Runs one agent phase headlessly and returns the opencode exit code.
