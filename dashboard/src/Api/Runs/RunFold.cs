@@ -152,7 +152,8 @@ public static class RunFold
             ev.OutputTokens ?? 0,
             ev.Cost,
             ev.Status == "failed" ? "failed" : "done",
-            ev.Model!);
+            ev.Model!,
+            ev.Category);
 
         // Last-write-wins on (agent, iteration): a re-emit replaces the earlier
         // step in place, so arrival order (phase order, then loop iterations)
