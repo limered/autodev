@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# End-to-end feature-builder test for the AI Software Factory job VM.
+# End-to-end feature-builder test for the slop-factory job VM.
 # Sets up the GitHub PAT, opencode API key, clones the project
 # repo, injects the .opencode agent configuration, then runs the opencode
 # phases headlessly in the same clone: implement (feature-builder agent:
@@ -84,8 +84,8 @@ export OPENCODE_API_KEY
 pass "OPENCODE_API_KEY configured"
 
 # 5. Git needs an identity to commit.
-git config --global user.email "bot@ai-software-factory.local"
-git config --global user.name "AI Software Factory Bot"
+git config --global user.email "bot@slop-factory.local"
+git config --global user.name "slop-factory Bot"
 pass "Git identity configured"
 
 # 6. Shallow clone over HTTPS using the bot PAT. The token is embedded in the

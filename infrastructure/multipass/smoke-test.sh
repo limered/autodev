@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Smoke test for the AI Software Factory job VM.
+# Smoke test for the slop-factory job VM.
 # Verifies that every required tool is on PATH and runnable.
 set -euo pipefail
 

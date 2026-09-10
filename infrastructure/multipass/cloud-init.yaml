@@ -1,5 +1,5 @@
 #cloud-config
-# Disposable AI Software Factory job VM.
+# Disposable slop-factory job VM.
 # Provisions an Ubuntu LTS instance with the tools needed for an opencode
 # agent to check out a repo, implement a feature, and open a pull request.
 #
@@ -62,4 +62,4 @@ runcmd:
   # Clean up downloaded archives.
   - rm -f /tmp/packages-microsoft-prod.deb /tmp/godot.zip
 
-final_message: "AI Software Factory VM provisioning complete. Run smoke-test.sh to verify tools."
+final_message: "slop-factory VM provisioning complete. Run smoke-test.sh to verify tools."

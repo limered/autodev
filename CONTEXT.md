@@ -1,6 +1,6 @@
 # CONTEXT
 
-Product: AI Software Factory — Jobs run opencode inside a Disposable VM to produce a branch/PR.
+Product: slop-factory — Jobs run opencode inside a Disposable VM to produce a branch/PR.
 
 ## Domain terms (from docs/glossary.md)
 

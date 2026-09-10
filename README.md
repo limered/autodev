@@ -1,6 +1,6 @@
-# autodev
+# slop-factory
 
-An AI Software Factory: it runs [opencode](https://opencode.ai) agents inside
+A slop factory: it runs [opencode](https://opencode.ai) agents inside
 disposable Linux VMs to implement features from a spec and open a pull request,
 then destroys the VM. Git and GitHub are the source of truth — there's no
 persistent orchestrator state in the MVP.

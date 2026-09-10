@@ -2,7 +2,7 @@
 #Requires -Version 5.1
 <#
 .SYNOPSIS
-  Verifies bot Git authentication inside a fresh AI Software Factory multipass VM.
+  Verifies bot Git authentication inside a fresh slop-factory multipass VM.
 
 .DESCRIPTION
   Launches a disposable Ubuntu 24.04 VM using the existing multipass blueprint,

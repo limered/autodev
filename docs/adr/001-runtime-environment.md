@@ -1,4 +1,4 @@
-# ADR 001: AI Software Factory — Runtime Environment
+# ADR 001: slop-factory — Runtime Environment
 
 ## Status
 Proposed

@@ -19,7 +19,7 @@
   shared token are read from the existing .secrets location, never from config.
 
 .PARAMETER RepoRoot
-  Path to the autodev repo root (source of start-job.ps1 and .secrets).
+  Path to the slop-factory repo root (source of start-job.ps1 and .secrets).
   Defaults to this script's directory.
 
 .PARAMETER ConfigPath
@@ -59,7 +59,7 @@ function Get-GitHubIssues {
     $headers = @{
         Authorization = "Bearer $Token"
         Accept = "application/vnd.github.v3+json"
-        "User-Agent" = "autodev-dispatch-client"
+        "User-Agent" = "slop-factory-dispatch-client"
     }
     $response = Invoke-RestMethod -Uri $uri -Headers $headers -TimeoutSec 30
     # Exclude pull requests; the GitHub issues endpoint returns both.

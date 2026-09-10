@@ -35,7 +35,7 @@ builder.Services.AddHttpClient<IGitHubIssuesClient, GitHubIssuesClient>(client =
 {
     client.BaseAddress = new Uri("https://api.github.com/");
     client.DefaultRequestHeaders.Add("Accept", "application/vnd.github.v3+json");
-    client.DefaultRequestHeaders.Add("User-Agent", "autodev-api");
+    client.DefaultRequestHeaders.Add("User-Agent", "slop-factory-api");
     if (!string.IsNullOrWhiteSpace(githubPat))
     {
         client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", githubPat);

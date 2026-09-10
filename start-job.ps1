@@ -27,7 +27,7 @@
   multipass VM name. A unique default is generated.
 
 .PARAMETER RepoRoot
-  Path to the autodev repo root (source of .opencode, blueprint, secrets).
+  Path to the slop-factory repo root (source of .opencode, blueprint, secrets).
 
 .PARAMETER RunId
   Optional run identity used for all lifecycle events. Defaults to a fresh GUID.

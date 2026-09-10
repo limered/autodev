@@ -1,4 +1,4 @@
-# AI Software Factory — Multipass VM
+# slop-factory — Multipass VM
 
 Disposable Ubuntu LTS VM for running opencode jobs. One VM per job/feature.
 

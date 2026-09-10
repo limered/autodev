@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Bot Git authentication test for the AI Software Factory job VM.
+# Bot Git authentication test for the slop-factory job VM.
 # Verifies the bot SSH key, GitHub host key, shallow clone over SSH,
 # branch push, and PR creation via the GitHub API.
 set -euo pipefail
@@ -13,7 +13,7 @@ WORK_DIR="/tmp/autodev-auth-test"
 TIMESTAMP=$(date +%Y%m%d-%H%M%S)
 BRANCH="bot-auth-test-${TIMESTAMP}"
 PR_TITLE="Bot authentication test ${TIMESTAMP}"
-PR_BODY="This pull request was created automatically inside a disposable AI Software Factory VM to verify bot Git authentication. It should be closed and the branch deleted after review."
+PR_BODY="This pull request was created automatically inside a disposable slop-factory VM to verify bot Git authentication. It should be closed and the branch deleted after review."
 
 fail() {
   echo "FAIL: $1" >&2
@@ -54,8 +54,8 @@ PAT=$(tr -d '\n\r ' < "${PAT_FILE}")
 pass "GitHub PAT present"
 
 # 4. Git needs an identity to commit.
-git config --global user.email "bot@ai-software-factory.local"
-git config --global user.name "AI Software Factory Bot"
+git config --global user.email "bot@slop-factory.local"
+git config --global user.name "slop-factory Bot"
 pass "Git identity configured"
 
 # 5. Shallow clone over SSH using the bot key only.

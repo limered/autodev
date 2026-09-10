@@ -22,7 +22,7 @@
   opencode model id. Defaults to start-job.ps1's default.
 
 .PARAMETER RepoRoot
-  Path to the autodev repo root (source of .opencode, blueprint, secrets).
+  Path to the slop-factory repo root (source of .opencode, blueprint, secrets).
   Defaults to this script's directory.
 
 .PARAMETER KeepVmOnFailure
