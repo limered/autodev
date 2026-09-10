@@ -58,20 +58,22 @@ export function runView(run, nowMs) {
   for (const s of rawSteps) {
     agentCounts[s.agent] = (agentCounts[s.agent] ?? 0) + 1;
   }
+  // ponytail: only quality-loop participants indent; test-runner/1 is an outer re-run keyed apart from test-runner/0
+  const LOOP_AGENTS = new Set(["static-analysis", "feature-builder"]);
   const steps = rawSteps.map((s) => {
     const input = s.inputTokens ?? 0;
     const output = s.outputTokens ?? 0;
     const total = input + output;
     const duration = s.durationMs ?? 0;
     const iteration = s.iteration ?? 0;
-    const isLoop = iteration !== 0;
+    const isLoop = iteration !== 0 && LOOP_AGENTS.has(s.agent);
     return {
       agent: s.agent,
       iteration,
       model: s.model ?? "—",
       statusClass: stageStatusClass(s.status),
       isLoop,
-      showIteration: isLoop && (agentCounts[s.agent] ?? 0) > 1,
+      showIteration: iteration !== 0 && (agentCounts[s.agent] ?? 0) > 1,
       inputTokens: input,
       outputTokens: output,
       durationMs: duration,

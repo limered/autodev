@@ -362,6 +362,21 @@ describe("runView", () => {
       expect(view.steps[2].showIteration).toBe(true);
     });
 
+    it("keeps the phase-4 test re-run as a numbered outer step", () => {
+      const run = {
+        ...baseRun,
+        steps: [
+          step({ agent: "test-runner", iteration: 0 }),
+          step({ agent: "test-runner", iteration: 1 }),
+        ],
+      };
+
+      const view = runView(run, nowMs);
+
+      expect(view.steps[1].isLoop).toBe(false);
+      expect(view.steps[1].showIteration).toBe(true);
+    });
+
     it("maps failed steps to the failed colour class", () => {
       const run = { ...baseRun, steps: [step({ status: "failed" })] };
 
