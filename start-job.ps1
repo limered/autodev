@@ -76,8 +76,16 @@ if (-not $Model) {
 
 # Seeded categories come from the repo-root agents.json stages map: one stage
 # per category in map order, each carrying the model of its first member.
+# Models resolve once into a table up front; the lookup closure captures data,
+# never a script function, so it survives nested invocation via the call operator.
 $seedConfig = Read-AgentsConfig -Path (Join-Path $RepoRoot "agents.json")
-$modelLookup = { param($agent) Get-AgentModel -Agent $agent -RepoRoot $RepoRoot }.GetNewClosure()
+$agentModels = @{}
+foreach ($member in @($seedConfig | ForEach-Object { @($_.Agents) })) {
+    if (-not $agentModels.ContainsKey($member)) {
+        $agentModels[$member] = Get-AgentModel -Agent $member -RepoRoot $RepoRoot
+    }
+}
+$modelLookup = { param($agent) $agentModels["$agent"] }.GetNewClosure()
 $stages = @(ConvertTo-SeededStages -Config $seedConfig -ModelLookup $modelLookup)
 
 # The run id is either supplied by the dispatch client or defaulted above to a
@@ -162,7 +170,6 @@ try {
     # The model rides from the host-side agent frontmatter via Get-AgentModel.
     Write-Step "Relaying per-phase timing + tokens to the dashboard"
     try {
-        $modelLookup = { param($agent) Get-AgentModel -Agent $agent -RepoRoot $RepoRoot }.GetNewClosure()
         Send-PhaseFinishedSteps -RunId $RunId -VmName $VmName -ModelLookup $modelLookup
     }
     catch {
@@ -202,7 +209,6 @@ catch {
         # finished before the failure still land (re-emits are safe,
         # last-write-wins); steps must precede run-failed or they are dropped.
         try {
-            $modelLookup = { param($agent) Get-AgentModel -Agent $agent -RepoRoot $RepoRoot }.GetNewClosure()
             Send-PhaseFinishedSteps -RunId $RunId -VmName $VmName -ModelLookup $modelLookup
         }
         catch {
