@@ -1,0 +1,25 @@
+{
+  "stages": {
+    "implementation": {
+      "type": "sequential",
+      "agents": ["feature-builder", "test-runner"]
+    },
+    "quality-loop": {
+      "type": "loop",
+      "agents": ["static-analysis", "feature-builder"],
+      "iterations": 3
+    },
+    "test-rerun": {
+      "type": "sequential",
+      "agents": ["test-runner"]
+    },
+    "agentic-review": {
+      "type": "sequential",
+      "agents": ["agentic-review"]
+    },
+    "pr-author": {
+      "type": "sequential",
+      "agents": ["pr-author"]
+    }
+  }
+}
