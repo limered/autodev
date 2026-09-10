@@ -50,6 +50,7 @@ param(
 $ErrorActionPreference = "Stop"
 
 . (Join-Path $PSScriptRoot "lib/JobIntake.ps1")
+. (Join-Path $PSScriptRoot "lib/AgentsConfig.ps1")
 
 $Repo = ConvertTo-OwnerRepo -RepoUrl $RepoUrl
 
@@ -73,19 +74,11 @@ if (-not $Model) {
     $Model = Get-AgentModel -Agent $defaultAgent -RepoRoot $RepoRoot
 }
 
-# Seeded pipeline shape mirrors the six VM phases in
-# infrastructure/multipass/test-feature-builder.sh: the quality loop is one
-# generic row (its model rides from static-analysis) and test-runner appears
-# twice (phase 2 and the phase-4 re-run). Each row carries the category slot
-# the stage lights under beside the worker name: the VM reports liveness by
-# category, so the quality-loop row lights while the analysis and rebuild
-# workers run inside it instead of staying dark on the name mismatch.
-$phaseOrder = @('feature-builder', 'test-runner', 'quality-loop', 'test-runner', 'agentic-review', 'pr-author')
-$stages = @(foreach ($agent in $phaseOrder) {
-    $lookup = $agent
-    if ($lookup -eq 'quality-loop') { $lookup = 'static-analysis' }
-    [ordered]@{ agent = $agent; model = (Get-AgentModel -Agent $lookup -RepoRoot $RepoRoot); category = $agent }
-})
+# Seeded categories come from the repo-root agents.json stages map: one stage
+# per category in map order, each carrying the model of its first member.
+$seedConfig = Read-AgentsConfig -Path (Join-Path $RepoRoot "agents.json")
+$modelLookup = { param($agent) Get-AgentModel -Agent $agent -RepoRoot $RepoRoot }.GetNewClosure()
+$stages = @(ConvertTo-SeededStages -Config $seedConfig -ModelLookup $modelLookup)
 
 # The run id is either supplied by the dispatch client or defaulted above to a
 # fresh GUID; it is the identity carried on every dashboard event.
