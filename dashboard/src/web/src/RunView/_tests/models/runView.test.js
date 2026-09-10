@@ -442,5 +442,68 @@ describe("runView", () => {
       expect(view.hasDevLoop).toBe(false);
       expect(view.devLoop).toEqual([]);
     });
+
+    it("reports zero progress when neither steps nor stages exist", () => {
+      const view = runView(baseRun, nowMs);
+
+      expect(view.devLoopProgress).toEqual({ done: 0, total: 0, pct: 0 });
+    });
+  });
+
+  describe("dev-loop progress", () => {
+    const step = (overrides = {}) => ({
+      agent: "feature-builder",
+      iteration: 0,
+      model: "m1",
+      status: "done",
+      inputTokens: 100,
+      outputTokens: 50,
+      durationMs: 1000,
+      cost: 0.0123,
+      ...overrides,
+    });
+
+    it("reports full progress when every step is done", () => {
+      const run = { ...baseRun, steps: [step(), step({ agent: "test-runner" })] };
+
+      expect(runView(run, nowMs).devLoopProgress).toEqual({ done: 2, total: 2, pct: 100 });
+    });
+
+    it("reports partial progress for a mix of done and running steps", () => {
+      const run = {
+        ...baseRun,
+        steps: [step(), step({ agent: "test-runner", status: "running" })],
+      };
+
+      expect(runView(run, nowMs).devLoopProgress).toEqual({ done: 1, total: 2, pct: 50 });
+    });
+
+    it("counts failed steps as terminal", () => {
+      const run = {
+        ...baseRun,
+        steps: [step({ status: "failed" }), step({ agent: "test-runner", status: "running" })],
+      };
+
+      expect(runView(run, nowMs).devLoopProgress).toEqual({ done: 1, total: 2, pct: 50 });
+    });
+
+    it("reports zero progress while every step is still running", () => {
+      const run = {
+        ...baseRun,
+        steps: [step({ status: "running" }), step({ agent: "test-runner", status: "pending" })],
+      };
+
+      expect(runView(run, nowMs).devLoopProgress).toEqual({ done: 0, total: 2, pct: 0 });
+    });
+
+    it("derives progress from the stages fallback when steps are empty", () => {
+      const run = {
+        ...baseRun,
+        stages: [{ agent: "feature-builder", model: "m1", status: "done" }],
+        steps: [],
+      };
+
+      expect(runView(run, nowMs).devLoopProgress).toEqual({ done: 1, total: 1, pct: 100 });
+    });
   });
 });

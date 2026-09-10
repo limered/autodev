@@ -19,6 +19,10 @@ defineEmits(["delete"]);
 
 const view = computed(() => runView(props.run, props.now));
 const expanded = ref(props.initialExpanded);
+const toggleFill = computed(() => {
+  const pct = view.value.devLoopProgress?.pct ?? 0;
+  return `linear-gradient(to right, rgba(88, 166, 255, 0.25) ${pct}%, var(--surface-2) ${pct}%)`;
+});
 
 function toggleDetail() {
   expanded.value = !expanded.value;
@@ -101,6 +105,7 @@ function detailTitle(s) {
         type="button"
         class="dev-loop-toggle mono"
         :aria-expanded="expanded ? 'true' : 'false'"
+        :style="{ background: toggleFill }"
         @click="toggleDetail"
       >
         {{ expanded ? "▾ hide dev-loop detail" : "▸ show dev-loop detail" }} ·

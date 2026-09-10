@@ -107,6 +107,11 @@ export function runView(run, nowMs) {
         }));
   const devLoopTokens = devLoop.reduce((n, s) => n + s.inputTokens + s.outputTokens, 0);
   const devLoopMs = devLoop.reduce((n, s) => n + s.durationMs, 0);
+  const devLoopDone = devLoop.filter(
+    (s) => s.statusClass === "stage-done" || s.statusClass === "stage-failed",
+  ).length;
+  const devLoopTotal = devLoop.length;
+  const devLoopPct = devLoopTotal === 0 ? 0 : Math.round((devLoopDone / devLoopTotal) * 100);
 
   return {
     // Run-to-card seam: pass-through display fields plus show* gates so
@@ -138,6 +143,11 @@ export function runView(run, nowMs) {
       ms: devLoopMs,
       tokensLabel: formatTokenCount(devLoopTokens),
       durationLabel: formatDuration(devLoopMs),
+    },
+    devLoopProgress: {
+      done: devLoopDone,
+      total: devLoopTotal,
+      pct: devLoopPct,
     },
   };
 }

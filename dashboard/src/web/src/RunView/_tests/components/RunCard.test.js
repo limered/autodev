@@ -255,4 +255,35 @@ describe("RunCard dev-loop detail (C3 stepped rail)", () => {
     expect(html).not.toContain("dev-loop-toggle");
     expect(html).not.toContain("dev-loop-item");
   });
+
+  it("fills the toggle strip fully when every step is terminal", async () => {
+    const html = await renderCard(run({ steps: finishedSteps() }));
+
+    expect(html).toContain("linear-gradient");
+    expect(html).toContain("100%");
+    expect(html).toContain("4 steps");
+  });
+
+  it("fills the toggle strip partially while steps are still running", async () => {
+    const steps = [
+      apiStep(),
+      apiStep({ agent: "test-runner", model: "m2", status: "running" }),
+      apiStep({ agent: "static-analysis", iteration: 1, model: "m3", status: "pending" }),
+      apiStep({ agent: "feature-builder", iteration: 1, model: "m1", status: "running" }),
+    ];
+    const html = await renderCard(run({ steps }));
+
+    expect(html).toContain("linear-gradient");
+    expect(html).toContain("25%");
+    expect(html).toContain("4 steps");
+  });
+
+  it("keeps the fill on the toggle when expanded", async () => {
+    const html = await renderCard(run({ steps: finishedSteps() }), { initialExpanded: true });
+
+    expect(html).toContain("dev-loop-toggle");
+    expect(html).toContain("linear-gradient");
+    expect(html).toContain("100%");
+    expect(html).toContain("hide dev-loop detail");
+  });
 });
