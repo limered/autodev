@@ -43,6 +43,18 @@ function Get-VmCurrentPhase {
     }
 }
 
+function Get-VmCurrentCategory {
+    param([string]$Name, [scriptblock]$Executor)
+    try {
+        $output = Invoke-MultipassOutput -Arguments @('exec', $Name, '--', 'cat', '/tmp/current-category') -Executor $Executor
+        if ($output) { return ($output.Trim()) }
+        return $null
+    }
+    catch {
+        return $null
+    }
+}
+
 function Get-VmDoneExit {
     param([string]$Name, [scriptblock]$Executor)
     try {
@@ -62,10 +74,12 @@ function Get-HeartbeatSample {
     $vmNow = Get-VmEpochSeconds -Name $Name -Executor $Executor
     $heartbeatEpoch = Get-HeartbeatEpochSeconds -Name $Name -Executor $Executor
     $currentPhase = $null
+    $currentCategory = $null
     if ($heartbeatEpoch -ne $null) {
         $currentPhase = Get-VmCurrentPhase -Name $Name -Executor $Executor
+        $currentCategory = Get-VmCurrentCategory -Name $Name -Executor $Executor
     }
-    return [PSCustomObject]@{ VmNow = $vmNow; HeartbeatEpoch = $heartbeatEpoch; CurrentPhase = $currentPhase }
+    return [PSCustomObject]@{ VmNow = $vmNow; HeartbeatEpoch = $heartbeatEpoch; CurrentPhase = $currentPhase; CurrentCategory = $currentCategory }
 }
 
 function Test-HeartbeatStall {

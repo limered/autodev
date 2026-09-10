@@ -4,9 +4,12 @@ namespace Api.Runs;
 
 /// <summary>
 /// One pipeline stage of a run: the agent (phase) name and the model it will use.
+/// The category is the seeded slot the stage lights under; the agent remains for
+/// post-run detail. Runs persisted before categories carry no category and fall
+/// back to the agent name when deriving status.
 /// Travels on the run-started event and is persisted on the run.
 /// </summary>
-public record RunStage(string Agent, string Model);
+public record RunStage(string Agent, string Model, string? Category = null);
 
 /// <summary>
 /// Base of the run-event hierarchy. There is no DTO layer: this hierarchy IS the
@@ -57,7 +60,7 @@ public sealed record RunStartedEvent(
 public sealed record AgentStartedEvent(string? VmName = null) : RunEvent;
 
 [RunEventDiscriminator("heartbeat")]
-public sealed record HeartbeatEvent(string? CurrentPhase = null) : RunEvent;
+public sealed record HeartbeatEvent(string? CurrentPhase = null, string? CurrentCategory = null) : RunEvent;
 
 [RunEventDiscriminator("stall-detected")]
 public sealed record StallDetectedEvent(string? FailureReason = null) : RunEvent;

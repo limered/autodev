@@ -18,4 +18,5 @@ public record RunState(
     DateTimeOffset UpdatedAt,
     IReadOnlyList<RunStage>? Stages,
     string? CurrentPhase = null,
-    IReadOnlyList<RunStep>? Steps = null);
+    IReadOnlyList<RunStep>? Steps = null,
+    string? CurrentCategory = null);

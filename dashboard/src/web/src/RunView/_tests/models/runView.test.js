@@ -204,19 +204,47 @@ describe("runView", () => {
       expect(view.stages).toHaveLength(3);
       expect(view.stages[0]).toEqual({
         agent: "feature-builder",
+        category: "feature-builder",
         model: "m1",
         statusClass: "stage-done",
       });
       expect(view.stages[1]).toEqual({
         agent: "test-runner",
+        category: "test-runner",
         model: "m2",
         statusClass: "stage-running",
       });
       expect(view.stages[2]).toEqual({
         agent: "pr-author",
+        category: "pr-author",
         model: "m3",
         statusClass: "stage-pending",
       });
+    });
+
+    it("carries the seeded category beside the worker name", () => {
+      const run = {
+        ...baseRun,
+        stages: [{ agent: "quality-loop", category: "quality-loop", model: "m2", status: "running" }],
+      };
+
+      const view = runView(run, nowMs);
+
+      expect(view.stages[0]).toEqual({
+        agent: "quality-loop",
+        category: "quality-loop",
+        model: "m2",
+        statusClass: "stage-running",
+      });
+    });
+
+    it("falls back to the worker name when the stage carries no category", () => {
+      const run = { ...baseRun, stages: [{ agent: "quality-loop", model: "m2", status: "running" }] };
+
+      const view = runView(run, nowMs);
+
+      expect(view.stages[0].category).toBe("quality-loop");
+      expect(view.stages[0].statusClass).toBe("stage-running");
     });
 
     it("defaults a stage with no status to pending", () => {
@@ -397,11 +425,28 @@ describe("runView", () => {
       expect(view.devLoop).toHaveLength(1);
       expect(view.devLoop[0]).toMatchObject({
         agent: "feature-builder",
+        category: "feature-builder",
         model: "m1",
         statusClass: "stage-done",
         isLoop: false,
         showIteration: false,
         stats: "—",
+      });
+    });
+
+    it("carries the category into the seeded fallback rows", () => {
+      const run = {
+        ...baseRun,
+        stages: [{ agent: "quality-loop", category: "quality-loop", model: "m2", status: "running" }],
+        steps: [],
+      };
+
+      const view = runView(run, nowMs);
+
+      expect(view.devLoop[0]).toMatchObject({
+        agent: "quality-loop",
+        category: "quality-loop",
+        statusClass: "stage-running",
       });
     });
 

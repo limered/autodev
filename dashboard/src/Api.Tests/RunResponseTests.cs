@@ -12,8 +12,9 @@ public class RunResponseTests
         string status = "running",
         string? currentPhase = null,
         IReadOnlyList<RunStage>? stages = null,
-        IReadOnlyList<RunStep>? steps = null) =>
-        new(RunId, "owner/repo", "main", "spec", "glm-5.2", "vm-1", status, T0, null, T0, "https://pr", null, false, null, T0, stages, currentPhase, steps);
+        IReadOnlyList<RunStep>? steps = null,
+        string? currentCategory = null) =>
+        new(RunId, "owner/repo", "main", "spec", "glm-5.2", "vm-1", status, T0, null, T0, "https://pr", null, false, null, T0, stages, currentPhase, steps, currentCategory);
 
     private static readonly RunStage[] Pipeline =
     {
@@ -57,8 +58,7 @@ public class RunResponseTests
 
     [Fact]
     public void From_ProjectsFlatStepsList()
-    {
-        var steps = new[]
+    {        var steps = new[]
         {
             new RunStep("feature-builder", 0, 61000, 100, 50, 0.0123m, "done", "m1"),
             new RunStep("static-analysis", 1, 2000, 10, 5, null, "done", "m2"),
@@ -89,5 +89,43 @@ public class RunResponseTests
         Assert.Empty(response.Steps);
         Assert.Equal(3, response.Stages.Count);
         Assert.Equal("running", response.Stages[1].Status);
+    }
+
+    [Fact]
+    public void From_AnalysisReport_LightsQualityLoopCategory()
+    {
+        var stages = new[]
+        {
+            new RunStage("feature-builder", "m1", "feature-builder"),
+            new RunStage("test-runner", "m2", "test-runner"),
+            new RunStage("quality-loop", "m3", "quality-loop"),
+            new RunStage("pr-author", "m4", "pr-author"),
+        };
+        var state = State(status: "running", currentPhase: "static-analysis", stages: stages, currentCategory: "quality-loop");
+
+        var response = RunResponse.From(state);
+
+        Assert.Equal("quality-loop", response.CurrentCategory);
+        Assert.Equal(4, response.Stages.Count);
+        Assert.Equal("done", response.Stages[0].Status);
+        Assert.Equal("done", response.Stages[1].Status);
+        Assert.Equal("running", response.Stages[2].Status);
+        Assert.Equal("pending", response.Stages[3].Status);
+        Assert.Equal("quality-loop", response.Stages[2].Category);
+    }
+
+    [Fact]
+    public void From_LegacyRunWithoutCategories_FallsBackToWorkerName()
+    {
+        var state = State(status: "running", currentPhase: "test-runner", stages: Pipeline);
+
+        var response = RunResponse.From(state);
+
+        Assert.Null(response.CurrentCategory);
+        Assert.Equal(3, response.Stages.Count);
+        Assert.Equal("test-runner", response.Stages[1].Category);
+        Assert.Equal("done", response.Stages[0].Status);
+        Assert.Equal("running", response.Stages[1].Status);
+        Assert.Equal("pending", response.Stages[2].Status);
     }
 }

@@ -28,7 +28,7 @@ export function runView(run, nowMs) {
   }
 
   // Design-A badge strip: pending grey, running green, done blue. The backend
-  // derives each stage's status from the seeded stages plus currentPhase.
+  // derives each stage's status from the seeded stages plus currentCategory.
   function stageStatusClass(status) {
     if (status === "done") return "stage-done";
     if (status === "running") return "stage-running";
@@ -47,8 +47,12 @@ export function runView(run, nowMs) {
   }
 
   const secs = secondsSince(run.lastHeartbeatAt, nowMs);
+  // Category identity rides beside the worker name on every stage; runs
+  // persisted before categories carry no category and fall back to the worker
+  // name, so they render exactly as today.
   const stages = (run.stages || []).map((s) => ({
     agent: s.agent,
+    category: s.category ?? s.agent,
     model: s.model,
     statusClass: stageStatusClass(s.status),
   }));
@@ -92,6 +96,7 @@ export function runView(run, nowMs) {
       ? steps
       : stages.map((s) => ({
           agent: s.agent,
+          category: s.category,
           iteration: 0,
           model: s.model,
           statusClass: s.statusClass,

@@ -91,13 +91,68 @@ public class IngestTests
 
         var heartbeat = Assert.IsType<HeartbeatEvent>(ev);
         Assert.Equal("feature-builder", heartbeat.CurrentPhase);
+        Assert.Null(heartbeat.CurrentCategory);
         Assert.Equal(T1, heartbeat.At);
 
         var state = await store.Apply(RunId, heartbeat);
         Assert.NotNull(state);
         Assert.Equal(T1, state.LastHeartbeatAt);
         Assert.Equal("feature-builder", state.CurrentPhase);
+        Assert.Null(state.CurrentCategory);
         Assert.Equal(T0, state.UpdatedAt); // heartbeat never bumps UpdatedAt
+    }
+
+    [Fact]
+    public async Task FromWire_Heartbeat_IngestsCurrentCategory()
+    {
+        var store = new FakeRunStore();
+        await store.Apply(RunId, new RunStartedEvent("r") { At = T0 });
+
+        var ev = FromWire(
+            """{"currentPhase":"static-analysis","currentCategory":"quality-loop","at":"2024-02-01T00:01:00Z","type":"heartbeat"}""");
+
+        var heartbeat = Assert.IsType<HeartbeatEvent>(ev);
+        Assert.Equal("static-analysis", heartbeat.CurrentPhase);
+        Assert.Equal("quality-loop", heartbeat.CurrentCategory);
+
+        var state = await store.Apply(RunId, heartbeat);
+        Assert.NotNull(state);
+        Assert.Equal("static-analysis", state.CurrentPhase);
+        Assert.Equal("quality-loop", state.CurrentCategory);
+        Assert.Equal(T1, state.LastHeartbeatAt);
+    }
+
+    [Fact]
+    public async Task FromWire_RunStarted_IngestsStageCategories()
+    {
+        var store = new FakeRunStore();
+
+        var ev = FromWire(
+            """{"type":"run-started","at":"2024-02-01T00:01:00Z","repo":"owner/repo","branch":"feat/x","spec":"do the thing","model":"gpt-x","stages":[{"agent":"quality-loop","model":"gpt-x","category":"quality-loop"}]}""");
+
+        var started = Assert.IsType<RunStartedEvent>(ev);
+        Assert.NotNull(started.Stages);
+        Assert.Equal("quality-loop", Assert.Single(started.Stages).Category);
+
+        var state = await store.Apply(RunId, started);
+        Assert.NotNull(state);
+        Assert.Equal("quality-loop", Assert.Single(state.Stages!).Category);
+    }
+
+    [Fact]
+    public async Task FromWire_RunStarted_LegacyStagesWithoutCategory_IngestNullCategory()
+    {
+        var store = new FakeRunStore();
+
+        var ev = FromWire(
+            """{"type":"run-started","at":"2024-02-01T00:01:00Z","repo":"owner/repo","branch":"feat/x","spec":"do the thing","model":"gpt-x","stages":[{"agent":"build","model":"gpt-x"}]}""");
+
+        var started = Assert.IsType<RunStartedEvent>(ev);
+        Assert.Null(Assert.Single(started.Stages!).Category);
+
+        var state = await store.Apply(RunId, started);
+        Assert.NotNull(state);
+        Assert.Null(Assert.Single(state.Stages!).Category);
     }
 
     [Fact]
@@ -319,6 +374,7 @@ public class IngestTests
             (new RunStartedEvent("r", "b", "s", "m", new[] { new RunStage("build", "gpt-x") }) { At = T1 }, "run-started"),
             (new AgentStartedEvent("vm-1") { At = T1 }, "agent-started"),
             (new HeartbeatEvent("feature-builder") { At = T1 }, "heartbeat"),
+            (new HeartbeatEvent("static-analysis", "quality-loop") { At = T1 }, "heartbeat"),
             (new HeartbeatEvent { At = T1 }, "heartbeat"),
             (new StallDetectedEvent("stuck") { At = T1 }, "stall-detected"),
             (new FreezeCapturedEvent("/freeze") { At = T1 }, "freeze-captured"),

@@ -94,13 +94,15 @@ public static class RunFold
 
     private static RunState ApplyHeartbeat(RunState current, HeartbeatEvent ev, DateTimeOffset at)
     {
-        // currentPhase rides the heartbeat: the host relay reads the in-VM phase
-        // marker and attaches it. A heartbeat without it keeps the last known
-        // phase, so a transient read miss never wipes the advancing phase.
+        // currentPhase and currentCategory ride the heartbeat: the host relay
+        // reads the in-VM phase and category markers and attaches them. A
+        // heartbeat without one keeps the last known value, so a transient
+        // read miss never wipes the advancing markers.
         return current with
         {
             LastHeartbeatAt = at,
             CurrentPhase = ev.CurrentPhase ?? current.CurrentPhase,
+            CurrentCategory = ev.CurrentCategory ?? current.CurrentCategory,
         };
     }
 
