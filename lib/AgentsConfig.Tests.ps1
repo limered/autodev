@@ -108,6 +108,44 @@ Describe 'ConvertTo-SeededStages' {
     }
 }
 
+Describe 'Get-StepCategory' {
+    BeforeAll {
+        $script:config = ConvertFrom-AgentsConfigJson -Json $script:V1Json
+    }
+    It 'maps the v1 phases to their seeded slots' {
+        $pairs = @(
+            @('feature-builder', 0, 'implementation'),
+            @('test-runner', 0, 'implementation'),
+            @('static-analysis', 1, 'quality-loop'),
+            @('feature-builder', 1, 'quality-loop'),
+            @('static-analysis', 3, 'quality-loop'),
+            @('feature-builder', 3, 'quality-loop'),
+            @('test-runner', 1, 'test-rerun'),
+            @('agentic-review', 0, 'agentic-review'),
+            @('pr-author', 0, 'pr-author')
+        )
+        foreach ($pair in $pairs) {
+            $agent, $iteration, $expected = $pair
+            Get-StepCategory -Agent $agent -Iteration $iteration -Config $script:config | Should -Be $expected
+        }
+    }
+    It 'returns null for a worker no slot names' {
+        Get-StepCategory -Agent 'no-such-agent' -Iteration 0 -Config $script:config | Should -Be $null
+    }
+    It 'returns null for a repeated worker past its slots' {
+        Get-StepCategory -Agent 'test-runner' -Iteration 5 -Config $script:config | Should -Be $null
+    }
+    It 'maps a loop-only worker on pass zero to its loop slot' {
+        Get-StepCategory -Agent 'static-analysis' -Iteration 0 -Config $script:config | Should -Be 'quality-loop'
+    }
+    It 'derives sequential slots from map order, not hardcoded names' {
+        $json = '{"stages":{"build":{"type":"sequential","agents":["builder"]},"retest":{"type":"sequential","agents":["builder"]}}}'
+        $custom = ConvertFrom-AgentsConfigJson -Json $json
+        Get-StepCategory -Agent 'builder' -Iteration 0 -Config $custom | Should -Be 'build'
+        Get-StepCategory -Agent 'builder' -Iteration 1 -Config $custom | Should -Be 'retest'
+    }
+}
+
 Describe 'Read-AgentsConfig' {
     BeforeAll {
         $script:repoRoot = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path

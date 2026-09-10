@@ -86,6 +86,7 @@ foreach ($member in @($seedConfig | ForEach-Object { @($_.Agents) })) {
     }
 }
 $modelLookup = { param($agent) $agentModels["$agent"] }.GetNewClosure()
+$categoryLookup = { param($agent, $iteration) Get-StepCategory -Agent "$agent" -Iteration ([int]$iteration) -Config $seedConfig }.GetNewClosure()
 $stages = @(ConvertTo-SeededStages -Config $seedConfig -ModelLookup $modelLookup)
 
 # The run id is either supplied by the dispatch client or defaulted above to a
@@ -105,6 +106,7 @@ Send-FactoryEvent -RunId $RunId -Type "run-started" -Fields @{
 
 $cloudInit = Join-Path $RepoRoot "infrastructure\multipass\cloud-init.yaml"
 $testScript = Join-Path $RepoRoot "infrastructure\multipass\test-feature-builder.sh"
+$agentsJson = Join-Path $RepoRoot "agents.json"
 $secretsDir = Join-Path $RepoRoot ".secrets"
 $patFile = Join-Path $secretsDir "github-pat.txt"
 $apiKeyFile = Join-Path $secretsDir "opencode-api-key.txt"
@@ -129,6 +131,10 @@ try {
     Invoke-Multipass transfer $patFile "$($VmName):/tmp/github-pat.txt"
     Invoke-Multipass transfer $apiKeyFile "$($VmName):/tmp/opencode-api-key.txt"
     Invoke-Multipass transfer $testScript "$($VmName):/tmp/test-feature-builder.sh"
+    # The category set travels with the job: the VM builds its category list on
+    # startup from this file and reports liveness by category over heartbeat.
+    # It was already read for seeding above, so it must exist here.
+    Invoke-Multipass transfer $agentsJson "$($VmName):/tmp/agents.json"
     # The Windows working copy may be CRLF; strip CR so bash doesn't choke on
     # "set -euo pipefail\r" and friends.
     Invoke-Multipass exec $VmName '--' bash -c "sed -i 's/\r`$//' /tmp/test-feature-builder.sh"
@@ -170,7 +176,7 @@ try {
     # The model rides from the host-side agent frontmatter via Get-AgentModel.
     Write-Step "Relaying per-phase timing + tokens to the dashboard"
     try {
-        Send-PhaseFinishedSteps -RunId $RunId -VmName $VmName -ModelLookup $modelLookup
+        Send-PhaseFinishedSteps -RunId $RunId -VmName $VmName -ModelLookup $modelLookup -CategoryLookup $categoryLookup
     }
     catch {
         Write-Host "WARN: per-phase step relay failed: $_" -ForegroundColor Yellow
@@ -209,7 +215,7 @@ catch {
         # finished before the failure still land (re-emits are safe,
         # last-write-wins); steps must precede run-failed or they are dropped.
         try {
-            Send-PhaseFinishedSteps -RunId $RunId -VmName $VmName -ModelLookup $modelLookup
+            Send-PhaseFinishedSteps -RunId $RunId -VmName $VmName -ModelLookup $modelLookup -CategoryLookup $categoryLookup
         }
         catch {
             Write-Host "WARN: per-phase step relay failed: $_" -ForegroundColor Yellow
