@@ -73,6 +73,9 @@ export function runView(run, nowMs) {
     const isLoop = iteration !== 0 && LOOP_AGENTS.has(s.agent);
     return {
       agent: s.agent,
+      // The seeded slot the worker filled; steps relayed before categories
+      // carry none and group under the worker name, like legacy stages.
+      category: s.category || s.agent,
       iteration,
       model: s.model ?? "—",
       statusClass: stageStatusClass(s.status),
@@ -118,6 +121,58 @@ export function runView(run, nowMs) {
   const devLoopTotal = devLoop.length;
   const devLoopPct = devLoopTotal === 0 ? 0 : Math.round((devLoopDone / devLoopTotal) * 100);
 
+  // Grouped detail (categories): per-worker rows grouped under their category
+  // header in seeded stage order. While the run is live no steps have landed
+  // yet, so each seeded stage is a header with no rows — category dots only,
+  // no per-worker churn. After finish the landed rows group under their
+  // header with the loop affordance and totals preserved; rows whose category
+  // matches no seeded stage append after the staged groups in first-seen
+  // order. Detail granularity (tokens, duration, cost) is unchanged: rows are
+  // the same objects as steps, only re-homed.
+  function headerStatusFor(rows) {
+    if (rows.some((r) => r.statusClass === "stage-failed")) return "stage-failed";
+    if (rows.length > 0 && rows.every((r) => r.statusClass === "stage-done")) return "stage-done";
+    if (rows.some((r) => r.statusClass === "stage-running")) return "stage-running";
+    return "stage-pending";
+  }
+
+  const stageByCategory = new Map();
+  for (const st of stages) {
+    if (!stageByCategory.has(st.category)) stageByCategory.set(st.category, st);
+  }
+  const devGroups = [];
+  const groupByKey = new Map();
+  function ensureGroup(key) {
+    let g = groupByKey.get(key);
+    if (!g) {
+      const st = stageByCategory.get(key);
+      g = {
+        category: key,
+        model: st ? st.model : "—",
+        statusClass: st ? st.statusClass : "stage-pending",
+        steps: [],
+        totals: { tokens: 0, ms: 0, tokensLabel: "0", durationLabel: "0s" },
+      };
+      groupByKey.set(key, g);
+      devGroups.push(g);
+    }
+    return g;
+  }
+  for (const st of stages) ensureGroup(st.category);
+  for (const row of steps) ensureGroup(row.category).steps.push(row);
+  for (const g of devGroups) {
+    if (g.steps.length === 0) continue;
+    const tokens = g.steps.reduce((n, s) => n + s.inputTokens + s.outputTokens, 0);
+    const ms = g.steps.reduce((n, s) => n + s.durationMs, 0);
+    g.statusClass = headerStatusFor(g.steps);
+    g.totals = {
+      tokens,
+      ms,
+      tokensLabel: formatTokenCount(tokens),
+      durationLabel: formatDuration(ms),
+    };
+  }
+
   return {
     // Run-to-card seam: pass-through display fields plus show* gates so
     // RunCard.vue reads view.* everywhere except run.runId (delete emit).
@@ -143,6 +198,8 @@ export function runView(run, nowMs) {
     hasSteps: steps.length > 0,
     devLoop,
     hasDevLoop: devLoop.length > 0,
+    devGroups,
+    hasDevGroups: devGroups.length > 0,
     devLoopTotals: {
       tokens: devLoopTokens,
       ms: devLoopMs,
