@@ -558,4 +558,197 @@ describe("runView", () => {
       expect(runView(run, nowMs).devLoopProgress).toEqual({ done: 1, total: 1, pct: 100 });
     });
   });
+
+  describe("grouped detail (categories)", () => {
+    const categorizedStages = [
+      { agent: "implementation", category: "implementation", model: "m1", status: "running" },
+      { agent: "quality-loop", category: "quality-loop", model: "m2", status: "pending" },
+      { agent: "test-rerun", category: "test-rerun", model: "m1", status: "pending" },
+    ];
+
+    const step = (overrides = {}) => ({
+      agent: "feature-builder",
+      category: "implementation",
+      iteration: 0,
+      model: "m1",
+      status: "done",
+      inputTokens: 100,
+      outputTokens: 50,
+      durationMs: 61000,
+      cost: 0.0123,
+      ...overrides,
+    });
+
+    it("shows category dots only while the run is live: one header per stage, no rows", () => {
+      const run = { ...baseRun, status: "running", stages: categorizedStages, steps: [] };
+
+      const view = runView(run, nowMs);
+
+      expect(view.hasSteps).toBe(false);
+      expect(view.hasDevGroups).toBe(true);
+      expect(view.devGroups).toHaveLength(3);
+      expect(view.devGroups.map((g) => g.category)).toEqual([
+        "implementation",
+        "quality-loop",
+        "test-rerun",
+      ]);
+      for (const g of view.devGroups) expect(g.steps).toEqual([]);
+      expect(view.devGroups[0]).toMatchObject({
+        model: "m1",
+        statusClass: "stage-running",
+      });
+      expect(view.devGroups[1]).toMatchObject({
+        model: "m2",
+        statusClass: "stage-pending",
+      });
+    });
+
+    it("groups finished per-worker rows under their category header in stage order", () => {
+      const run = {
+        ...baseRun,
+        status: "done",
+        stages: categorizedStages.map((s) => ({ ...s, status: "done" })),
+        steps: [
+          step(),
+          step({ agent: "test-runner", iteration: 0 }),
+          step({ agent: "static-analysis", category: "quality-loop", iteration: 1, model: "m2" }),
+          step({ agent: "feature-builder", category: "quality-loop", iteration: 1 }),
+          step({ agent: "test-runner", category: "test-rerun", iteration: 1 }),
+        ],
+      };
+
+      const view = runView(run, nowMs);
+
+      expect(view.devGroups).toHaveLength(3);
+      expect(view.devGroups[0].category).toBe("implementation");
+      expect(view.devGroups[0].steps.map((s) => `${s.agent}/${s.iteration}`)).toEqual([
+        "feature-builder/0",
+        "test-runner/0",
+      ]);
+      expect(view.devGroups[1].category).toBe("quality-loop");
+      expect(view.devGroups[1].steps.map((s) => `${s.agent}/${s.iteration}`)).toEqual([
+        "static-analysis/1",
+        "feature-builder/1",
+      ]);
+      expect(view.devGroups[2].steps.map((s) => `${s.agent}/${s.iteration}`)).toEqual([
+        "test-runner/1",
+      ]);
+    });
+
+    it("keeps the loop affordance and detail granularity on grouped rows", () => {
+      const run = {
+        ...baseRun,
+        status: "done",
+        stages: categorizedStages.map((s) => ({ ...s, status: "done" })),
+        steps: [
+          step(),
+          step({ agent: "static-analysis", category: "quality-loop", iteration: 1, model: "m2" }),
+          step({ agent: "feature-builder", category: "quality-loop", iteration: 1 }),
+        ],
+      };
+
+      const view = runView(run, nowMs);
+      const loop = view.devGroups[1];
+
+      expect(loop.steps[0]).toMatchObject({ isLoop: true, showIteration: false });
+      expect(loop.steps[1]).toMatchObject({ isLoop: true, showIteration: true });
+      expect(loop.steps[1]).toMatchObject({
+        inputTokens: 100,
+        outputTokens: 50,
+        durationMs: 61000,
+        cost: 0.0123,
+        stats: "150 · 1m 01s",
+      });
+    });
+
+    it("totals each group without changing the overall toggle totals", () => {
+      const run = {
+        ...baseRun,
+        status: "done",
+        stages: categorizedStages.map((s) => ({ ...s, status: "done" })),
+        steps: [
+          step({ inputTokens: 1000, outputTokens: 500, durationMs: 60000 }),
+          step({
+            agent: "static-analysis",
+            category: "quality-loop",
+            iteration: 1,
+            inputTokens: 2000,
+            outputTokens: 0,
+            durationMs: 30000,
+          }),
+        ],
+      };
+
+      const view = runView(run, nowMs);
+
+      expect(view.devGroups[0].totals).toMatchObject({
+        tokens: 1500,
+        ms: 60000,
+        tokensLabel: "1.5k",
+        durationLabel: "1m 00s",
+      });
+      expect(view.devGroups[1].totals).toMatchObject({ tokens: 2000, ms: 30000 });
+      expect(view.devLoopTotals).toMatchObject({ tokens: 3500, ms: 90000 });
+    });
+
+    it("marks a group failed when any member failed, done when all are done", () => {
+      const failed = {
+        ...baseRun,
+        status: "failed",
+        stages: categorizedStages,
+        steps: [
+          step(),
+          step({
+            agent: "static-analysis",
+            category: "quality-loop",
+            iteration: 1,
+            status: "failed",
+          }),
+        ],
+      };
+
+      const view = runView(failed, nowMs);
+
+      expect(view.devGroups[0].statusClass).toBe("stage-done");
+      expect(view.devGroups[1].statusClass).toBe("stage-failed");
+    });
+
+    it("groups legacy steps without a category under their worker name", () => {
+      const run = {
+        ...baseRun,
+        status: "done",
+        stages: [{ agent: "feature-builder", model: "m1", status: "done" }],
+        steps: [{ ...step(), category: undefined }],
+      };
+
+      const view = runView(run, nowMs);
+
+      expect(view.devGroups).toHaveLength(1);
+      expect(view.devGroups[0].category).toBe("feature-builder");
+      expect(view.devGroups[0].steps).toHaveLength(1);
+    });
+
+    it("appends rows whose category matches no stage after the staged groups", () => {
+      const run = {
+        ...baseRun,
+        status: "done",
+        stages: [
+          { agent: "implementation", category: "implementation", model: "m1", status: "done" },
+        ],
+        steps: [step(), step({ agent: "ghost", category: "ghost" })],
+      };
+
+      const view = runView(run, nowMs);
+
+      expect(view.devGroups.map((g) => g.category)).toEqual(["implementation", "ghost"]);
+      expect(view.devGroups[1]).toMatchObject({ model: "—", statusClass: "stage-done" });
+    });
+
+    it("reports no groups when neither steps nor stages exist", () => {
+      const view = runView(baseRun, nowMs);
+
+      expect(view.hasDevGroups).toBe(false);
+      expect(view.devGroups).toEqual([]);
+    });
+  });
 });

@@ -287,3 +287,140 @@ describe("RunCard dev-loop detail (C3 stepped rail)", () => {
     expect(html).toContain("hide dev-loop detail");
   });
 });
+
+describe("RunCard grouped detail (categories)", () => {
+  const categorizedStages = (status = "running") => [
+    { agent: "implementation", category: "implementation", model: "m-impl", status },
+    { agent: "quality-loop", category: "quality-loop", model: "m-loop", status: "pending" },
+    { agent: "test-rerun", category: "test-rerun", model: "m-test", status: "pending" },
+  ];
+
+  const groupedSteps = () => [
+    {
+      agent: "feature-builder",
+      category: "implementation",
+      iteration: 0,
+      model: "m-impl",
+      status: "done",
+      inputTokens: 18200,
+      outputTokens: 6400,
+      durationMs: 552000,
+      cost: null,
+    },
+    {
+      agent: "test-runner",
+      category: "implementation",
+      iteration: 0,
+      model: "m-test",
+      status: "done",
+      inputTokens: 9400,
+      outputTokens: 1800,
+      durationMs: 220000,
+      cost: null,
+    },
+    {
+      agent: "static-analysis",
+      category: "quality-loop",
+      iteration: 1,
+      model: "m-loop",
+      status: "done",
+      inputTokens: 6100,
+      outputTokens: 900,
+      durationMs: 68000,
+      cost: null,
+    },
+    {
+      agent: "feature-builder",
+      category: "quality-loop",
+      iteration: 1,
+      model: "m-impl",
+      status: "done",
+      inputTokens: 3000,
+      outputTokens: 1500,
+      durationMs: 90000,
+      cost: null,
+    },
+  ];
+
+  it("shows category dots only while live: headers for each category, no per-worker rows", async () => {
+    const html = await renderCard(
+      run({ status: "running", stages: categorizedStages(), steps: [] }),
+      { initialExpanded: true },
+    );
+
+    expect(html).toContain("implementation");
+    expect(html).toContain("quality-loop");
+    expect(html).toContain("stage-running");
+    // No per-worker detail has landed: the loop workers never appear, and no
+    // group headers render while there is nothing to group.
+    expect(html).not.toContain("static-analysis");
+    expect(html).not.toContain("dev-loop-group");
+    expect(html).toContain("hide dev-loop detail");
+  });
+
+  it("groups finished per-worker rows under their category header", async () => {
+    const html = await renderCard(
+      run({
+        status: "done",
+        stages: categorizedStages("done"),
+        steps: groupedSteps(),
+      }),
+      { initialExpanded: true },
+    );
+    const list = findElement(html, "ol", "dev-loop");
+
+    expect(list).not.toBeNull();
+    expect(html).toContain("dev-loop-group");
+    // The quality-loop header precedes its member rows in the markup.
+    const headerAt = list.inner.indexOf("dev-loop-group");
+    const memberAt = list.inner.indexOf("static-analysis");
+    expect(headerAt).toBeGreaterThanOrEqual(0);
+    expect(memberAt).toBeGreaterThan(headerAt);
+    // Both implementation members render.
+    expect(list.inner).toContain("feature-builder");
+    expect(list.inner).toContain("test-runner");
+    // The toggle still counts worker rows with unchanged totals.
+    expect(html).toContain("4 steps");
+  });
+
+  it("keeps the loop affordance on grouped rows", async () => {
+    const html = await renderCard(
+      run({
+        status: "done",
+        stages: categorizedStages("done"),
+        steps: groupedSteps(),
+      }),
+      { initialExpanded: true },
+    );
+
+    expect(html).toContain("dev-loop-is-loop");
+    expect(html).toContain("↺");
+    expect(html).toContain("#1");
+    expect(html).not.toContain("#0");
+  });
+
+  it("groups legacy steps without a category under their worker name", async () => {
+    const html = await renderCard(
+      run({
+        status: "done",
+        stages: [{ agent: "feature-builder", model: "m-impl", status: "done" }],
+        steps: [
+          {
+            agent: "feature-builder",
+            iteration: 0,
+            model: "m-impl",
+            status: "done",
+            inputTokens: 100,
+            outputTokens: 50,
+            durationMs: 1000,
+            cost: null,
+          },
+        ],
+      }),
+      { initialExpanded: true },
+    );
+
+    expect(html).toContain("dev-loop-group");
+    expect(html).toContain("feature-builder");
+  });
+});
