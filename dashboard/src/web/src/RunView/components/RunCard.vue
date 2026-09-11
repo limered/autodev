@@ -37,9 +37,12 @@ function groupTitle(g) {
   return `${g.category} — ${g.model} — ${g.totals.tokensLabel} tokens · ${g.totals.durationLabel}`;
 }
 
-// In the grouped (finished) view the spine arrow chains member rows only:
-// headers break the chain, so a row shows the arrow unless it is the last
-// member row of the last non-empty group.
+// Group headers only earn their row when they split the list: a single
+// populated group (e.g. everything landed uncategorized) renders flat,
+// headers appear only once two or more groups own rows.
+const showGroups = computed(
+  () => view.value.hasSteps && view.value.devGroups.filter((g) => g.steps.length > 0).length > 1,
+);
 function isLastRow(gi, si) {
   const groups = view.value.devGroups;
   for (let gj = groups.length - 1; gj >= 0; gj--) {
@@ -132,8 +135,10 @@ function isLastRow(gi, si) {
       <ol v-if="expanded" class="dev-loop" aria-label="Dev-loop detail">
         <!-- Finished runs group per-worker rows under their category header;
              live runs (no steps landed yet) render the flat seeded category
-             dots, so mid-run there is no per-worker churn. -->
-        <template v-if="view.hasSteps">
+             dots, so mid-run there is no per-worker churn. A lone populated
+             group renders flat too: one header above its own rows says nothing
+             the toggle totals don't already say. -->
+        <template v-if="showGroups">
           <template v-for="(g, gi) in view.devGroups" :key="`group-${g.category}-${gi}`">
             <li v-if="g.steps.length > 0" class="dev-loop-group">
               <span class="dev-loop-rail" aria-hidden="true">

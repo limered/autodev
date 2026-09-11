@@ -407,8 +407,19 @@ describe("RunCard grouped detail (categories)", () => {
         steps: [
           {
             agent: "feature-builder",
+            category: "implementation",
             iteration: 0,
             model: "m-impl",
+            status: "done",
+            inputTokens: 100,
+            outputTokens: 50,
+            durationMs: 1000,
+            cost: null,
+          },
+          {
+            agent: "ghost",
+            iteration: 0,
+            model: "m-ghost",
             status: "done",
             inputTokens: 100,
             outputTokens: 50,
@@ -423,9 +434,52 @@ describe("RunCard grouped detail (categories)", () => {
     expect(html).toContain("dev-loop-group");
     expect(html).toContain("uncategorized");
     expect(html).toContain("feature-builder");
+    expect(html).toContain("ghost");
   });
 
   it("hides empty category headers once steps have landed elsewhere", async () => {
+    const html = await renderCard(
+      run({
+        status: "done",
+        stages: categorizedStages("done"),
+        steps: [
+          {
+            agent: "feature-builder",
+            category: "implementation",
+            iteration: 0,
+            model: "m-impl",
+            status: "done",
+            inputTokens: 100,
+            outputTokens: 50,
+            durationMs: 1000,
+            cost: null,
+          },
+          {
+            agent: "ghost",
+            iteration: 0,
+            model: "m-ghost",
+            status: "done",
+            inputTokens: 100,
+            outputTokens: 50,
+            durationMs: 1000,
+            cost: null,
+          },
+        ],
+      }),
+      { initialExpanded: true },
+    );
+    const list = findElement(html, "ol", "dev-loop");
+
+    expect(list).not.toBeNull();
+    expect(list.inner).toContain("implementation");
+    expect(list.inner).toContain("uncategorized");
+    expect(list.inner).toContain("feature-builder");
+    expect(list.inner).toContain("ghost");
+    expect(list.inner).not.toContain("quality-loop");
+    expect(list.inner).not.toContain("test-rerun");
+  });
+
+  it("renders a lone populated group flat without its header", async () => {
     const html = await renderCard(
       run({
         status: "done",
@@ -441,6 +495,16 @@ describe("RunCard grouped detail (categories)", () => {
             durationMs: 1000,
             cost: null,
           },
+          {
+            agent: "test-runner",
+            iteration: 0,
+            model: "m-test",
+            status: "done",
+            inputTokens: 100,
+            outputTokens: 50,
+            durationMs: 1000,
+            cost: null,
+          },
         ],
       }),
       { initialExpanded: true },
@@ -448,10 +512,10 @@ describe("RunCard grouped detail (categories)", () => {
     const list = findElement(html, "ol", "dev-loop");
 
     expect(list).not.toBeNull();
-    expect(list.inner).toContain("uncategorized");
+    expect(list.inner).not.toContain("dev-loop-group");
+    expect(list.inner).not.toContain("uncategorized");
     expect(list.inner).toContain("feature-builder");
-    expect(list.inner).not.toContain("implementation");
-    expect(list.inner).not.toContain("quality-loop");
-    expect(list.inner).not.toContain("test-rerun");
+    expect(list.inner).toContain("test-runner");
+    expect(html).toContain("2 steps");
   });
 });
