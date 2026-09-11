@@ -740,10 +740,7 @@ describe("runView", () => {
 
       const view = runView(run, nowMs);
 
-      expect(view.devGroups.map((g) => g.category)).toEqual([
-        "implementation",
-        "uncategorized",
-      ]);
+      expect(view.devGroups.map((g) => g.category)).toEqual(["implementation", "uncategorized"]);
       expect(view.devGroups[0].steps).toHaveLength(1);
       expect(view.devGroups[0].statusClass).toBe("stage-done");
       expect(view.devGroups[1].steps.map((s) => s.agent)).toEqual(["ghost"]);
