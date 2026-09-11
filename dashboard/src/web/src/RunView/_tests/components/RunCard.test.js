@@ -3,17 +3,9 @@ import { createSSRApp, h } from "vue";
 import { renderToString } from "vue/server-renderer";
 import RunCard from "../../components/RunCard.vue";
 
-// Rendered via SSR (mirroring ErrorBanner's test) so the card's markup
-// contract can be asserted without a DOM. The Variant C header (issue #99)
-// is the point of these tests: the meta line (status pill · repo/branch ·
-// abort) is the whole header. Run detail lives only in the expandable
-// dev-loop section. The delete click → emit wiring needs a DOM event
-// lifecycle this harness doesn't have (see RunQueueColumn.test.js); the
-// abort control's contract here is its markup: × glyph, title/aria-label,
-// and `deletable` gating.
+// Rendered via SSR so the card's markup contract can be asserted without a DOM.
 
-// Fixed clock so renders are deterministic; freshness maths is covered at
-// the runView seam.
+// Fixed clock so renders are deterministic.
 const NOW = new Date("2026-09-04T12:00:00Z").getTime();
 
 const stage = (agent, status) => ({ agent, model: "glm-5.2", status });
@@ -33,10 +25,7 @@ async function renderCard(r, props = {}) {
   return renderToString(app);
 }
 
-// Locates the first <tag> element carrying cls and returns its inner HTML
-// plus tag offsets, so nesting and order can be asserted without a DOM.
-// Tracks same-tag depth while scanning; Vue SSR never emits self-closing
-// divs/uls/buttons, so open/close pairing is unambiguous.
+// Vue SSR never emits self-closing divs/uls/buttons, so open/close pairing is unambiguous.
 function findElement(html, tag, cls) {
   const open = new RegExp(`<${tag}\\b[^>]*\\bclass="[^"]*\\b${cls}\\b[^"]*"[^>]*>`).exec(html);
   if (!open) return null;
@@ -54,7 +43,7 @@ function findElement(html, tag, cls) {
   return null;
 }
 
-describe("RunCard header (Variant C: meta line)", () => {
+describe("RunCard header", () => {
   it("keeps the meta line to status pill, repo/branch, then abort control", async () => {
     const html = await renderCard(run(), {
       deletable: true,
@@ -94,7 +83,6 @@ describe("RunCard header (Variant C: meta line)", () => {
     const button = html.match(/<button[^>]*\bdelete-run\b[^>]*>[\s\S]*?<\/button>/)?.[0] ?? "";
 
     expect(button).not.toBe("");
-    // Whitespace-stripped content: the × glyph only, no "Delete" text label.
     expect(button.replace(/<[^>]*>/g, "").trim()).toBe("×");
     expect(button).toContain('title="Delete this run"');
     expect(button).toContain('aria-label="Delete this run"');
@@ -107,7 +95,7 @@ describe("RunCard header (Variant C: meta line)", () => {
   });
 });
 
-describe("RunCard body and status (unchanged by the header rework)", () => {
+describe("RunCard body and status", () => {
   it("renders the stat rows with the live Last seen for active runs", async () => {
     const html = await renderCard(run());
 
@@ -125,8 +113,7 @@ describe("RunCard body and status (unchanged by the header rework)", () => {
 
   it("carries the status colour class on the card and the pill", async () => {
     const html = await renderCard(run({ status: "failed" }));
-    // The pill is the div whose class list carries the status colour (SSR
-    // merges the static and dynamic classes in either order).
+    // SSR merges static and dynamic classes in either order.
     const pill = findElement(html, "div", "status-failed");
 
     expect(html).toContain('class="run-card status-failed"');
@@ -158,7 +145,7 @@ describe("RunCard body and status (unchanged by the header rework)", () => {
   });
 });
 
-describe("RunCard dev-loop detail (C3 stepped rail)", () => {
+describe("RunCard dev-loop detail", () => {
   const apiStep = (overrides = {}) => ({
     agent: "feature-builder",
     iteration: 0,
@@ -351,8 +338,7 @@ describe("RunCard grouped detail (categories)", () => {
     expect(html).toContain("implementation");
     expect(html).toContain("quality-loop");
     expect(html).toContain("stage-running");
-    // No per-worker detail has landed: the loop workers never appear, and no
-    // group headers render while there is nothing to group.
+    // No per-worker detail has landed, so no group headers render.
     expect(html).not.toContain("static-analysis");
     expect(html).not.toContain("dev-loop-group");
     expect(html).toContain("hide dev-loop detail");
@@ -371,15 +357,12 @@ describe("RunCard grouped detail (categories)", () => {
 
     expect(list).not.toBeNull();
     expect(html).toContain("dev-loop-group");
-    // The quality-loop header precedes its member rows in the markup.
     const headerAt = list.inner.indexOf("dev-loop-group");
     const memberAt = list.inner.indexOf("static-analysis");
     expect(headerAt).toBeGreaterThanOrEqual(0);
     expect(memberAt).toBeGreaterThan(headerAt);
-    // Both implementation members render.
     expect(list.inner).toContain("feature-builder");
     expect(list.inner).toContain("test-runner");
-    // The toggle still counts worker rows with unchanged totals.
     expect(html).toContain("4 steps");
   });
 
