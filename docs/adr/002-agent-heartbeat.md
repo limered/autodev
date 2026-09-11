@@ -1,7 +1,16 @@
 # ADR 002: Agent Heartbeat and Freeze Snapshot
 
 ## Status
-Proposed
+Accepted (reaffirmed 2026-09-11 — see Amendment)
+
+## Amendment (2026-09-11)
+Grilled from agentic-review finding `#171`: the VM script regressed to
+touching the marker every 30s while the process is alive, which reports a
+deadlocked-but-alive agent as fresh and makes the stall verdict unreachable
+for it. Decision: output-progress semantics stand — the marker is touched
+only on new agent output, with long-silence tolerance explicit in the
+sampler. The per-poll VM reads collapse into one poll Module behind a small
+Interface (sample + verdict + completion together).
 
 ## Context
 In issue 03 (headless job agent), a job silently hung for ~60s. The VM was

@@ -16,3 +16,8 @@
 | **Agent liveness** | Whether the agent inside a job VM is making forward progress. Distinct from VM liveness: the VM can be healthy while the agent is stuck. This is the failure the heartbeat system detects. |
 | **Heartbeat** | A marker file in the job VM, touched by a wrapper only when the agent emits new output. A stale marker means the agent has stopped making progress. The host polls its freshness; staleness beyond 5 minutes signals a stall. |
 | **Freeze snapshot** | A JSON manifest of the VM's state (agent log tail, marker timestamp, job params, `ps aux`/`free -m`/`df -h`) captured on the host when a stall is detected, before the VM is destroyed, so the freeze can be debugged later. Stored under `.scratch/freezes/<job>-<timestamp>/`. |
+| **pipeline shape** | The ordered stage catalog of a job: stage ids, member workers, and loop iteration counts in `agents.json` map order. Owned by `lib/AgentsConfig.ps1` (ADR 003). |
+| **slot** | The seeded category a finished `(agent, iteration)` phase fills per `Get-StepCategory`. Overflow clamps to the last matching slot. |
+| **candidate** | One `(agent, iteration)` phase entry derived from pipeline shape for relay (`Get-PhaseStepCandidates`). |
+| **uncategorized** | The bucket for stages and steps with no configured category. Detail rows for unmapped workers group here; the bucket never matches a heartbeat report, so it cannot light a stage. Literal pinned by contract test per tier (PS, API, RunView). |
+| **dev loop** | The `RunView` projection of per-worker step rows with loop affordance, totals, and progress (`RunView/models/devLoop.js`). Composed by `runView`; loop membership comes from seeded stage `type`, never a frontend hardcode. |
