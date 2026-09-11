@@ -1,6 +1,8 @@
 import { secondsSince, lastSeenLabel } from "../../_shared/models/time.js";
 import { isTerminalRun } from "./runStatus.js";
 
+export const UNCATEGORIZED = "uncategorized";
+
 // Single freshness verdict (issue #123): thresholds, terminal handling and the
 // missing-heartbeat case evolve here together. Both card readers (active and
 // history lists) go through runView, so this is the one seam staleness is
@@ -47,12 +49,12 @@ export function runView(run, nowMs) {
   }
 
   const secs = secondsSince(run.lastHeartbeatAt, nowMs);
-  // Category identity rides beside the worker name on every stage; runs
-  // persisted before categories carry no category and fall back to the worker
-  // name, so they render exactly as today.
+  // Category identity rides beside the worker name on every stage. Stages and
+  // steps with no category land in the uncategorized bucket, which groups
+  // under its own header and never affects the seeded lights.
   const stages = (run.stages || []).map((s) => ({
     agent: s.agent,
-    category: s.category ?? s.agent,
+    category: s.category ?? UNCATEGORIZED,
     model: s.model,
     statusClass: stageStatusClass(s.status),
   }));
@@ -73,9 +75,9 @@ export function runView(run, nowMs) {
     const isLoop = iteration !== 0 && LOOP_AGENTS.has(s.agent);
     return {
       agent: s.agent,
-      // The seeded slot the worker filled; steps relayed before categories
-      // carry none and group under the worker name, like legacy stages.
-      category: s.category || s.agent,
+      // The seeded slot the worker filled; a worker with no configured
+      // category lands in the uncategorized bucket.
+      category: s.category || UNCATEGORIZED,
       iteration,
       model: s.model ?? "—",
       statusClass: stageStatusClass(s.status),
