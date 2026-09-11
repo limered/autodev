@@ -2,15 +2,12 @@
 import { computed, ref } from "vue";
 import { runView } from "../models/runView.js";
 
-// A single run card, shared by the active list and the history list (issue #52
-// split). Owns the run → view mapping so list components stay thin; `now` is a
-// prop because the freshness ticker belongs to the list (one timer per list,
-// not per card).
+// Owns the run → view mapping so list components stay thin; `now` is a
+// prop so one list-level timer covers every card.
 const props = defineProps({
   run: { type: Object, required: true },
   now: { type: Number, required: true },
-  // Active-runs list opts in to the delete control; history runs are terminal
-  // and left read-only.
+  // Only active runs opt in to the delete control; terminal runs stay read-only.
   deletable: { type: Boolean, default: false },
   initialExpanded: { type: Boolean, default: false },
 });
@@ -56,10 +53,6 @@ function isLastRow(gi, si) {
 
 <template>
   <article class="run-card" :class="view.statusClass">
-    <!-- Variant C header (issue #99): the meta line — status pill ·
-         repo/branch · abort — is the whole header, with the pill and the
-         abort control fixed at the ends and repo/branch flexing to fill.
-         Run detail lives only in the expandable dev-loop section below. -->
     <div class="card-header">
       <div class="status-badge" :class="view.statusClass">
         <span class="status-indicator"></span>
@@ -272,8 +265,6 @@ function isLastRow(gi, si) {
   color: var(--green);
 }
 .delete-run {
-  /* Borderless × (issue #99 Variant C): quiet at rest — no border, no
-     background — and reddens with a subtle tint only on hover. */
   display: inline-flex;
   align-items: center;
   justify-content: center;
