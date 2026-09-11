@@ -192,6 +192,18 @@ Describe 'Send-PhaseFinishedSteps relay' {
         $script:relayed[0]['category'] | Should -Be 'implementation'
         $script:relayed[1]['category'] | Should -Be 'test-rerun'
     }
+    It 'attaches the uncategorized bucket from the lookup without skipping the step' {
+        $files = @{
+            '/tmp/phase-agentic-review-0.meta.json' = '{"agent":"agentic-review","iteration":0,"durationMs":1000,"status":"done"}'
+            '/tmp/phase-agentic-review-0.jsonl'     = '{"type":"step_finish","usage":{"inputTokens":9,"outputTokens":1}}'
+        }
+        $fakeCat = { param($a) $path = $a[-1]; if ($files.ContainsKey($path)) { return $files[$path] }; throw "missing $path" }
+        $script:relayed = @()
+        $fakeRelay = { param($fields) $script:relayed += $fields }
+        Send-PhaseFinishedSteps -RunId 'r1' -VmName 'v1' -ModelLookup { param($a) return 'm' } -Executor $fakeCat -Relay $fakeRelay -CategoryLookup { param($a, $i) return 'uncategorized' }
+        $script:relayed.Count | Should -Be 1
+        $script:relayed[0]['category'] | Should -Be 'uncategorized'
+    }
     It 'omits the category when there is no lookup or it misses' {
         $files = @{
             '/tmp/phase-feature-builder-0.meta.json' = '{"agent":"feature-builder","iteration":0,"durationMs":61000,"status":"done"}'

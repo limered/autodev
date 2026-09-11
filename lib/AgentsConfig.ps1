@@ -124,13 +124,12 @@ function ConvertTo-SeededStages {
 # member on a loop pass (iteration != 0) fills the loop slot, every other pass
 # fills sequential slots in map order with the pass index selecting among
 # repeated workers (test-runner/0 lands in implementation, test-runner/1 in
-# test-rerun). Returns $null when no slot names the worker — the relay then
-# sends the step without a category and grouping falls back to the worker
-# name, so an unmapped worker never breaks the lights.
+# test-rerun). A worker no slot names lands in the uncategorized bucket, so it
+# still groups under a header and never breaks the lights.
 function Get-StepCategory {
     param([string]$Agent, [int]$Iteration, $Config)
     $entries = @($Config)
-    if ([string]::IsNullOrWhiteSpace($Agent) -or $entries.Count -eq 0) { return $null }
+    if ([string]::IsNullOrWhiteSpace($Agent) -or $entries.Count -eq 0) { return 'uncategorized' }
     if ($Iteration -ne 0) {
         $loop = @($entries | Where-Object { $_.Type -eq 'loop' -and @($_.Agents) -contains $Agent }) | Select-Object -First 1
         if ($loop) { return $loop.Id }
@@ -138,9 +137,9 @@ function Get-StepCategory {
     $sequential = @($entries | Where-Object { $_.Type -ne 'loop' -and @($_.Agents) -contains $Agent })
     if ($sequential.Count -gt 0) {
         if ($Iteration -ge 0 -and $Iteration -lt $sequential.Count) { return $sequential[$Iteration].Id }
-        return $null
+        return 'uncategorized'
     }
     $any = @($entries | Where-Object { @($_.Agents) -contains $Agent }) | Select-Object -First 1
     if ($any) { return $any.Id }
-    return $null
+    return 'uncategorized'
 }

@@ -129,11 +129,11 @@ Describe 'Get-StepCategory' {
             Get-StepCategory -Agent $agent -Iteration $iteration -Config $script:config | Should -Be $expected
         }
     }
-    It 'returns null for a worker no slot names' {
-        Get-StepCategory -Agent 'no-such-agent' -Iteration 0 -Config $script:config | Should -Be $null
+    It 'lands a worker no slot names in the uncategorized bucket' {
+        Get-StepCategory -Agent 'no-such-agent' -Iteration 0 -Config $script:config | Should -Be 'uncategorized'
     }
-    It 'returns null for a repeated worker past its slots' {
-        Get-StepCategory -Agent 'test-runner' -Iteration 5 -Config $script:config | Should -Be $null
+    It 'lands a repeated worker past its slots in the uncategorized bucket' {
+        Get-StepCategory -Agent 'test-runner' -Iteration 5 -Config $script:config | Should -Be 'uncategorized'
     }
     It 'maps a loop-only worker on pass zero to its loop slot' {
         Get-StepCategory -Agent 'static-analysis' -Iteration 0 -Config $script:config | Should -Be 'quality-loop'
