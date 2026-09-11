@@ -5,8 +5,8 @@ namespace Api.Runs;
 /// <summary>
 /// One pipeline stage of a run: the agent (phase) name and the model it will use.
 /// The category is the seeded slot the stage lights under; the agent remains for
-/// post-run detail. Runs persisted before categories carry no category and fall
-/// back to the agent name when deriving status.
+/// post-run detail. Stages persisted before categories carry none and read as
+/// the uncategorized bucket.
 /// Travels on the run-started event and is persisted on the run.
 /// </summary>
 public record RunStage(string Agent, string Model, string? Category = null);

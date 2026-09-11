@@ -43,7 +43,7 @@ public record RunResponse(
         r.FreezeCaptured,
         r.FreezeLocalPath,
         r.UpdatedAt,
-        RunStageStatus.Derive(r.Stages, r.CurrentPhase, r.Status, r.CurrentCategory),
+        RunStageStatus.Derive(r.Stages, r.Status, r.CurrentCategory),
         r.CurrentPhase,
         r.Steps?.Select(s => new RunStepView(
             s.Agent, s.Iteration, s.Model, s.Status,
