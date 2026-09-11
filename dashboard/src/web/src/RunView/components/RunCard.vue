@@ -135,7 +135,7 @@ function isLastRow(gi, si) {
              dots, so mid-run there is no per-worker churn. -->
         <template v-if="view.hasSteps">
           <template v-for="(g, gi) in view.devGroups" :key="`group-${g.category}-${gi}`">
-            <li class="dev-loop-group">
+            <li v-if="g.steps.length > 0" class="dev-loop-group">
               <span class="dev-loop-rail" aria-hidden="true">
                 <span class="dev-loop-dot" :class="g.statusClass"></span>
               </span>

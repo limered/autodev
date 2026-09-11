@@ -424,4 +424,34 @@ describe("RunCard grouped detail (categories)", () => {
     expect(html).toContain("uncategorized");
     expect(html).toContain("feature-builder");
   });
+
+  it("hides empty category headers once steps have landed elsewhere", async () => {
+    const html = await renderCard(
+      run({
+        status: "done",
+        stages: categorizedStages("done"),
+        steps: [
+          {
+            agent: "feature-builder",
+            iteration: 0,
+            model: "m-impl",
+            status: "done",
+            inputTokens: 100,
+            outputTokens: 50,
+            durationMs: 1000,
+            cost: null,
+          },
+        ],
+      }),
+      { initialExpanded: true },
+    );
+    const list = findElement(html, "ol", "dev-loop");
+
+    expect(list).not.toBeNull();
+    expect(list.inner).toContain("uncategorized");
+    expect(list.inner).toContain("feature-builder");
+    expect(list.inner).not.toContain("implementation");
+    expect(list.inner).not.toContain("quality-loop");
+    expect(list.inner).not.toContain("test-rerun");
+  });
 });
