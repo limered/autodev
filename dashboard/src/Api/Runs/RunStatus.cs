@@ -3,7 +3,7 @@ namespace Api.Runs;
 /// <summary>
 /// The central run-status vocabulary. The fold writes these statuses and
 /// guards on <see cref="IsTerminal"/>; read-side projections collapse on
-/// <see cref="Done"/>.
+/// <see cref="Done"/> and stop advancing on <see cref="Failed"/>.
 /// </summary>
 public static class RunStatus
 {

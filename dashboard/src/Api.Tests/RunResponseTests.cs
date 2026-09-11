@@ -18,15 +18,15 @@ public class RunResponseTests
 
     private static readonly RunStage[] Pipeline =
     {
-        new("feature-builder", "m1"),
-        new("test-runner", "m2"),
-        new("pr-author", "m3"),
+        new("feature-builder", "m1", "feature-builder"),
+        new("test-runner", "m2", "test-runner"),
+        new("pr-author", "m3", "pr-author"),
     };
 
     [Fact]
     public void From_ProjectsDerivedStageStatus()
     {
-        var state = State(status: "running", currentPhase: "test-runner", stages: Pipeline);
+        var state = State(status: "running", currentPhase: "test-runner", stages: Pipeline, currentCategory: "test-runner");
 
         var response = RunResponse.From(state);
 
@@ -34,6 +34,7 @@ public class RunResponseTests
         Assert.Equal("owner/repo", response.Repo);
         Assert.Equal("running", response.Status);
         Assert.Equal("test-runner", response.CurrentPhase);
+        Assert.Equal("test-runner", response.CurrentCategory);
         Assert.Equal("https://pr", response.PrUrl);
 
         Assert.NotNull(response.Stages);
@@ -43,6 +44,20 @@ public class RunResponseTests
         Assert.Equal("pending", response.Stages[2].Status);
         Assert.Equal("feature-builder", response.Stages[0].Agent);
         Assert.Equal("m1", response.Stages[0].Model);
+    }
+
+    [Fact]
+    public void From_WorkerPhaseAlone_LightsNothing()
+    {
+        // The heartbeat worker name no longer drives the lights: without a
+        // reported category every stage stays pending.
+        var state = State(status: "running", currentPhase: "test-runner", stages: Pipeline);
+
+        var response = RunResponse.From(state);
+
+        Assert.NotNull(response.Stages);
+        Assert.Equal(3, response.Stages!.Count);
+        Assert.All(response.Stages, s => Assert.Equal("pending", s.Status));
     }
 
     [Fact]
@@ -82,7 +97,7 @@ public class RunResponseTests
     public void From_RunWithoutSteps_ReturnsEmptyStepList()
     {
         // Pre-steps runs still render via the stages fallback.
-        var state = State(status: "running", currentPhase: "test-runner", stages: Pipeline, steps: null);
+        var state = State(status: "running", currentPhase: "test-runner", stages: Pipeline, steps: null, currentCategory: "test-runner");
 
         var response = RunResponse.From(state);
 
@@ -157,17 +172,39 @@ public class RunResponseTests
     }
 
     [Fact]
-    public void From_LegacyRunWithoutCategories_FallsBackToWorkerName()
+    public void From_FailedRun_MarksActiveCategoryFailed()
     {
-        var state = State(status: "running", currentPhase: "test-runner", stages: Pipeline);
+        var stages = new[]
+        {
+            new RunStage("feature-builder", "m1", "feature-builder"),
+            new RunStage("quality-loop", "m3", "quality-loop"),
+            new RunStage("pr-author", "m4", "pr-author"),
+        };
+        var state = State(status: "failed", currentPhase: "static-analysis", stages: stages, currentCategory: "quality-loop");
+
+        var response = RunResponse.From(state);
+
+        Assert.Equal(3, response.Stages.Count);
+        Assert.Equal("done", response.Stages[0].Status);
+        Assert.Equal("failed", response.Stages[1].Status);
+        Assert.Equal("pending", response.Stages[2].Status);
+    }
+
+    [Fact]
+    public void From_RunWithoutCategories_ReadsUncategorized()
+    {
+        var legacy = new[]
+        {
+            new RunStage("feature-builder", "m1"),
+            new RunStage("test-runner", "m2"),
+        };
+        var state = State(status: "running", currentPhase: "test-runner", stages: legacy);
 
         var response = RunResponse.From(state);
 
         Assert.Null(response.CurrentCategory);
-        Assert.Equal(3, response.Stages.Count);
-        Assert.Equal("test-runner", response.Stages[1].Category);
-        Assert.Equal("done", response.Stages[0].Status);
-        Assert.Equal("running", response.Stages[1].Status);
-        Assert.Equal("pending", response.Stages[2].Status);
+        Assert.Equal(2, response.Stages.Count);
+        Assert.All(response.Stages, s => Assert.Equal(RunStageStatus.Uncategorized, s.Category));
+        Assert.All(response.Stages, s => Assert.Equal("pending", s.Status));
     }
 }

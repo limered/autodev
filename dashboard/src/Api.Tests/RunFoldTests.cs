@@ -514,8 +514,8 @@ public class RunFoldTests
     [Fact]
     public void PhaseFinished_WithoutCategory_StoresNull()
     {
-        // Steps relayed before categories carry none; grouping falls back to
-        // the worker name and the lights never notice.
+        // Steps relayed before categories carry none; the dashboard groups
+        // them under the uncategorized bucket and the lights never notice.
         var current = State("running");
 
         var next = RunFold.Apply(current, new PhaseFinishedEvent(
