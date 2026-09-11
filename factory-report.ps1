@@ -130,9 +130,11 @@ function Send-PhaseFinishedSteps {
                 model        = $model
             }
             # The seeded slot the worker filled, so post-run detail groups under
-            # its category header. A lookup miss (or no lookup) sends the step
-            # without a category: grouping falls back to the worker name and the
-            # lights — derived from the heartbeat category only — never notice.
+            # its category header. A worker no slot names resolves to the
+            # uncategorized bucket, so it still groups without touching the
+            # lights — derived from the heartbeat category only. A lookup miss
+            # (or no lookup) sends the step without a category and the
+            # dashboard buckets it the same way.
             if ($CategoryLookup) {
                 $category = $null
                 try { $category = & $CategoryLookup $candidate.Agent $candidate.Iteration } catch { $category = $null }
