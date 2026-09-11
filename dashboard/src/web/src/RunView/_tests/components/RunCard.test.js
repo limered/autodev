@@ -399,7 +399,7 @@ describe("RunCard grouped detail (categories)", () => {
     expect(html).not.toContain("#0");
   });
 
-  it("groups legacy steps without a category under their worker name", async () => {
+  it("groups steps without a category under the uncategorized bucket", async () => {
     const html = await renderCard(
       run({
         status: "done",
@@ -421,6 +421,7 @@ describe("RunCard grouped detail (categories)", () => {
     );
 
     expect(html).toContain("dev-loop-group");
+    expect(html).toContain("uncategorized");
     expect(html).toContain("feature-builder");
   });
 });

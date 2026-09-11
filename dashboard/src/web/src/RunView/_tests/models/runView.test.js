@@ -204,19 +204,19 @@ describe("runView", () => {
       expect(view.stages).toHaveLength(3);
       expect(view.stages[0]).toEqual({
         agent: "feature-builder",
-        category: "feature-builder",
+        category: "uncategorized",
         model: "m1",
         statusClass: "stage-done",
       });
       expect(view.stages[1]).toEqual({
         agent: "test-runner",
-        category: "test-runner",
+        category: "uncategorized",
         model: "m2",
         statusClass: "stage-running",
       });
       expect(view.stages[2]).toEqual({
         agent: "pr-author",
-        category: "pr-author",
+        category: "uncategorized",
         model: "m3",
         statusClass: "stage-pending",
       });
@@ -240,7 +240,7 @@ describe("runView", () => {
       });
     });
 
-    it("falls back to the worker name when the stage carries no category", () => {
+    it("lands a stage with no category in the uncategorized bucket", () => {
       const run = {
         ...baseRun,
         stages: [{ agent: "quality-loop", model: "m2", status: "running" }],
@@ -248,7 +248,7 @@ describe("runView", () => {
 
       const view = runView(run, nowMs);
 
-      expect(view.stages[0].category).toBe("quality-loop");
+      expect(view.stages[0].category).toBe("uncategorized");
       expect(view.stages[0].statusClass).toBe("stage-running");
     });
 
@@ -430,7 +430,7 @@ describe("runView", () => {
       expect(view.devLoop).toHaveLength(1);
       expect(view.devLoop[0]).toMatchObject({
         agent: "feature-builder",
-        category: "feature-builder",
+        category: "uncategorized",
         model: "m1",
         statusClass: "stage-done",
         isLoop: false,
@@ -713,7 +713,7 @@ describe("runView", () => {
       expect(view.devGroups[1].statusClass).toBe("stage-failed");
     });
 
-    it("groups legacy steps without a category under their worker name", () => {
+    it("groups steps without a category under the uncategorized bucket", () => {
       const run = {
         ...baseRun,
         status: "done",
@@ -724,8 +724,29 @@ describe("runView", () => {
       const view = runView(run, nowMs);
 
       expect(view.devGroups).toHaveLength(1);
-      expect(view.devGroups[0].category).toBe("feature-builder");
+      expect(view.devGroups[0].category).toBe("uncategorized");
       expect(view.devGroups[0].steps).toHaveLength(1);
+    });
+
+    it("keeps staged groups intact when an unmapped worker lands in uncategorized", () => {
+      const run = {
+        ...baseRun,
+        status: "done",
+        stages: [
+          { agent: "implementation", category: "implementation", model: "m1", status: "done" },
+        ],
+        steps: [step(), step({ agent: "ghost", category: "uncategorized" })],
+      };
+
+      const view = runView(run, nowMs);
+
+      expect(view.devGroups.map((g) => g.category)).toEqual([
+        "implementation",
+        "uncategorized",
+      ]);
+      expect(view.devGroups[0].steps).toHaveLength(1);
+      expect(view.devGroups[0].statusClass).toBe("stage-done");
+      expect(view.devGroups[1].steps.map((s) => s.agent)).toEqual(["ghost"]);
     });
 
     it("appends rows whose category matches no stage after the staged groups", () => {
