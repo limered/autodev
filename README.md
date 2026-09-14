@@ -15,8 +15,8 @@ persistent orchestrator state in the MVP.
 
 ## Prerequisites
 
-- Windows host with [multipass](https://multipass.run) installed
-- PowerShell 5.1+
+- Windows host with [multipass](https://multipass.run) installed, **or** Linux host with podman/docker and the prebuilt runner image (`podman build -t slop-factory-runner:latest infrastructure/docker`)
+- PowerShell 5.1+ (`pwsh` on Linux)
 - Secrets in `.secrets/`: `github-pat.txt`, `opencode-api-key.txt`
 
 ## Usage
