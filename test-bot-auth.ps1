@@ -17,8 +17,8 @@ param(
 
 $ErrorActionPreference = "Stop"
 
-$cloudInit = Join-Path $RepoRoot "infrastructure\multipass\cloud-init.yaml"
-$testScript = Join-Path $RepoRoot "infrastructure\multipass\test-bot-auth.sh"
+$cloudInit = Join-Path $RepoRoot "infrastructure/multipass/cloud-init.yaml"
+$testScript = Join-Path $RepoRoot "infrastructure/multipass/test-bot-auth.sh"
 $secretsDir = Join-Path $RepoRoot ".secrets"
 $sshKey = Join-Path $secretsDir "bot-github"
 $sshPubKey = Join-Path $secretsDir "bot-github.pub"

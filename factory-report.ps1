@@ -27,8 +27,8 @@ function Initialize-FactoryReport {
     param([string]$RepoRoot)
     $script:FactoryReportInit = $true
     try {
-        $urlFile = Join-Path $RepoRoot ".secrets\factory-dashboard-url.txt"
-        $tokenFile = Join-Path $RepoRoot ".secrets\factory-dashboard-token.txt"
+        $urlFile = Join-Path $RepoRoot ".secrets/factory-dashboard-url.txt"
+        $tokenFile = Join-Path $RepoRoot ".secrets/factory-dashboard-token.txt"
         if ((Test-Path -LiteralPath $urlFile) -and (Test-Path -LiteralPath $tokenFile)) {
             $script:FactoryReportUrl = (Get-Content -LiteralPath $urlFile -Raw).Trim().TrimEnd('/')
             $script:FactoryReportToken = (Get-Content -LiteralPath $tokenFile -Raw).Trim()

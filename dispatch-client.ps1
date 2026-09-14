@@ -29,7 +29,8 @@
 [CmdletBinding()]
 param(
     [string]$RepoRoot = $PSScriptRoot,
-    [string]$ConfigPath = (Join-Path $PSScriptRoot "dispatch-client.config.json")
+    [string]$ConfigPath = (Join-Path $PSScriptRoot "dispatch-client.config.json"),
+    [ValidateSet('multipass', 'container')][string]$Isolator = $(if ($env:OS -eq 'Windows_NT') { 'multipass' } else { 'container' })
 )
 
 $ErrorActionPreference = "Stop"
@@ -106,14 +107,18 @@ function Invoke-ClaimNext {
 function Start-ClaimedJob {
     param(
         [object]$Claim,
-        [string]$RepoRoot
+        [string]$RepoRoot,
+        [string]$Isolator = 'multipass'
     )
     $startJob = Join-Path $RepoRoot "start-job.ps1"
     if (-not (Test-Path $startJob)) {
         throw "start-job.ps1 not found at $startJob"
     }
 
-    & $startJob -RunId $Claim.runId -RepoUrl $Claim.repoUrl -Spec $Claim.spec -RepoRoot $RepoRoot
+    & $startJob -RunId $Claim.runId -RepoUrl $Claim.repoUrl -Spec $Claim.spec -RepoRoot $RepoRoot -Isolator $Isolator
+    if ($LASTEXITCODE -ne 0) {
+        throw "start-job.ps1 failed with exit code $LASTEXITCODE"
+    }
 }
 
 # -----------------------------------------------------------------------------
@@ -135,7 +140,9 @@ $claimIntervalSeconds = if ($config.claimIntervalSeconds) { $config.claimInterva
 
 Write-Host "==> Dispatch client starting" -ForegroundColor Cyan
 Write-Host "    Backend: $backendUrl" -ForegroundColor DarkGray
-Write-Host "    Repos: $($config.repos -join ', ')" -ForegroundColor DarkGray
+$repoNames = @($config.repos | ForEach-Object { if ($_.ownerRepo) { $_.ownerRepo } else { "$_" } })
+Write-Host "    Repos: $($repoNames -join ', ')" -ForegroundColor DarkGray
+Write-Host "    Isolator: $Isolator" -ForegroundColor DarkGray
 Write-Host "    Sync interval: ${syncIntervalSeconds}s" -ForegroundColor DarkGray
 Write-Host "    Claim interval: ${claimIntervalSeconds}s" -ForegroundColor DarkGray
 
@@ -177,7 +184,7 @@ while ($true) {
         $claim = Invoke-ClaimNext -BackendUrl $backendUrl -FactoryToken $factoryToken
         if ($claim) {
             Write-Host "==> Claimed run $($claim.runId); starting job" -ForegroundColor Cyan
-            Start-ClaimedJob -Claim $claim -RepoRoot $RepoRoot
+            Start-ClaimedJob -Claim $claim -RepoRoot $RepoRoot -Isolator $Isolator
             Write-Host "==> Job $($claim.runId) finished" -ForegroundColor Cyan
         }
     }

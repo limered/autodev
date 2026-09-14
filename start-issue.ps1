@@ -34,6 +34,7 @@ param(
     [Parameter(Mandatory = $true)][string]$RepoUrl,
     [string]$Model,
     [string]$RepoRoot = $PSScriptRoot,
+    [ValidateSet('multipass', 'container')][string]$Isolator = $(if ($env:OS -eq 'Windows_NT') { 'multipass' } else { 'container' }),
     [switch]$KeepVmOnFailure
 )
 
@@ -54,6 +55,7 @@ $invokeArgs = @{
     Spec    = $IssueNumber
     Branch  = $Branch
     RepoRoot = $RepoRoot
+    Isolator = $Isolator
 }
 if ($PSBoundParameters.ContainsKey('Model')) {
     $invokeArgs['Model'] = $Model
