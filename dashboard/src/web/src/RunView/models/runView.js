@@ -53,8 +53,6 @@ export function runView(run, nowMs) {
   for (const s of rawSteps) {
     agentCounts[s.agent] = (agentCounts[s.agent] ?? 0) + 1;
   }
-  // A loop slot carries several loop passes while a sequential re-run owns
-  // its slot alone, so loop-ness follows the backend category assignment.
   const loopPassesByCategory = new Map();
   for (const s of rawSteps) {
     if ((s.iteration ?? 0) === 0) continue;
