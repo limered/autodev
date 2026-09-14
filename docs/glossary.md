@@ -4,7 +4,9 @@
 |---|---|
 | **slop-factory** | A system that uses AI agents to automatically implement software features from specifications and produce pull requests. |
 | **Job** | A single unit of work: check out a repository, run opencode against a goal/spec, and produce a branch/PR. |
-| **Runtime Environment** | The isolated execution context where a job runs. In the MVP this is a Linux VM on a Windows host. |
+| **Runtime Environment** | The isolated execution context where a job runs. On Windows this is a Linux VM; on Linux this is an ephemeral container. |
+| **Runner** | The host-side process that executes Jobs: `start-job` (single Job) plus the dispatch client loop (sync issues, claim queue, run Jobs serially). |
+| **Issue** | A GitHub issue labeled `ready-for-agent` that a Job implements. Avoid: ticket. |
 | **opencode** | The headless AI agent CLI used inside the runtime; invoked as `opencode run "prompt"`. |
 | **Orchestrator DB** | Out-of-scope external database that would track job state and health. For the MVP, Git is the source of truth. |
 | **Bot User** | A dedicated GitHub user account used by all jobs to clone repositories and push branches via a shared SSH key. |

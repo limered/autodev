@@ -5,7 +5,10 @@ Product: slop-factory — Jobs run opencode inside a Disposable VM to produce a 
 ## Domain terms (from docs/glossary.md)
 
 - **Job** — checkout + opencode run + branch/PR.
-- **Disposable VM** — one Linux VM per Job, destroyed afterwards.
+- **Disposable VM** — one Linux VM per Job on Windows, destroyed afterwards.
+- **Runner** — host-side Job executor (`start-job` + dispatch client loop).
+- **Issue** — GitHub issue labeled `ready-for-agent`; _Avoid_: ticket.
+- **Runtime Environment** — isolated Job context: Linux VM on Windows, ephemeral container on Linux.
 - **Heartbeat** — agent-output freshness marker; stale = stalled agent.
 - **Freeze snapshot** — forensic manifest captured before teardown.
 
