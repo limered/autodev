@@ -410,6 +410,25 @@ describe("runView", () => {
       expect(view.steps[1].showIteration).toBe(true);
     });
 
+    it("derives loop rows from the backend category slot, not the agent name", () => {
+      const run = {
+        ...baseRun,
+        steps: [
+          step({ agent: "feature-builder", category: "implementation", iteration: 0 }),
+          step({ agent: "review-bot", category: "quality-loop", iteration: 1 }),
+          step({ agent: "feature-builder", category: "quality-loop", iteration: 1 }),
+          step({ agent: "test-runner", category: "test-rerun", iteration: 1 }),
+        ],
+      };
+
+      const view = runView(run, nowMs);
+
+      expect(view.steps[0].isLoop).toBe(false);
+      expect(view.steps[1].isLoop).toBe(true);
+      expect(view.steps[2].isLoop).toBe(true);
+      expect(view.steps[3].isLoop).toBe(false);
+    });
+
     it("maps failed steps to the failed colour class", () => {
       const run = { ...baseRun, steps: [step({ status: "failed" })] };
 

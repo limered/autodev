@@ -53,15 +53,22 @@ export function runView(run, nowMs) {
   for (const s of rawSteps) {
     agentCounts[s.agent] = (agentCounts[s.agent] ?? 0) + 1;
   }
-  // Only quality-loop participants indent as loops.
-  const LOOP_AGENTS = new Set(["static-analysis", "feature-builder"]);
+  // A loop slot carries several loop passes while a sequential re-run owns
+  // its slot alone, so loop-ness follows the backend category assignment.
+  const loopPassesByCategory = new Map();
+  for (const s of rawSteps) {
+    if ((s.iteration ?? 0) === 0) continue;
+    const key = s.category || UNCATEGORIZED;
+    loopPassesByCategory.set(key, (loopPassesByCategory.get(key) ?? 0) + 1);
+  }
   const steps = rawSteps.map((s) => {
     const input = s.inputTokens ?? 0;
     const output = s.outputTokens ?? 0;
     const total = input + output;
     const duration = s.durationMs ?? 0;
     const iteration = s.iteration ?? 0;
-    const isLoop = iteration !== 0 && LOOP_AGENTS.has(s.agent);
+    const isLoop =
+      iteration !== 0 && (loopPassesByCategory.get(s.category || UNCATEGORIZED) ?? 0) > 1;
     return {
       agent: s.agent,
       category: s.category || UNCATEGORIZED,
