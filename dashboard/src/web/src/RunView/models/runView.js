@@ -4,10 +4,11 @@ import { devLoopView } from "./devLoopView.js";
 
 // Freshness is decided here so thresholds, terminal handling and the
 // missing-heartbeat case evolve together.
-export function freshnessFor(status, secs, terminal) {
+export function freshnessFor(run, nowMs) {
+  const secs = secondsSince(run.lastHeartbeatAt, nowMs);
   if (secs === null) return "unknown";
-  if (terminal) return "settled";
-  if (status === "stalled") return "stale-warn";
+  if (isTerminalRun(run)) return "settled";
+  if (run.status === "stalled") return "stale-warn";
   if (secs > 120) return "stale-danger";
   if (secs > 30) return "stale-warn";
   return "fresh";
@@ -40,7 +41,7 @@ export function runView(run, nowMs) {
     timeLabel: terminal ? "Completed" : "Last seen",
     lastSeen: terminal ? null : lastSeenLabel(secs),
     completed: terminal ? formatTime(run.finishedAt ?? run.lastHeartbeatAt) : null,
-    freshnessClass: freshnessFor(run.status, secs, terminal),
+    freshnessClass: freshnessFor(run, nowMs),
     statusClass: `status-${run.status}`,
     started: formatTime(run.startedAt),
     ...devLoopView(run),
