@@ -102,12 +102,13 @@ function Send-PhaseFinishedSteps {
     param(
         [Parameter(Mandatory = $true)][string]$RunId,
         [Parameter(Mandatory = $true)][string]$VmName,
+        $Config,
         [scriptblock]$ModelLookup,
         [scriptblock]$Executor,
         [scriptblock]$Relay,
         [scriptblock]$CategoryLookup
     )
-    foreach ($candidate in (Get-PhaseStepCandidates)) {
+    foreach ($candidate in (Get-PhaseStepCandidates -Config $Config)) {
         try {
             $meta = Get-VmPhaseMeta -VmName $VmName -Agent $candidate.Agent -Iteration $candidate.Iteration -Executor $Executor
             if ($null -eq $meta) { continue } # phase never ran (or VM gone): skip

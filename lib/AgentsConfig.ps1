@@ -41,13 +41,10 @@ function ConvertFrom-AgentsConfigJson {
         if ([string]::IsNullOrWhiteSpace($rawType)) {
             throw "Agents config stage '$id' must declare a type"
         }
-        if ($rawType -notin @('sequential', 'loop', 'parallel')) {
+        if ($rawType -notin @('sequential', 'loop')) {
             throw "Agents config stage '$id' has unknown type '$($node.type)' (expected sequential or loop)"
         }
         $type = $rawType
-        if ($type -eq 'parallel') {
-            $type = 'sequential'
-        }
         $agents = @()
         if ($null -ne $node.agents) {
             $agents = @(@($node.agents) | ForEach-Object { "$_" } | Where-Object { -not [string]::IsNullOrWhiteSpace($_) })
@@ -124,8 +121,10 @@ function ConvertTo-SeededStages {
 # member on a loop pass (iteration != 0) fills the loop slot, every other pass
 # fills sequential slots in map order with the pass index selecting among
 # repeated workers (test-runner/0 lands in implementation, test-runner/1 in
-# test-rerun). A worker no slot names lands in the uncategorized bucket, so it
-# still groups under a header and never breaks the lights.
+# test-rerun). Overflow clamps to the last matching slot, so a repeated worker
+# past its slots still groups under its category. A worker no slot names lands
+# in the uncategorized bucket, so it still groups under a header and never
+# breaks the lights.
 function Get-StepCategory {
     param([string]$Agent, [int]$Iteration, $Config)
     $entries = @($Config)
@@ -136,8 +135,9 @@ function Get-StepCategory {
     }
     $sequential = @($entries | Where-Object { $_.Type -ne 'loop' -and @($_.Agents) -contains $Agent })
     if ($sequential.Count -gt 0) {
-        if ($Iteration -ge 0 -and $Iteration -lt $sequential.Count) { return $sequential[$Iteration].Id }
-        return 'uncategorized'
+        if ($Iteration -lt 0) { return 'uncategorized' }
+        if ($Iteration -lt $sequential.Count) { return $sequential[$Iteration].Id }
+        return $sequential[-1].Id
     }
     $any = @($entries | Where-Object { @($_.Agents) -contains $Agent }) | Select-Object -First 1
     if ($any) { return $any.Id }
