@@ -36,10 +36,9 @@ Describe 'ConvertFrom-AgentsConfigJson' {
         @($entries | Where-Object { $_.Agents -contains 'test-runner' }).Count | Should -Be 2
         @($entries | Where-Object { $_.Agents -contains 'feature-builder' }).Count | Should -Be 2
     }
-    It 'treats parallel as sequential' {
+    It 'rejects parallel without coercion' {
         $json = '{"stages":{"a":{"type":"parallel","agents":["feature-builder"]}}}'
-        $entries = ConvertFrom-AgentsConfigJson -Json $json
-        $entries[0].Type | Should -Be 'sequential'
+        { ConvertFrom-AgentsConfigJson -Json $json } | Should -Throw '*expected sequential or loop*'
     }
     It 'throws on invalid JSON' {
         { ConvertFrom-AgentsConfigJson -Json 'not json' } | Should -Throw
@@ -132,8 +131,11 @@ Describe 'Get-StepCategory' {
     It 'lands a worker no slot names in the uncategorized bucket' {
         Get-StepCategory -Agent 'no-such-agent' -Iteration 0 -Config $script:config | Should -Be 'uncategorized'
     }
-    It 'lands a repeated worker past its slots in the uncategorized bucket' {
-        Get-StepCategory -Agent 'test-runner' -Iteration 5 -Config $script:config | Should -Be 'uncategorized'
+    It 'clamps a repeated worker past its slots to the last matching slot' {
+        Get-StepCategory -Agent 'test-runner' -Iteration 5 -Config $script:config | Should -Be 'test-rerun'
+    }
+    It 'clamps a single-slot worker past its slot to that slot' {
+        Get-StepCategory -Agent 'pr-author' -Iteration 5 -Config $script:config | Should -Be 'pr-author'
     }
     It 'maps a loop-only worker on pass zero to its loop slot' {
         Get-StepCategory -Agent 'static-analysis' -Iteration 0 -Config $script:config | Should -Be 'quality-loop'
