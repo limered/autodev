@@ -64,19 +64,6 @@ $ErrorActionPreference = "Stop"
 
 $Repo = ConvertTo-OwnerRepo -RepoUrl $RepoUrl
 
-# Read an agent's model from its definition frontmatter (.opencode/agents/<name>.md,
-# the `model:` field) — the single source of truth opencode headless honors.
-# opencode.json no longer carries per-agent models.
-function Get-AgentModel {
-    param([string]$Agent, [string]$RepoRoot)
-    $agentPath = Join-Path $RepoRoot ".opencode/agents/$Agent.md"
-    if (-not (Test-Path -LiteralPath $agentPath)) { throw "Agent definition not found: $agentPath" }
-    $match = (Get-Content -LiteralPath $agentPath -Raw | Select-String -Pattern '(?m)^model:\s*(\S+)')
-    $model = $match.Matches.Groups[1].Value
-    if (-not $model) { throw "No model found in frontmatter of $agentPath" }
-    return $model
-}
-
 # Default the run-level model to the default_agent's model.
 if (-not $Model) {
     $configPath = Join-Path $RepoRoot ".opencode/opencode.json"
@@ -84,20 +71,10 @@ if (-not $Model) {
     $Model = Get-AgentModel -Agent $defaultAgent -RepoRoot $RepoRoot
 }
 
-# Seeded categories come from the repo-root agents.json stages map: one stage
-# per category in map order, each carrying the model of its first member.
-# Models resolve once into a table up front; the lookup closure captures data,
-# never a script function, so it survives nested invocation via the call operator.
 $seedConfig = Read-AgentsConfig -Path (Join-Path $RepoRoot "agents.json")
-$agentModels = @{}
-foreach ($member in @($seedConfig | ForEach-Object { @($_.Agents) })) {
-    if (-not $agentModels.ContainsKey($member)) {
-        $agentModels[$member] = Get-AgentModel -Agent $member -RepoRoot $RepoRoot
-    }
-}
-$modelLookup = { param($agent) $agentModels["$agent"] }.GetNewClosure()
+$agentModels = Get-AgentModelMap -Config $seedConfig -RepoRoot $RepoRoot
 $categoryLookup = { param($agent, $iteration) Get-StepCategory -Agent "$agent" -Iteration ([int]$iteration) -Config $seedConfig }.GetNewClosure()
-$stages = @(ConvertTo-SeededStages -Config $seedConfig -ModelLookup $modelLookup)
+$stages = @(ConvertTo-SeededStages -Config $seedConfig -ModelMap $agentModels)
 
 # The run id is either supplied by the dispatch client or defaulted above to a
 # fresh GUID; it is the identity carried on every dashboard event.
@@ -243,10 +220,10 @@ try {
 
     # V1 per-step pull (not streaming): the guest is still up and no terminal
     # event has been sent, so every phase-finished lands before run-finished.
-    # The model rides from the host-side agent frontmatter via Get-AgentModel.
+    # The model rides from the shared host-side agent model map.
     Write-Step "Relaying per-phase timing + tokens to the dashboard"
     try {
-        Send-PhaseFinishedSteps -RunId $RunId -VmName $VmName -Config $seedConfig -ModelLookup $modelLookup -CategoryLookup $categoryLookup -Executor $watchExec
+        Send-PhaseFinishedSteps -RunId $RunId -VmName $VmName -Config $seedConfig -ModelMap $agentModels -CategoryLookup $categoryLookup -Executor $watchExec
     }
     catch {
         Write-Host "WARN: per-phase step relay failed: $_" -ForegroundColor Yellow
@@ -285,7 +262,7 @@ catch {
         # finished before the failure still land (re-emits are safe,
         # last-write-wins); steps must precede run-failed or they are dropped.
         try {
-            Send-PhaseFinishedSteps -RunId $RunId -VmName $VmName -Config $seedConfig -ModelLookup $modelLookup -CategoryLookup $categoryLookup -Executor $watchExec
+            Send-PhaseFinishedSteps -RunId $RunId -VmName $VmName -Config $seedConfig -ModelMap $agentModels -CategoryLookup $categoryLookup -Executor $watchExec
         }
         catch {
             Write-Host "WARN: per-phase step relay failed: $_" -ForegroundColor Yellow

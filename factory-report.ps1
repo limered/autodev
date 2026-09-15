@@ -21,6 +21,7 @@ $script:FactoryReportToken = $null
 $script:FactoryReportInit = $false
 
 . (Join-Path $PSScriptRoot "lib/HttpJson.ps1")
+. (Join-Path $PSScriptRoot "lib/AgentsConfig.ps1")
 . (Join-Path $PSScriptRoot "lib/PhaseSteps.ps1")
 
 function Initialize-FactoryReport {
@@ -87,8 +88,8 @@ function Send-FactoryEvent {
   terminal guard drops them. For every candidate phase the VM meta sidecar
   (durationMs + status) and NDJSON (token usage) are pulled via multipass-cat;
   phases that never ran are skipped. The model is attached here on the host
-  via -ModelLookup (existing Get-AgentModel over the agent frontmatter) and
-  a model-less step is never sent — the backend drops it as a no-op. The
+  via -ModelMap (the shared Get-AgentModelMap over the agent frontmatter)
+  and a model-less step is never sent — the backend drops it as a no-op. The
   event clock is the host clock (Send-FactoryEvent's default `at`). The seeded
   category rides the same way via -CategoryLookup (built from the repo-root
   agents.json at launch).
@@ -102,11 +103,13 @@ function Send-PhaseFinishedSteps {
         [Parameter(Mandatory = $true)][string]$RunId,
         [Parameter(Mandatory = $true)][string]$VmName,
         $Config,
+        [hashtable]$ModelMap,
         [scriptblock]$ModelLookup,
         [scriptblock]$Executor,
         [scriptblock]$Relay,
         [scriptblock]$CategoryLookup
     )
+    $useMap = $PSBoundParameters.ContainsKey('ModelMap')
     foreach ($candidate in (Get-PhaseStepCandidates -Config $Config)) {
         try {
             $meta = Get-VmPhaseMeta -VmName $VmName -Agent $candidate.Agent -Iteration $candidate.Iteration -Executor $Executor
@@ -116,10 +119,20 @@ function Send-PhaseFinishedSteps {
                 $tokens = [PSCustomObject]@{ InputTokens = [long]0; OutputTokens = [long]0; Cost = $null }
             }
             $model = $null
-            if ($ModelLookup) {
-                try { $model = & $ModelLookup $candidate.Agent } catch { $model = $null }
+            $modelError = $null
+            if ($useMap) {
+                $model = $ModelMap["$($candidate.Agent)"]
             }
-            if (-not $model) { continue } # never send model-less: the backend would drop it
+            elseif ($ModelLookup) {
+                try { $model = & $ModelLookup $candidate.Agent } catch { $model = $null; $modelError = "$_" }
+            }
+            if ([string]::IsNullOrWhiteSpace("$model")) {
+                $categoryForError = $null
+                if ($null -ne $Config) {
+                    try { $categoryForError = Get-StepCategory -Agent $candidate.Agent -Iteration $candidate.Iteration -Config $Config } catch { $categoryForError = $null }
+                }
+                throw (Get-AgentModelErrorMessage -Agent "$($candidate.Agent)" -Category "$categoryForError" -Cause $modelError)
+            }
             $fields = @{
                 agent        = $candidate.Agent
                 iteration    = $candidate.Iteration
