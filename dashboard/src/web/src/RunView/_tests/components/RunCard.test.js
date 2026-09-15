@@ -338,14 +338,33 @@ describe("RunCard grouped detail (categories)", () => {
     const html = await renderExpandedCard(
       run({ status: "running", stages: categorizedStages(), steps: [] }),
     );
+    const list = findElement(html, "ol", "dev-loop");
 
     expect(html).toContain("implementation");
     expect(html).toContain("quality-loop");
     expect(html).toContain("stage-running");
-    // No per-worker detail has landed, so no group headers render.
+    expect(html).toContain("dev-loop-group");
+    expect(list).not.toBeNull();
+    expect(list.inner).toContain("implementation");
+    expect(list.inner).toContain("quality-loop");
+    expect(list.inner).toContain("test-rerun");
     expect(html).not.toContain("static-analysis");
-    expect(html).not.toContain("dev-loop-group");
+    expect(html).not.toContain("dev-loop-item");
     expect(html).toContain("hide dev-loop detail");
+  });
+
+  it("keeps dots-only while live even after steps land: gate on run status, not hasSteps", async () => {
+    const html = await renderExpandedCard(
+      run({ status: "running", stages: categorizedStages(), steps: groupedSteps() }),
+    );
+    const list = findElement(html, "ol", "dev-loop");
+
+    expect(list).not.toBeNull();
+    expect(html).toContain("dev-loop-group");
+    expect(list.inner).toContain("implementation");
+    expect(list.inner).toContain("quality-loop");
+    expect(html).not.toContain("static-analysis");
+    expect(html).not.toContain("dev-loop-item");
   });
 
   it("groups finished per-worker rows under their category header", async () => {
@@ -388,7 +407,9 @@ describe("RunCard grouped detail (categories)", () => {
     const html = await renderExpandedCard(
       run({
         status: "done",
-        stages: [{ agent: "feature-builder", model: "m-impl", status: "done" }],
+        stages: [
+          { agent: "implementation", category: "implementation", model: "m-impl", status: "done" },
+        ],
         steps: [
           {
             agent: "feature-builder",

@@ -1,7 +1,44 @@
 import { describe, it, expect } from "vitest";
-import { devLoopView } from "../../models/devLoopView.js";
+import { devLoopView, UNCATEGORIZED } from "../../models/devLoopView.js";
 
 describe("devLoopView", () => {
+  describe("uncategorized contract", () => {
+    it("pins the uncategorized literal shared across tiers", () => {
+      expect(UNCATEGORIZED).toBe("uncategorized");
+    });
+
+    it("groups unmapped workers without lighting a stage", () => {
+      const run = {
+        runId: "run-1",
+        repo: "owner/repo",
+        branch: "main",
+        model: "test-model",
+        status: "done",
+        stages: [
+          { agent: "implementation", category: "implementation", model: "m1", status: "done" },
+        ],
+        steps: [
+          {
+            agent: "ghost",
+            category: "ghost",
+            iteration: 0,
+            model: "m-ghost",
+            status: "done",
+            inputTokens: 100,
+            outputTokens: 50,
+            durationMs: 1000,
+          },
+        ],
+      };
+
+      const view = devLoopView(run);
+
+      expect(view.devGroups.map((g) => g.category)).toEqual(["implementation", "uncategorized"]);
+      expect(view.devGroups[1].steps.map((s) => s.agent)).toEqual(["ghost"]);
+      expect(view.devGroups[1]).toMatchObject({ model: "—", statusClass: "stage-pending" });
+    });
+  });
+
   const baseRun = {
     runId: "run-1",
     repo: "owner/repo",
@@ -437,7 +474,7 @@ describe("devLoopView", () => {
       expect(view.devLoopTotals).toMatchObject({ tokens: 3500, ms: 90000 });
     });
 
-    it("marks a group failed when any member failed, done when all are done", () => {
+    it("trusts the seeded stage status for finished headers, not step aggregation", () => {
       const failed = {
         ...baseRun,
         status: "failed",
@@ -455,8 +492,8 @@ describe("devLoopView", () => {
 
       const view = devLoopView(failed);
 
-      expect(view.devGroups[0].statusClass).toBe("stage-done");
-      expect(view.devGroups[1].statusClass).toBe("stage-failed");
+      expect(view.devGroups[0].statusClass).toBe("stage-running");
+      expect(view.devGroups[1].statusClass).toBe("stage-pending");
     });
 
     it("groups steps without a category under the uncategorized bucket", () => {
@@ -492,7 +529,7 @@ describe("devLoopView", () => {
       expect(view.devGroups[1].steps.map((s) => s.agent)).toEqual(["ghost"]);
     });
 
-    it("appends rows whose category matches no stage after the staged groups", () => {
+    it("routes rows whose category matches no stage into the single uncategorized group", () => {
       const run = {
         ...baseRun,
         status: "done",
@@ -504,8 +541,9 @@ describe("devLoopView", () => {
 
       const view = devLoopView(run);
 
-      expect(view.devGroups.map((g) => g.category)).toEqual(["implementation", "ghost"]);
-      expect(view.devGroups[1]).toMatchObject({ model: "—", statusClass: "stage-done" });
+      expect(view.devGroups.map((g) => g.category)).toEqual(["implementation", "uncategorized"]);
+      expect(view.devGroups[1]).toMatchObject({ model: "—", statusClass: "stage-pending" });
+      expect(view.devGroups[1].steps.map((s) => s.agent)).toEqual(["ghost"]);
     });
 
     it("reports no groups when neither steps nor stages exist", () => {

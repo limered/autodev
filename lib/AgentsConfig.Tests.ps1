@@ -131,6 +131,11 @@ Describe 'Get-StepCategory' {
     It 'lands a worker no slot names in the uncategorized bucket' {
         Get-StepCategory -Agent 'no-such-agent' -Iteration 0 -Config $script:config | Should -Be 'uncategorized'
     }
+    It 'pins the uncategorized literal shared across tiers' {
+        Get-StepCategory -Agent '' -Iteration 0 -Config $script:config | Should -Be 'uncategorized'
+        Get-StepCategory -Agent '   ' -Iteration 0 -Config $script:config | Should -Be 'uncategorized'
+        Get-StepCategory -Agent 'no-such-agent' -Iteration 0 -Config $script:config | Should -BeExactly 'uncategorized'
+    }
     It 'clamps a repeated worker past its slots to the last matching slot' {
         Get-StepCategory -Agent 'test-runner' -Iteration 5 -Config $script:config | Should -Be 'test-rerun'
     }
