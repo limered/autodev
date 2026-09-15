@@ -20,13 +20,8 @@
 
 . (Join-Path $PSScriptRoot "HostVm.ps1")
 
-# Pipeline-shape Seam: expands the parsed agents.json config
-# (ConvertFrom-AgentsConfigJson output) into relay candidates in map order.
-# Sequential emits one entry per member at the next free iteration for that
-# worker (first occurrence is iteration 0, a repeat bumps to 1, ...), so a
-# worker in two sequential categories gets distinct keys (test-runner/0,
-# test-runner/1). Loop emits N entries at 1..N per member, outer iteration
-# index then member order. Pure over the config, no VM.
+# Expands the parsed agents.json config into relay candidates in map order.
+# Sequential takes the next free iteration per worker, loop emits 1..N per member.
 function Get-PhaseStepCandidates {
     param($Config)
     $candidates = @()
