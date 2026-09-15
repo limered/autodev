@@ -1,6 +1,6 @@
 import { secondsSince, lastSeenLabel } from "../../_shared/models/time.js";
 import { isTerminalRun } from "./runStatus.js";
-import { devLoopView } from "./devLoopView.js";
+import { devLoop } from "./devLoop.js";
 
 export function freshnessFor(run, nowMs) {
   const secs = secondsSince(run.lastHeartbeatAt, nowMs);
@@ -40,6 +40,6 @@ export function runView(run, nowMs) {
     freshnessClass: freshnessFor(run, nowMs),
     statusClass: `status-${run.status}`,
     started: formatTime(run.startedAt),
-    ...devLoopView(run),
+    ...devLoop(run),
   };
 }

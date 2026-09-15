@@ -83,6 +83,11 @@ Describe 'ConvertTo-SeededStages' {
         $stages[3]['model'] | Should -Be 'model-agentic-review'
         $stages[4]['model'] | Should -Be 'model-pr-author'
     }
+    It 'seeds the stage type so the dashboard reads loop membership from the payload' {
+        $config = ConvertFrom-AgentsConfigJson -Json $script:V1Json
+        $stages = @(ConvertTo-SeededStages -Config $config -ModelLookup { param($a) return 'm' })
+        ($stages | ForEach-Object { $_['type'] }) -join ',' | Should -Be 'sequential,loop,sequential,sequential,sequential'
+    }
     It 'emits distinct categories when workers repeat' {
         $config = ConvertFrom-AgentsConfigJson -Json $script:V1Json
         $stages = @(ConvertTo-SeededStages -Config $config -ModelLookup { param($a) return 'm' })

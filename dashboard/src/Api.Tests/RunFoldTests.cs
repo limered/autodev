@@ -81,6 +81,24 @@ public class RunFoldTests
     }
 
     [Fact]
+    public void RunStarted_CarriesStageTypes()
+    {
+        var stages = new[]
+        {
+            new RunStage("implementation", "m1", "implementation", "sequential"),
+            new RunStage("quality-loop", "m2", "quality-loop", "loop"),
+        };
+
+        var next = RunFold.Apply(null, new RunStartedEvent(Repo: "r", Stages: stages) { At = T1, RunId = RunId });
+
+        Assert.NotNull(next);
+        Assert.NotNull(next.Stages);
+        Assert.Equal(2, next.Stages.Count);
+        Assert.Equal("sequential", next.Stages[0].Type);
+        Assert.Equal("loop", next.Stages[1].Type);
+    }
+
+    [Fact]
     public void RunStarted_OnExistingRun_IsNoOp()
     {
         var current = State();

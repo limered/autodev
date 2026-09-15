@@ -156,6 +156,38 @@ public class IngestTests
     }
 
     [Fact]
+    public async Task FromWire_RunStarted_IngestsStageType()
+    {
+        var store = new FakeRunStore();
+
+        var ev = FromWire(
+            """{"type":"run-started","at":"2024-02-01T00:01:00Z","repo":"owner/repo","branch":"feat/x","spec":"do the thing","model":"gpt-x","stages":[{"agent":"quality-loop","model":"gpt-x","category":"quality-loop","type":"loop"}]}""");
+
+        var started = Assert.IsType<RunStartedEvent>(ev);
+        Assert.Equal("loop", Assert.Single(started.Stages!).Type);
+
+        var state = await store.Apply(RunId, started);
+        Assert.NotNull(state);
+        Assert.Equal("loop", Assert.Single(state.Stages!).Type);
+    }
+
+    [Fact]
+    public async Task FromWire_RunStarted_LegacyStagesWithoutType_IngestNullType()
+    {
+        var store = new FakeRunStore();
+
+        var ev = FromWire(
+            """{"type":"run-started","at":"2024-02-01T00:01:00Z","repo":"owner/repo","branch":"feat/x","spec":"do the thing","model":"gpt-x","stages":[{"agent":"build","model":"gpt-x"}]}""");
+
+        var started = Assert.IsType<RunStartedEvent>(ev);
+        Assert.Null(Assert.Single(started.Stages!).Type);
+
+        var state = await store.Apply(RunId, started);
+        Assert.NotNull(state);
+        Assert.Null(Assert.Single(state.Stages!).Type);
+    }
+
+    [Fact]
     public async Task FromWire_Heartbeat_WithoutPhase_IngestsNullPhase()
     {
         var store = new FakeRunStore();

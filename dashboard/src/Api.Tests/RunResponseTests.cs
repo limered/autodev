@@ -207,4 +207,37 @@ public class RunResponseTests
         Assert.All(response.Stages, s => Assert.Equal(RunStageStatus.Uncategorized, s.Category));
         Assert.All(response.Stages, s => Assert.Equal("pending", s.Status));
     }
+
+    [Fact]
+    public void From_ProjectsSeededStageType_ForLoopMembership()
+    {
+        var stages = new[]
+        {
+            new RunStage("implementation", "m1", "implementation", "sequential"),
+            new RunStage("quality-loop", "m2", "quality-loop", "loop"),
+        };
+        var state = State(status: "running", stages: stages, currentCategory: "quality-loop");
+
+        var response = RunResponse.From(state);
+
+        Assert.Equal(2, response.Stages.Count);
+        Assert.Equal("sequential", response.Stages[0].Type);
+        Assert.Equal("loop", response.Stages[1].Type);
+        Assert.Equal("done", response.Stages[0].Status);
+        Assert.Equal("running", response.Stages[1].Status);
+    }
+
+    [Fact]
+    public void From_LegacyStagesWithoutType_ProjectsNullType()
+    {
+        var legacy = new[]
+        {
+            new RunStage("feature-builder", "m1", "feature-builder"),
+        };
+        var state = State(status: "running", stages: legacy, currentCategory: "feature-builder");
+
+        var response = RunResponse.From(state);
+
+        Assert.Null(Assert.Single(response.Stages).Type);
+    }
 }

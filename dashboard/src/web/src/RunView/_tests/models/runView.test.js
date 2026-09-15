@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { runView } from "../../models/runView.js";
-import { devLoopView } from "../../models/devLoopView.js";
+import { devLoop } from "../../models/devLoop.js";
 
 describe("runView", () => {
   const nowMs = new Date("2024-06-15T12:00:00Z").getTime();
@@ -190,7 +190,7 @@ describe("runView", () => {
     });
   });
 
-  describe("dev-loop composition: RunCard reads the devLoopView verdict", () => {
+  describe("dev-loop composition: RunCard reads the devLoop verdict", () => {
     const step = (overrides = {}) => ({
       agent: "feature-builder",
       category: "implementation",
@@ -207,8 +207,20 @@ describe("runView", () => {
       const run = {
         ...baseRun,
         stages: [
-          { agent: "implementation", category: "implementation", model: "m1", status: "done" },
-          { agent: "quality-loop", category: "quality-loop", model: "m2", status: "running" },
+          {
+            agent: "implementation",
+            category: "implementation",
+            model: "m1",
+            status: "done",
+            type: "sequential",
+          },
+          {
+            agent: "quality-loop",
+            category: "quality-loop",
+            model: "m2",
+            status: "running",
+            type: "loop",
+          },
         ],
         steps: [
           step(),
@@ -216,11 +228,36 @@ describe("runView", () => {
         ],
       };
 
-      expect(runView(run, nowMs)).toMatchObject(devLoopView(run));
+      expect(runView(run, nowMs)).toMatchObject(devLoop(run));
     });
 
     it("exposes empty dev-loop verdicts when neither steps nor stages exist", () => {
-      expect(runView(baseRun, nowMs)).toMatchObject(devLoopView(baseRun));
+      expect(runView(baseRun, nowMs)).toMatchObject(devLoop(baseRun));
+    });
+
+    it("drops stages/steps/hasSteps outputs: stages stay input shape", () => {
+      const run = {
+        ...baseRun,
+        stages: [
+          {
+            agent: "implementation",
+            category: "implementation",
+            model: "m1",
+            status: "done",
+            type: "sequential",
+          },
+        ],
+        steps: [step()],
+      };
+
+      const view = runView(run, nowMs);
+
+      expect(view).not.toHaveProperty("stages");
+      expect(view).not.toHaveProperty("steps");
+      expect(view).not.toHaveProperty("hasSteps");
+      expect(view).toHaveProperty("devLoop");
+      expect(view).toHaveProperty("devLoopTotals");
+      expect(view).toHaveProperty("devLoopProgress");
     });
   });
 
