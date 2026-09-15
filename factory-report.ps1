@@ -91,8 +91,7 @@ function Send-FactoryEvent {
   a model-less step is never sent — the backend drops it as a no-op. The
   event clock is the host clock (Send-FactoryEvent's default `at`). The seeded
   category rides the same way via -CategoryLookup (built from the repo-root
-  agents.json at launch), so detail groups under its header without ever
-  feeding the liveness derivation.
+  agents.json at launch).
 
   Best-effort throughout: a missing file, an unknown model, or a reporting
   outage skips that step, never the job. Pass -Executor to drive scripted VM
@@ -130,12 +129,6 @@ function Send-PhaseFinishedSteps {
                 status       = $meta.Status
                 model        = $model
             }
-            # The seeded slot the worker filled, so post-run detail groups under
-            # its category header. A worker no slot names resolves to the
-            # uncategorized bucket, so it still groups without touching the
-            # lights — derived from the heartbeat category only. A lookup miss
-            # (or no lookup) sends the step without a category and the
-            # dashboard buckets it the same way.
             if ($CategoryLookup) {
                 $category = $null
                 try { $category = & $CategoryLookup $candidate.Agent $candidate.Iteration } catch { $category = $null }

@@ -97,7 +97,6 @@ describe("devLoopView", () => {
       inputTokens: 100,
       outputTokens: 50,
       durationMs: 61000,
-      cost: 0.0123,
       ...overrides,
     });
 
@@ -121,7 +120,6 @@ describe("devLoopView", () => {
         inputTokens: 100,
         outputTokens: 50,
         durationMs: 61000,
-        cost: 0.0123,
       });
       expect(view.steps[0].stats).toBe("150 · 1m 01s");
     });
@@ -262,7 +260,6 @@ describe("devLoopView", () => {
       inputTokens: 100,
       outputTokens: 50,
       durationMs: 1000,
-      cost: 0.0123,
       ...overrides,
     });
 
@@ -326,7 +323,6 @@ describe("devLoopView", () => {
       inputTokens: 100,
       outputTokens: 50,
       durationMs: 61000,
-      cost: 0.0123,
       ...overrides,
     });
 
@@ -407,7 +403,6 @@ describe("devLoopView", () => {
         inputTokens: 100,
         outputTokens: 50,
         durationMs: 61000,
-        cost: 0.0123,
         stats: "150 · 1m 01s",
       });
     });

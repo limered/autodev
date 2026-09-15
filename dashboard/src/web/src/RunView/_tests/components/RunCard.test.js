@@ -1,9 +1,8 @@
+// @vitest-environment happy-dom
 import { describe, it, expect } from "vitest";
-import { createSSRApp, h } from "vue";
+import { createApp, createSSRApp, h, nextTick } from "vue";
 import { renderToString } from "vue/server-renderer";
 import RunCard from "../../components/RunCard.vue";
-
-// Rendered via SSR so the card's markup contract can be asserted without a DOM.
 
 // Fixed clock so renders are deterministic.
 const NOW = new Date("2026-09-04T12:00:00Z").getTime();
@@ -23,6 +22,19 @@ const run = (overrides = {}) => ({
 async function renderCard(r, props = {}) {
   const app = createSSRApp({ render: () => h(RunCard, { run: r, now: NOW, ...props }) });
   return renderToString(app);
+}
+
+async function renderExpandedCard(r, props = {}) {
+  const host = document.createElement("div");
+  document.body.appendChild(host);
+  const app = createApp({ render: () => h(RunCard, { run: r, now: NOW, ...props }) });
+  app.mount(host);
+  host.querySelector(".dev-loop-toggle").click();
+  await nextTick();
+  const html = host.innerHTML;
+  app.unmount();
+  host.remove();
+  return html;
 }
 
 // Vue SSR never emits self-closing divs/uls/buttons, so open/close pairing is unambiguous.
@@ -154,7 +166,6 @@ describe("RunCard dev-loop detail", () => {
     inputTokens: 18200,
     outputTokens: 6400,
     durationMs: 552000,
-    cost: null,
     ...overrides,
   });
 
@@ -195,7 +206,7 @@ describe("RunCard dev-loop detail", () => {
   });
 
   it("expands to every phase plus each loop iteration with tokens and duration", async () => {
-    const html = await renderCard(run({ steps: finishedSteps() }), { initialExpanded: true });
+    const html = await renderExpandedCard(run({ steps: finishedSteps() }));
     const list = findElement(html, "ol", "dev-loop");
 
     expect(list).not.toBeNull();
@@ -208,7 +219,7 @@ describe("RunCard dev-loop detail", () => {
   });
 
   it("badges the iteration only when the agent repeats", async () => {
-    const html = await renderCard(run({ steps: finishedSteps() }), { initialExpanded: true });
+    const html = await renderExpandedCard(run({ steps: finishedSteps() }));
 
     expect(html).toContain("dev-loop-iter");
     expect(html).not.toContain("#0");
@@ -216,7 +227,7 @@ describe("RunCard dev-loop detail", () => {
   });
 
   it("keeps the rail styling: spine dots, step arrows, loop indent and loop-back badge", async () => {
-    const html = await renderCard(run({ steps: finishedSteps() }), { initialExpanded: true });
+    const html = await renderExpandedCard(run({ steps: finishedSteps() }));
 
     expect(html).toContain("dev-loop-rail");
     expect(html).toContain("dev-loop-dot");
@@ -227,9 +238,7 @@ describe("RunCard dev-loop detail", () => {
   });
 
   it("falls back to seeded stages when steps are empty", async () => {
-    const html = await renderCard(run({ stages: [stage("triage", "done")], steps: [] }), {
-      initialExpanded: true,
-    });
+    const html = await renderExpandedCard(run({ stages: [stage("triage", "done")], steps: [] }));
 
     expect(html).toContain("dev-loop-toggle");
     expect(html).toContain("triage");
@@ -266,7 +275,7 @@ describe("RunCard dev-loop detail", () => {
   });
 
   it("keeps the fill on the toggle when expanded", async () => {
-    const html = await renderCard(run({ steps: finishedSteps() }), { initialExpanded: true });
+    const html = await renderExpandedCard(run({ steps: finishedSteps() }));
 
     expect(html).toContain("dev-loop-toggle");
     expect(html).toContain("linear-gradient");
@@ -292,7 +301,6 @@ describe("RunCard grouped detail (categories)", () => {
       inputTokens: 18200,
       outputTokens: 6400,
       durationMs: 552000,
-      cost: null,
     },
     {
       agent: "test-runner",
@@ -303,7 +311,6 @@ describe("RunCard grouped detail (categories)", () => {
       inputTokens: 9400,
       outputTokens: 1800,
       durationMs: 220000,
-      cost: null,
     },
     {
       agent: "static-analysis",
@@ -314,7 +321,6 @@ describe("RunCard grouped detail (categories)", () => {
       inputTokens: 6100,
       outputTokens: 900,
       durationMs: 68000,
-      cost: null,
     },
     {
       agent: "feature-builder",
@@ -325,14 +331,12 @@ describe("RunCard grouped detail (categories)", () => {
       inputTokens: 3000,
       outputTokens: 1500,
       durationMs: 90000,
-      cost: null,
     },
   ];
 
   it("shows category dots only while live: headers for each category, no per-worker rows", async () => {
-    const html = await renderCard(
+    const html = await renderExpandedCard(
       run({ status: "running", stages: categorizedStages(), steps: [] }),
-      { initialExpanded: true },
     );
 
     expect(html).toContain("implementation");
@@ -345,13 +349,12 @@ describe("RunCard grouped detail (categories)", () => {
   });
 
   it("groups finished per-worker rows under their category header", async () => {
-    const html = await renderCard(
+    const html = await renderExpandedCard(
       run({
         status: "done",
         stages: categorizedStages("done"),
         steps: groupedSteps(),
       }),
-      { initialExpanded: true },
     );
     const list = findElement(html, "ol", "dev-loop");
 
@@ -367,13 +370,12 @@ describe("RunCard grouped detail (categories)", () => {
   });
 
   it("keeps the loop affordance on grouped rows", async () => {
-    const html = await renderCard(
+    const html = await renderExpandedCard(
       run({
         status: "done",
         stages: categorizedStages("done"),
         steps: groupedSteps(),
       }),
-      { initialExpanded: true },
     );
 
     expect(html).toContain("dev-loop-is-loop");
@@ -383,7 +385,7 @@ describe("RunCard grouped detail (categories)", () => {
   });
 
   it("groups steps without a category under the uncategorized bucket", async () => {
-    const html = await renderCard(
+    const html = await renderExpandedCard(
       run({
         status: "done",
         stages: [{ agent: "feature-builder", model: "m-impl", status: "done" }],
@@ -397,7 +399,6 @@ describe("RunCard grouped detail (categories)", () => {
             inputTokens: 100,
             outputTokens: 50,
             durationMs: 1000,
-            cost: null,
           },
           {
             agent: "ghost",
@@ -407,11 +408,9 @@ describe("RunCard grouped detail (categories)", () => {
             inputTokens: 100,
             outputTokens: 50,
             durationMs: 1000,
-            cost: null,
           },
         ],
       }),
-      { initialExpanded: true },
     );
 
     expect(html).toContain("dev-loop-group");
@@ -421,7 +420,7 @@ describe("RunCard grouped detail (categories)", () => {
   });
 
   it("hides empty category headers once steps have landed elsewhere", async () => {
-    const html = await renderCard(
+    const html = await renderExpandedCard(
       run({
         status: "done",
         stages: categorizedStages("done"),
@@ -435,7 +434,6 @@ describe("RunCard grouped detail (categories)", () => {
             inputTokens: 100,
             outputTokens: 50,
             durationMs: 1000,
-            cost: null,
           },
           {
             agent: "ghost",
@@ -445,11 +443,9 @@ describe("RunCard grouped detail (categories)", () => {
             inputTokens: 100,
             outputTokens: 50,
             durationMs: 1000,
-            cost: null,
           },
         ],
       }),
-      { initialExpanded: true },
     );
     const list = findElement(html, "ol", "dev-loop");
 
@@ -463,7 +459,7 @@ describe("RunCard grouped detail (categories)", () => {
   });
 
   it("renders a lone populated group flat without its header", async () => {
-    const html = await renderCard(
+    const html = await renderExpandedCard(
       run({
         status: "done",
         stages: categorizedStages("done"),
@@ -476,7 +472,6 @@ describe("RunCard grouped detail (categories)", () => {
             inputTokens: 100,
             outputTokens: 50,
             durationMs: 1000,
-            cost: null,
           },
           {
             agent: "test-runner",
@@ -486,11 +481,9 @@ describe("RunCard grouped detail (categories)", () => {
             inputTokens: 100,
             outputTokens: 50,
             durationMs: 1000,
-            cost: null,
           },
         ],
       }),
-      { initialExpanded: true },
     );
     const list = findElement(html, "ol", "dev-loop");
 

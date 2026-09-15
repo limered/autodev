@@ -93,18 +93,18 @@ function ConvertTo-PhaseTokens {
         if ($null -ne $obj.part) { $holders += $obj.part }
         $holders += $obj
         $distinct = @()
-        foreach ($h in $holders) {
-            if ($null -eq $h) { continue }
+        foreach ($holder in $holders) {
+            if ($null -eq $holder) { continue }
             $dup = $false
-            foreach ($d in $distinct) {
-                if ([object]::ReferenceEquals($h, $d)) { $dup = $true; break }
+            foreach ($seen in $distinct) {
+                if ([object]::ReferenceEquals($holder, $seen)) { $dup = $true; break }
             }
-            if (-not $dup) { $distinct += $h }
+            if (-not $dup) { $distinct += $holder }
         }
         $costProp = $null
-        foreach ($h in $distinct) {
-            $p = $h.PSObject.Properties['cost']
-            if ($null -ne $p -and $null -ne $p.Value) { $costProp = $p; break }
+        foreach ($holder in $distinct) {
+            $prop = $holder.PSObject.Properties['cost']
+            if ($null -ne $prop -and $null -ne $prop.Value) { $costProp = $prop; break }
         }
         if ($null -ne $costProp -and $null -ne $costProp.Value) {
             try { $cost += [double]$costProp.Value; $hasCost = $true } catch { }

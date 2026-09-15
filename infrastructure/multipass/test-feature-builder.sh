@@ -31,9 +31,7 @@ MODEL="${MODEL:-opencode-go/grok-4.5}"
 # Category set (run categories): the host transfers the repo-root agents.json
 # to /tmp/agents.json before this script runs. The VM builds its category list
 # on startup from that file and reports liveness by category (phase_category
-# below) over the existing heartbeat channel. When the file is absent or
-# unreadable (an old launcher), the list stays empty and phase_category falls
-# back to the hardcoded mapping, so liveness keeps working.
+# below) over the existing heartbeat channel.
 AGENTS_JSON="/tmp/agents.json"
 CATEGORY_SPECS=()  # entries "id|type|member1,member2" in stages-map order
 
@@ -130,13 +128,7 @@ stop_ticker() {
 }
 trap 'rc=$?; printf "%s" "$rc" > /tmp/factory-done 2>/dev/null || true; stop_ticker' EXIT
 
-# Maps a reporting worker to the seeded category slot it lights. The slot comes
-# from the startup category list (load_category_specs): a loop member on a loop
-# pass fills the loop slot, every other pass fills sequential slots in map order
-# with the pass index selecting among repeated workers (test-runner/0 lands in
-# implementation, test-runner/1 in test-rerun). With no category list (old
-# launcher, unreadable config) the hardcoded v1 mapping below applies, so
-# liveness keeps working.
+# Maps a reporting worker to the seeded category slot it lights.
 phase_category() {
   local agent="$1"
   local iteration="${2:-0}"
@@ -152,8 +144,7 @@ phase_category() {
   fi
 }
 
-# Config-driven slot lookup for phase_category. Prints the slot and returns 0
-# on a hit; returns 1 on a miss so the caller falls back to the legacy mapping.
+# Config-driven slot lookup for phase_category.
 config_phase_category() {
   local agent="$1"
   local iteration="$2"
