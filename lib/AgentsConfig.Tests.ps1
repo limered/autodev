@@ -158,6 +158,109 @@ Describe 'Get-StepCategory' {
     }
 }
 
+Describe 'Get-AgentModel' {
+    It 'reads the model from frontmatter through the injected reader' {
+        $reader = { param($p) return "---`ndescription: x`nmode: primary`nmodel: opencode-go/muse-spark-1.3-contributor`n---`nbody" }
+        Get-AgentModel -Agent 'feature-builder' -RepoRoot '/repo' -FileReader $reader | Should -Be 'opencode-go/muse-spark-1.3-contributor'
+    }
+    It 'passes the agent definition path to the reader' {
+        $script:seenAgentPath = $null
+        $reader = { param($p) $script:seenAgentPath = "$p"; return "---`nmodel: m`n---" }
+        Get-AgentModel -Agent 'test-runner' -RepoRoot '/repo' -FileReader $reader | Should -Be 'm'
+        "$script:seenAgentPath" | Should -Match 'test-runner\.md$'
+    }
+    It 'throws when the definition is absent' {
+        { Get-AgentModel -Agent 'ghost' -RepoRoot '/nope' -FileReader { param($p) throw "missing $p" } } | Should -Throw '*Agent definition not found*'
+    }
+    It 'throws when frontmatter carries no model' {
+        { Get-AgentModel -Agent 'x' -RepoRoot '/repo' -FileReader { param($p) return "---`ndescription: x`n---`nbody" } } | Should -Throw '*No model found in frontmatter*'
+    }
+}
+
+Describe 'Get-AgentModelMap' {
+    BeforeAll {
+        $script:MapJson = '{"stages":{"implementation":{"type":"sequential","agents":["feature-builder","test-runner"]},"quality-loop":{"type":"loop","agents":["static-analysis","feature-builder"],"iterations":2}}}'
+        $script:MapConfig = ConvertFrom-AgentsConfigJson -Json $script:MapJson
+        $script:MapReader = {
+            param($p)
+            $name = [System.IO.Path]::GetFileNameWithoutExtension("$p")
+            return "---`ndescription: d`nmodel: model-$name`n---"
+        }
+    }
+    It 'resolves each distinct agent once' {
+        $script:readerCalls = @()
+        $counting = {
+            param($p)
+            $script:readerCalls += "$p"
+            return (& $script:MapReader $p)
+        }
+        $map = Get-AgentModelMap -Config $script:MapConfig -RepoRoot '/repo' -FileReader $counting
+        $map.Count | Should -Be 3
+        $map['feature-builder'] | Should -Be 'model-feature-builder'
+        $map['test-runner'] | Should -Be 'model-test-runner'
+        $map['static-analysis'] | Should -Be 'model-static-analysis'
+        @($script:readerCalls | Sort-Object -Unique).Count | Should -Be 3
+    }
+    It 'throws the shared shape naming agent and category when a definition is missing' {
+        $reader = {
+            param($p)
+            $name = [System.IO.Path]::GetFileNameWithoutExtension("$p")
+            if ($name -eq 'ghost') { throw "boom-$name" }
+            return "---`nmodel: m-$name`n---"
+        }
+        $config = ConvertFrom-AgentsConfigJson -Json '{"stages":{"implementation":{"type":"sequential","agents":["ghost"]}}}'
+        try {
+            Get-AgentModelMap -Config $config -RepoRoot '/repo' -FileReader $reader
+            throw 'expected Get-AgentModelMap to throw'
+        }
+        catch {
+            "$_" | Should -Match "No model found for agent 'ghost'"
+            "$_" | Should -Match "category 'implementation'"
+            "$_" | Should -Match 'boom-ghost'
+        }
+    }
+    It 'throws the same shape when frontmatter carries no model' {
+        $config = ConvertFrom-AgentsConfigJson -Json '{"stages":{"implementation":{"type":"sequential","agents":["ghost"]}}}'
+        try {
+            Get-AgentModelMap -Config $config -RepoRoot '/repo' -FileReader { param($p) return "---`ndescription: x`n---" }
+            throw 'expected Get-AgentModelMap to throw'
+        }
+        catch {
+            "$_" | Should -Match "No model found for agent 'ghost'"
+            "$_" | Should -Match "category 'implementation'"
+        }
+    }
+}
+
+Describe 'ConvertTo-SeededStages ModelMap' {
+    It 'seeds from the shared map' {
+        $config = ConvertFrom-AgentsConfigJson -Json $script:V1Json
+        $map = @{
+            'feature-builder' = 'model-feature-builder'
+            'static-analysis' = 'model-static-analysis'
+            'test-runner'     = 'model-test-runner'
+            'agentic-review'  = 'model-agentic-review'
+            'pr-author'       = 'model-pr-author'
+        }
+        $stages = @(ConvertTo-SeededStages -Config $config -ModelMap $map)
+        $stages.Count | Should -Be 5
+        ($stages | ForEach-Object { $_['category'] }) -join ',' | Should -Be 'implementation,quality-loop,test-rerun,agentic-review,pr-author'
+        $stages[0]['model'] | Should -Be 'model-feature-builder'
+        $stages[1]['model'] | Should -Be 'model-static-analysis'
+    }
+    It 'throws the shared error shape on a map miss' {
+        $config = ConvertFrom-AgentsConfigJson -Json $script:V1Json
+        try {
+            ConvertTo-SeededStages -Config $config -ModelMap @{}
+            throw 'expected ConvertTo-SeededStages to throw'
+        }
+        catch {
+            "$_" | Should -Match "No model found for agent 'feature-builder'"
+            "$_" | Should -Match "category 'implementation'"
+        }
+    }
+}
+
 Describe 'Read-AgentsConfig' {
     BeforeAll {
         $script:repoRoot = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path

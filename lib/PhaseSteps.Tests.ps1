@@ -242,6 +242,22 @@ Describe 'Send-PhaseFinishedSteps relay' {
         $script:relayed.Count | Should -Be 1
         $script:relayed[0]['category'] | Should -Be 'uncategorized'
     }
+    It 'relays from the shared model map and skips a map miss without throwing' {
+        $files = @{
+            '/tmp/phase-feature-builder-0.meta.json' = '{"agent":"feature-builder","iteration":0,"durationMs":61000,"status":"done"}'
+            '/tmp/phase-feature-builder-0.jsonl'     = '{"type":"step_finish","usage":{"inputTokens":100,"outputTokens":50}}'
+            '/tmp/phase-test-runner-0.meta.json'     = '{"agent":"test-runner","iteration":0,"durationMs":2000,"status":"done"}'
+            '/tmp/phase-test-runner-0.jsonl'         = '{"type":"step_finish","usage":{"inputTokens":9,"outputTokens":1}}'
+        }
+        $fakeCat = { param($a) $path = $a[-1]; if ($files.ContainsKey($path)) { return $files[$path] }; throw "missing $path" }
+        $script:relayed = @()
+        $fakeRelay = { param($fields) $script:relayed += $fields }
+        $tiny = ConvertFrom-AgentsConfigJson -Json '{"stages":{"implementation":{"type":"sequential","agents":["feature-builder","test-runner"]}}}'
+        { Send-PhaseFinishedSteps -RunId 'r1' -VmName 'v1' -Config $tiny -ModelMap @{ 'feature-builder' = 'm1' } -Executor $fakeCat -Relay $fakeRelay } | Should -Not -Throw
+        $script:relayed.Count | Should -Be 1
+        $script:relayed[0]['agent'] | Should -Be 'feature-builder'
+        $script:relayed[0]['model'] | Should -Be 'm1'
+    }
     It 'omits the category when there is no lookup or it misses' {
         $files = @{
             '/tmp/phase-feature-builder-0.meta.json' = '{"agent":"feature-builder","iteration":0,"durationMs":61000,"status":"done"}'

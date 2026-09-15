@@ -13,6 +13,8 @@
   its first member. The map keys are the category set, so ids are unique by
   construction while the same worker may appear in several categories.
   Pure converters take strings or objects so Pester drives them without files.
+  The agent model map resolves each member model once from its definition
+  frontmatter; an injected file reader keeps that read Pester-pure.
 #>
 
 function ConvertFrom-AgentsConfigJson {
@@ -91,13 +93,86 @@ function Read-AgentsConfig {
     return ConvertFrom-AgentsConfigJson -Json $raw
 }
 
+function Get-AgentModelErrorMessage {
+    param([string]$Agent, [string]$Category, [string]$Cause)
+    $detail = if ([string]::IsNullOrWhiteSpace("$Cause")) { ' (lookup returned empty)' } else { ": $Cause" }
+    if ([string]::IsNullOrWhiteSpace("$Category")) {
+        return "No model found for agent '$Agent'$detail"
+    }
+    return "No model found for agent '$Agent' (category '$Category')$detail"
+}
+
+function Get-AgentModel {
+    param(
+        [Parameter(Mandatory = $true)][string]$Agent,
+        [Parameter(Mandatory = $true)][string]$RepoRoot,
+        [scriptblock]$FileReader
+    )
+    $agentPath = Join-Path $RepoRoot (Join-Path '.opencode/agents' "$Agent.md")
+    $content = $null
+    if ($FileReader) {
+        try {
+            $content = & $FileReader $agentPath
+        }
+        catch {
+            $cause = "$_"
+            if ($cause -match 'Agent definition not found|No model found in frontmatter') { throw }
+            throw "Agent definition not found: $agentPath ($cause)"
+        }
+    }
+    else {
+        if (-not (Test-Path -LiteralPath $agentPath)) { throw "Agent definition not found: $agentPath" }
+        $content = Get-Content -LiteralPath $agentPath -Raw
+    }
+    $match = ("$content" | Select-String -Pattern '(?m)^model:\s*(\S+)')
+    $model = $null
+    if ($null -ne $match) { $model = @($match)[0].Matches.Groups[1].Value }
+    if ([string]::IsNullOrWhiteSpace("$model")) { throw "No model found in frontmatter of $agentPath" }
+    return "$model"
+}
+
+function Get-AgentModelMap {
+    param($Config, [Parameter(Mandatory = $true)][string]$RepoRoot, [scriptblock]$FileReader)
+    $map = @{}
+    $names = @()
+    foreach ($entry in @($Config)) {
+        foreach ($agent in @($entry.Agents)) {
+            $name = "$agent"
+            if ([string]::IsNullOrWhiteSpace($name) -or $map.ContainsKey($name)) { continue }
+            $map[$name] = $null
+            $names += $name
+        }
+    }
+    foreach ($name in $names) {
+        try {
+            if ($FileReader) {
+                $map[$name] = Get-AgentModel -Agent $name -RepoRoot $RepoRoot -FileReader $FileReader
+            }
+            else {
+                $map[$name] = Get-AgentModel -Agent $name -RepoRoot $RepoRoot
+            }
+        }
+        catch {
+            $category = $null
+            foreach ($entry in @($Config)) {
+                if (@($entry.Agents) -contains $name) { $category = "$($entry.Id)"; break }
+            }
+            throw (Get-AgentModelErrorMessage -Agent $name -Category $category -Cause "$_")
+        }
+    }
+    return $map
+}
+
 function ConvertTo-SeededStages {
-    param($Config, [scriptblock]$ModelLookup)
+    param($Config, [hashtable]$ModelMap, [scriptblock]$ModelLookup)
     $stages = @()
     foreach ($entry in @($Config)) {
         $model = $null
         $lookupError = $null
-        if ($ModelLookup) {
+        if ($PSBoundParameters.ContainsKey('ModelMap')) {
+            $model = $ModelMap["$($entry.Agents[0])"]
+        }
+        elseif ($ModelLookup) {
             try {
                 $model = & $ModelLookup $entry.Agents[0]
             }
@@ -107,8 +182,7 @@ function ConvertTo-SeededStages {
             }
         }
         if ([string]::IsNullOrWhiteSpace("$model")) {
-            $cause = if ($lookupError) { ": $lookupError" } else { " (lookup returned empty)" }
-            throw "No model found for agent '$($entry.Agents[0])' (category '$($entry.Id)')$cause"
+            throw (Get-AgentModelErrorMessage -Agent "$($entry.Agents[0])" -Category "$($entry.Id)" -Cause $lookupError)
         }
         $stages += [ordered]@{ agent = $entry.Id; model = "$model"; category = $entry.Id; type = $entry.Type }
     }
