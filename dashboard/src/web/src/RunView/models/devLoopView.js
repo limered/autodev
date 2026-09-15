@@ -18,39 +18,37 @@ function formatDuration(ms) {
 }
 
 export function devLoopView(run) {
-  const stages = (run.stages || []).map((s) => ({
-    agent: s.agent,
-    category: s.category ?? UNCATEGORIZED,
-    model: s.model,
-    statusClass: stageStatusClass(s.status),
+  const stages = (run.stages || []).map((stage) => ({
+    agent: stage.agent,
+    category: stage.category ?? UNCATEGORIZED,
+    model: stage.model,
+    statusClass: stageStatusClass(stage.status),
   }));
 
   const rawSteps = Array.isArray(run.steps) ? run.steps : [];
   const agentCounts = {};
-  for (const s of rawSteps) {
-    agentCounts[s.agent] = (agentCounts[s.agent] ?? 0) + 1;
+  for (const rawStep of rawSteps) {
+    agentCounts[rawStep.agent] = (agentCounts[rawStep.agent] ?? 0) + 1;
   }
-  // Only quality-loop participants indent as loops.
   const LOOP_AGENTS = new Set(["static-analysis", "feature-builder"]);
-  const steps = rawSteps.map((s) => {
-    const input = s.inputTokens ?? 0;
-    const output = s.outputTokens ?? 0;
+  const steps = rawSteps.map((rawStep) => {
+    const input = rawStep.inputTokens ?? 0;
+    const output = rawStep.outputTokens ?? 0;
     const total = input + output;
-    const duration = s.durationMs ?? 0;
-    const iteration = s.iteration ?? 0;
-    const isLoop = iteration !== 0 && LOOP_AGENTS.has(s.agent);
+    const duration = rawStep.durationMs ?? 0;
+    const iteration = rawStep.iteration ?? 0;
+    const isLoop = iteration !== 0 && LOOP_AGENTS.has(rawStep.agent);
     return {
-      agent: s.agent,
-      category: s.category || UNCATEGORIZED,
+      agent: rawStep.agent,
+      category: rawStep.category || UNCATEGORIZED,
       iteration,
-      model: s.model ?? "—",
-      statusClass: stageStatusClass(s.status),
+      model: rawStep.model ?? "—",
+      statusClass: stageStatusClass(rawStep.status),
       isLoop,
-      showIteration: iteration !== 0 && (agentCounts[s.agent] ?? 0) > 1,
+      showIteration: iteration !== 0 && (agentCounts[rawStep.agent] ?? 0) > 1,
       inputTokens: input,
       outputTokens: output,
       durationMs: duration,
-      cost: s.cost ?? null,
       tokensLabel: formatTokenCount(total),
       durationLabel: formatDuration(duration),
       stats:
@@ -63,68 +61,70 @@ export function devLoopView(run) {
   const devLoop =
     steps.length > 0
       ? steps
-      : stages.map((s) => ({
-          agent: s.agent,
-          category: s.category,
+      : stages.map((stage) => ({
+          agent: stage.agent,
+          category: stage.category,
           iteration: 0,
-          model: s.model,
-          statusClass: s.statusClass,
+          model: stage.model,
+          statusClass: stage.statusClass,
           isLoop: false,
           showIteration: false,
           inputTokens: 0,
           outputTokens: 0,
           durationMs: 0,
-          cost: null,
           tokensLabel: "—",
           durationLabel: "0s",
           stats: "—",
         }));
-  const devLoopTokens = devLoop.reduce((n, s) => n + s.inputTokens + s.outputTokens, 0);
-  const devLoopMs = devLoop.reduce((n, s) => n + s.durationMs, 0);
+  const devLoopTokens = devLoop.reduce(
+    (sum, step) => sum + step.inputTokens + step.outputTokens,
+    0,
+  );
+  const devLoopMs = devLoop.reduce((sum, step) => sum + step.durationMs, 0);
   const devLoopDone = devLoop.filter(
-    (s) => s.statusClass === "stage-done" || s.statusClass === "stage-failed",
+    (step) => step.statusClass === "stage-done" || step.statusClass === "stage-failed",
   ).length;
   const devLoopTotal = devLoop.length;
   const devLoopPct = devLoopTotal === 0 ? 0 : Math.round((devLoopDone / devLoopTotal) * 100);
 
-  // Live runs show category dots only so there is no per-worker churn mid-run.
   function headerStatusFor(rows) {
-    if (rows.some((r) => r.statusClass === "stage-failed")) return "stage-failed";
-    if (rows.length > 0 && rows.every((r) => r.statusClass === "stage-done")) return "stage-done";
-    if (rows.some((r) => r.statusClass === "stage-running")) return "stage-running";
+    if (rows.some((row) => row.statusClass === "stage-failed")) return "stage-failed";
+    if (rows.length > 0 && rows.every((row) => row.statusClass === "stage-done"))
+      return "stage-done";
+    if (rows.some((row) => row.statusClass === "stage-running")) return "stage-running";
     return "stage-pending";
   }
 
   const stageByCategory = new Map();
-  for (const st of stages) {
-    if (!stageByCategory.has(st.category)) stageByCategory.set(st.category, st);
+  for (const stage of stages) {
+    if (!stageByCategory.has(stage.category)) stageByCategory.set(stage.category, stage);
   }
   const devGroups = [];
   const groupByKey = new Map();
   function ensureGroup(key) {
-    let g = groupByKey.get(key);
-    if (!g) {
-      const st = stageByCategory.get(key);
-      g = {
+    let group = groupByKey.get(key);
+    if (!group) {
+      const stage = stageByCategory.get(key);
+      group = {
         category: key,
-        model: st ? st.model : "—",
-        statusClass: st ? st.statusClass : "stage-pending",
+        model: stage ? stage.model : "—",
+        statusClass: stage ? stage.statusClass : "stage-pending",
         steps: [],
         totals: { tokens: 0, ms: 0, tokensLabel: "0", durationLabel: "0s" },
       };
-      groupByKey.set(key, g);
-      devGroups.push(g);
+      groupByKey.set(key, group);
+      devGroups.push(group);
     }
-    return g;
+    return group;
   }
-  for (const st of stages) ensureGroup(st.category);
+  for (const stage of stages) ensureGroup(stage.category);
   for (const row of steps) ensureGroup(row.category).steps.push(row);
-  for (const g of devGroups) {
-    if (g.steps.length === 0) continue;
-    const tokens = g.steps.reduce((n, s) => n + s.inputTokens + s.outputTokens, 0);
-    const ms = g.steps.reduce((n, s) => n + s.durationMs, 0);
-    g.statusClass = headerStatusFor(g.steps);
-    g.totals = {
+  for (const group of devGroups) {
+    if (group.steps.length === 0) continue;
+    const tokens = group.steps.reduce((sum, step) => sum + step.inputTokens + step.outputTokens, 0);
+    const ms = group.steps.reduce((sum, step) => sum + step.durationMs, 0);
+    group.statusClass = headerStatusFor(group.steps);
+    group.totals = {
       tokens,
       ms,
       tokensLabel: formatTokenCount(tokens),

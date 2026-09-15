@@ -200,7 +200,6 @@ describe("runView", () => {
       inputTokens: 100,
       outputTokens: 50,
       durationMs: 61000,
-      cost: 0.0123,
       ...overrides,
     });
 

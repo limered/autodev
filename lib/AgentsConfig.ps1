@@ -118,14 +118,6 @@ function ConvertTo-SeededStages {
     return $stages
 }
 
-# Maps one finished (agent, iteration) phase to the seeded category slot it
-# filled, so per-worker detail groups under its category header after the run.
-# Pure over the parsed config (ConvertFrom-AgentsConfigJson output): a loop
-# member on a loop pass (iteration != 0) fills the loop slot, every other pass
-# fills sequential slots in map order with the pass index selecting among
-# repeated workers (test-runner/0 lands in implementation, test-runner/1 in
-# test-rerun). A worker no slot names lands in the uncategorized bucket, so it
-# still groups under a header and never breaks the lights.
 function Get-StepCategory {
     param([string]$Agent, [int]$Iteration, $Config)
     $entries = @($Config)

@@ -2,8 +2,6 @@ import { secondsSince, lastSeenLabel } from "../../_shared/models/time.js";
 import { isTerminalRun } from "./runStatus.js";
 import { devLoopView } from "./devLoopView.js";
 
-// Freshness is decided here so thresholds, terminal handling and the
-// missing-heartbeat case evolve together.
 export function freshnessFor(run, nowMs) {
   const secs = secondsSince(run.lastHeartbeatAt, nowMs);
   if (secs === null) return "unknown";
@@ -15,7 +13,6 @@ export function freshnessFor(run, nowMs) {
 }
 
 export function runView(run, nowMs) {
-  // Terminal runs show a fixed Completed timestamp so the value stays stable across the clock tick.
   const terminal = isTerminalRun(run);
 
   function formatTime(ts) {
@@ -26,7 +23,6 @@ export function runView(run, nowMs) {
   const secs = secondsSince(run.lastHeartbeatAt, nowMs);
 
   return {
-    // RunCard reads view.* everywhere except run.runId.
     statusText: run.status,
     repo: run.repo,
     branch: run.branch,
