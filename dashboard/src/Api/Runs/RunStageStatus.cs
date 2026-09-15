@@ -45,7 +45,7 @@ public static class RunStageStatus
         // stage "running" — collapse the whole pipeline to done instead.
         if (runStatus == RunStatus.Done)
         {
-            return stages.Select(s => new RunStageView(s.Agent, s.Model, Done, EffectiveCategory(s))).ToArray();
+            return stages.Select(s => new RunStageView(s.Agent, s.Model, Done, EffectiveCategory(s), s.Type)).ToArray();
         }
 
         var activeIndex = IndexOfCategory(stages, currentCategory);
@@ -55,7 +55,7 @@ public static class RunStageStatus
         // nothing has verifiably started, so every stage stays pending.
         if (activeIndex < 0)
         {
-            return stages.Select(s => new RunStageView(s.Agent, s.Model, Pending, EffectiveCategory(s))).ToArray();
+            return stages.Select(s => new RunStageView(s.Agent, s.Model, Pending, EffectiveCategory(s), s.Type)).ToArray();
         }
 
         var activeStatus = runStatus == RunStatus.Failed ? Failed : Running;
@@ -63,7 +63,7 @@ public static class RunStageStatus
         for (var i = 0; i < stages.Count; i++)
         {
             var status = i < activeIndex ? Done : i == activeIndex ? activeStatus : Pending;
-            views[i] = new RunStageView(stages[i].Agent, stages[i].Model, status, EffectiveCategory(stages[i]));
+            views[i] = new RunStageView(stages[i].Agent, stages[i].Model, status, EffectiveCategory(stages[i]), stages[i].Type);
         }
 
         return views;

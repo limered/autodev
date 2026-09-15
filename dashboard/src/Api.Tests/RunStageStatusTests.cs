@@ -213,4 +213,30 @@ public class RunStageStatusTests
         Assert.Equal(6, views.Count);
         Assert.All(views, v => Assert.Equal("pending", v.Status));
     }
+
+    [Fact]
+    public void Derive_PropagatesSeededStageType_ForLoopMembership()
+    {
+        var stages = new[]
+        {
+            new RunStage("implementation", "m1", "implementation", "sequential"),
+            new RunStage("quality-loop", "m2", "quality-loop", "loop"),
+        };
+
+        var views = Derive("running", stages, "quality-loop");
+
+        Assert.Equal("sequential", views[0].Type);
+        Assert.Equal("loop", views[1].Type);
+        Assert.Equal("done", views[0].Status);
+        Assert.Equal("running", views[1].Status);
+    }
+
+    [Fact]
+    public void Derive_LegacyStagesWithoutType_ProjectNullType()
+    {
+        var views = Derive("running");
+
+        Assert.Equal(3, views.Count);
+        Assert.All(views, v => Assert.Null(v.Type));
+    }
 }

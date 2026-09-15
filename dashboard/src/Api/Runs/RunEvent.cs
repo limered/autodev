@@ -7,9 +7,11 @@ namespace Api.Runs;
 /// The category is the seeded slot the stage lights under; the agent remains for
 /// post-run detail. Stages persisted before categories carry none and read as
 /// the uncategorized bucket.
+/// Type is the seeded stage kind (sequential or loop) from agents.json; stages
+/// persisted before types carry none and read as non-loop on the dashboard.
 /// Travels on the run-started event and is persisted on the run.
 /// </summary>
-public record RunStage(string Agent, string Model, string? Category = null);
+public record RunStage(string Agent, string Model, string? Category = null, string? Type = null);
 
 /// <summary>
 /// Base of the run-event hierarchy. There is no DTO layer: this hierarchy IS the

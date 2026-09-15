@@ -170,9 +170,10 @@ describe("RunCard dev-loop detail", () => {
   });
 
   const finishedSteps = () => [
-    apiStep(),
+    apiStep({ category: "implementation" }),
     apiStep({
       agent: "test-runner",
+      category: "implementation",
       model: "m2",
       inputTokens: 9400,
       outputTokens: 1800,
@@ -180,6 +181,7 @@ describe("RunCard dev-loop detail", () => {
     }),
     apiStep({
       agent: "static-analysis",
+      category: "quality-loop",
       iteration: 1,
       model: "m3",
       inputTokens: 6100,
@@ -188,12 +190,24 @@ describe("RunCard dev-loop detail", () => {
     }),
     apiStep({
       agent: "feature-builder",
+      category: "quality-loop",
       iteration: 1,
       model: "m1",
       inputTokens: 3000,
       outputTokens: 1500,
       durationMs: 90000,
     }),
+  ];
+
+  const loopStages = () => [
+    {
+      agent: "implementation",
+      category: "implementation",
+      model: "m1",
+      status: "done",
+      type: "sequential",
+    },
+    { agent: "quality-loop", category: "quality-loop", model: "m3", status: "done", type: "loop" },
   ];
 
   it("offers the expandable detail with step count and totals, collapsed by default", async () => {
@@ -227,7 +241,9 @@ describe("RunCard dev-loop detail", () => {
   });
 
   it("keeps the rail styling: spine dots, step arrows, loop indent and loop-back badge", async () => {
-    const html = await renderExpandedCard(run({ steps: finishedSteps() }));
+    const html = await renderExpandedCard(
+      run({ status: "done", stages: loopStages(), steps: finishedSteps() }),
+    );
 
     expect(html).toContain("dev-loop-rail");
     expect(html).toContain("dev-loop-dot");
@@ -235,6 +251,30 @@ describe("RunCard dev-loop detail", () => {
     expect(html).toContain("dev-loop-is-loop");
     expect(html).toContain("↺");
     expect(html).toContain("stage-done");
+  });
+
+  it("renders a lone iteration:1 on a sequential type unindented", async () => {
+    const html = await renderExpandedCard(
+      run({
+        status: "done",
+        stages: [
+          {
+            agent: "test-rerun",
+            category: "test-rerun",
+            model: "m-test",
+            status: "done",
+            type: "sequential",
+          },
+        ],
+        steps: [
+          apiStep({ agent: "test-runner", category: "test-rerun", iteration: 1, model: "m-test" }),
+        ],
+      }),
+    );
+
+    expect(html).toContain("test-runner");
+    expect(html).not.toContain("dev-loop-is-loop");
+    expect(html).not.toContain("↺");
   });
 
   it("falls back to seeded stages when steps are empty", async () => {
@@ -286,9 +326,27 @@ describe("RunCard dev-loop detail", () => {
 
 describe("RunCard grouped detail (categories)", () => {
   const categorizedStages = (status = "running") => [
-    { agent: "implementation", category: "implementation", model: "m-impl", status },
-    { agent: "quality-loop", category: "quality-loop", model: "m-loop", status: "pending" },
-    { agent: "test-rerun", category: "test-rerun", model: "m-test", status: "pending" },
+    {
+      agent: "implementation",
+      category: "implementation",
+      model: "m-impl",
+      status,
+      type: "sequential",
+    },
+    {
+      agent: "quality-loop",
+      category: "quality-loop",
+      model: "m-loop",
+      status: "pending",
+      type: "loop",
+    },
+    {
+      agent: "test-rerun",
+      category: "test-rerun",
+      model: "m-test",
+      status: "pending",
+      type: "sequential",
+    },
   ];
 
   const groupedSteps = () => [

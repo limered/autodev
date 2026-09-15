@@ -110,7 +110,7 @@ function ConvertTo-SeededStages {
             $cause = if ($lookupError) { ": $lookupError" } else { " (lookup returned empty)" }
             throw "No model found for agent '$($entry.Agents[0])' (category '$($entry.Id)')$cause"
         }
-        $stages += [ordered]@{ agent = $entry.Id; model = "$model"; category = $entry.Id }
+        $stages += [ordered]@{ agent = $entry.Id; model = "$model"; category = $entry.Id; type = $entry.Type }
     }
     return $stages
 }

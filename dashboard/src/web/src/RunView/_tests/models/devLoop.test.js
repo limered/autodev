@@ -1,7 +1,13 @@
 import { describe, it, expect } from "vitest";
-import { devLoopView, UNCATEGORIZED } from "../../models/devLoopView.js";
+import {
+  devLoop,
+  buildDevRow,
+  devLoopTotals,
+  devLoopProgress,
+  UNCATEGORIZED,
+} from "../../models/devLoop.js";
 
-describe("devLoopView", () => {
+describe("devLoop", () => {
   describe("uncategorized contract", () => {
     it("pins the uncategorized literal shared across tiers", () => {
       expect(UNCATEGORIZED).toBe("uncategorized");
@@ -31,7 +37,7 @@ describe("devLoopView", () => {
         ],
       };
 
-      const view = devLoopView(run);
+      const view = devLoop(run);
 
       expect(view.devGroups.map((g) => g.category)).toEqual(["implementation", "uncategorized"]);
       expect(view.devGroups[1].steps.map((s) => s.agent)).toEqual(["ghost"]);
@@ -47,85 +53,111 @@ describe("devLoopView", () => {
     status: "running",
   };
 
-  describe("stages", () => {
-    const stages = [
-      { agent: "feature-builder", model: "m1", status: "done" },
-      { agent: "test-runner", model: "m2", status: "running" },
-      { agent: "pr-author", model: "m3", status: "pending" },
-    ];
+  const loopStages = [
+    {
+      agent: "implementation",
+      category: "implementation",
+      model: "m1",
+      status: "done",
+      type: "sequential",
+    },
+    {
+      agent: "quality-loop",
+      category: "quality-loop",
+      model: "m2",
+      status: "running",
+      type: "loop",
+    },
+    {
+      agent: "test-rerun",
+      category: "test-rerun",
+      model: "m1",
+      status: "pending",
+      type: "sequential",
+    },
+  ];
 
-    it("maps each stage status to a design-A color class", () => {
-      const run = { ...baseRun, stages };
-
-      const view = devLoopView(run);
-
-      expect(view.stages).toHaveLength(3);
-      expect(view.stages[0]).toEqual({
+  describe("unified row builder", () => {
+    it("normalizes a step and a stage fallback through one row module", () => {
+      const fromStep = buildDevRow({
         agent: "feature-builder",
-        category: "uncategorized",
+        category: "implementation",
+        iteration: 0,
         model: "m1",
+        status: "done",
+        inputTokens: 100,
+        outputTokens: 50,
+        durationMs: 61000,
+        isLoop: false,
+        showIteration: false,
+      });
+      const fromStage = buildDevRow({
+        agent: "feature-builder",
+        category: "implementation",
+        iteration: 0,
+        model: "m1",
+        status: "done",
+        inputTokens: 100,
+        outputTokens: 50,
+        durationMs: 61000,
+        isLoop: false,
+        showIteration: false,
+      });
+
+      expect(fromStage).toEqual(fromStep);
+      expect(fromStep).toMatchObject({
         statusClass: "stage-done",
-      });
-      expect(view.stages[1]).toEqual({
-        agent: "test-runner",
-        category: "uncategorized",
-        model: "m2",
-        statusClass: "stage-running",
-      });
-      expect(view.stages[2]).toEqual({
-        agent: "pr-author",
-        category: "uncategorized",
-        model: "m3",
-        statusClass: "stage-pending",
+        tokensLabel: "150",
+        durationLabel: "1m 01s",
+        stats: "150 · 1m 01s",
       });
     });
 
-    it("carries the seeded category beside the worker name", () => {
-      const run = {
-        ...baseRun,
-        stages: [
-          { agent: "quality-loop", category: "quality-loop", model: "m2", status: "running" },
-        ],
-      };
+    it("totals tokens and duration behind its own seam", () => {
+      const rows = [
+        buildDevRow({
+          agent: "a",
+          category: "implementation",
+          iteration: 0,
+          model: "m",
+          status: "done",
+          inputTokens: 1000,
+          outputTokens: 500,
+          durationMs: 60000,
+        }),
+        buildDevRow({
+          agent: "b",
+          category: "quality-loop",
+          iteration: 1,
+          model: "m",
+          status: "done",
+          inputTokens: 2000,
+          outputTokens: 0,
+          durationMs: 30000,
+          isLoop: true,
+        }),
+      ];
 
-      const view = devLoopView(run);
-
-      expect(view.stages[0]).toEqual({
-        agent: "quality-loop",
-        category: "quality-loop",
-        model: "m2",
-        statusClass: "stage-running",
+      expect(devLoopTotals(rows)).toMatchObject({
+        tokens: 3500,
+        ms: 90000,
+        tokensLabel: "3.5k",
+        durationLabel: "1m 30s",
       });
     });
 
-    it("lands a stage with no category in the uncategorized bucket", () => {
-      const run = {
-        ...baseRun,
-        stages: [{ agent: "quality-loop", model: "m2", status: "running" }],
-      };
+    it("derives progress behind its own seam, counting failures as terminal", () => {
+      const rows = [
+        buildDevRow({ agent: "a", category: "c", model: "m", status: "failed" }),
+        buildDevRow({ agent: "b", category: "c", model: "m", status: "running" }),
+      ];
 
-      const view = devLoopView(run);
-
-      expect(view.stages[0].category).toBe("uncategorized");
-      expect(view.stages[0].statusClass).toBe("stage-running");
-    });
-
-    it("defaults a stage with no status to pending", () => {
-      const run = { ...baseRun, stages: [{ agent: "feature-builder", model: "m1" }] };
-
-      const view = devLoopView(run);
-
-      expect(view.stages[0].statusClass).toBe("stage-pending");
-    });
-
-    it("returns an empty stage list when the run has no stages", () => {
-      const view = devLoopView(baseRun);
-
-      expect(view.stages).toEqual([]);
+      expect(devLoopProgress(rows)).toEqual({ done: 1, total: 2, pct: 50 });
+      expect(devLoopProgress([])).toEqual({ done: 0, total: 0, pct: 0 });
     });
   });
 
-  describe("steps", () => {
+  describe("detail rows", () => {
     const step = (overrides = {}) => ({
       agent: "feature-builder",
       iteration: 0,
@@ -140,14 +172,15 @@ describe("devLoopView", () => {
     it("maps the flat steps list with tokens and duration", () => {
       const run = {
         ...baseRun,
+        stages: loopStages,
         steps: [step(), step({ agent: "test-runner", iteration: 0, model: "m2" })],
       };
 
-      const view = devLoopView(run);
+      const view = devLoop(run);
 
-      expect(view.hasSteps).toBe(true);
-      expect(view.steps).toHaveLength(2);
-      expect(view.steps[0]).toMatchObject({
+      expect(view.hasDevLoop).toBe(true);
+      expect(view.devLoop).toHaveLength(2);
+      expect(view.devLoop[0]).toMatchObject({
         agent: "feature-builder",
         iteration: 0,
         model: "m1",
@@ -158,48 +191,84 @@ describe("devLoopView", () => {
         outputTokens: 50,
         durationMs: 61000,
       });
-      expect(view.steps[0].stats).toBe("150 · 1m 01s");
+      expect(view.devLoop[0].stats).toBe("150 · 1m 01s");
     });
 
-    it("marks loop rows by iteration and badges only repeated agents", () => {
+    it("reads loop membership from the seeded stage type, not a frontend hardcode", () => {
       const run = {
         ...baseRun,
+        stages: loopStages,
         steps: [
-          step({ agent: "feature-builder", iteration: 0 }),
-          step({ agent: "static-analysis", iteration: 1, model: "m2" }),
-          step({ agent: "feature-builder", iteration: 1, model: "m1" }),
+          step({ agent: "feature-builder", category: "implementation", iteration: 0 }),
+          step({ agent: "static-analysis", category: "quality-loop", iteration: 1, model: "m2" }),
+          step({ agent: "feature-builder", category: "quality-loop", iteration: 1, model: "m1" }),
         ],
       };
 
-      const view = devLoopView(run);
+      const view = devLoop(run);
 
-      expect(view.steps[0].isLoop).toBe(false);
-      expect(view.steps[0].showIteration).toBe(false);
-      expect(view.steps[1].isLoop).toBe(true);
-      expect(view.steps[1].showIteration).toBe(false);
-      expect(view.steps[2].isLoop).toBe(true);
-      expect(view.steps[2].showIteration).toBe(true);
+      expect(view.devLoop[0].isLoop).toBe(false);
+      expect(view.devLoop[0].showIteration).toBe(false);
+      expect(view.devLoop[1].isLoop).toBe(true);
+      expect(view.devLoop[1].showIteration).toBe(false);
+      expect(view.devLoop[2].isLoop).toBe(true);
+      expect(view.devLoop[2].showIteration).toBe(true);
+    });
+
+    it("leaves iteration rows on sequential stages unindented", () => {
+      const run = {
+        ...baseRun,
+        stages: loopStages,
+        steps: [step({ agent: "test-runner", category: "test-rerun", iteration: 1 })],
+      };
+
+      const view = devLoop(run);
+
+      expect(view.devLoop[0].isLoop).toBe(false);
+    });
+
+    it("renders a lone iteration:1 on a sequential type unindented", () => {
+      const run = {
+        ...baseRun,
+        stages: [
+          {
+            agent: "test-rerun",
+            category: "test-rerun",
+            model: "m1",
+            status: "done",
+            type: "sequential",
+          },
+        ],
+        steps: [step({ agent: "test-runner", category: "test-rerun", iteration: 1 })],
+      };
+
+      const view = devLoop(run);
+
+      expect(view.devLoop).toHaveLength(1);
+      expect(view.devLoop[0].isLoop).toBe(false);
+      expect(view.devLoop[0].showIteration).toBe(false);
     });
 
     it("keeps the phase-4 test re-run as a numbered outer step", () => {
       const run = {
         ...baseRun,
+        stages: loopStages,
         steps: [
-          step({ agent: "test-runner", iteration: 0 }),
-          step({ agent: "test-runner", iteration: 1 }),
+          step({ agent: "test-runner", category: "implementation", iteration: 0 }),
+          step({ agent: "test-runner", category: "test-rerun", iteration: 1 }),
         ],
       };
 
-      const view = devLoopView(run);
+      const view = devLoop(run);
 
-      expect(view.steps[1].isLoop).toBe(false);
-      expect(view.steps[1].showIteration).toBe(true);
+      expect(view.devLoop[1].isLoop).toBe(false);
+      expect(view.devLoop[1].showIteration).toBe(true);
     });
 
     it("maps failed steps to the failed colour class", () => {
-      const run = { ...baseRun, steps: [step({ status: "failed" })] };
+      const run = { ...baseRun, stages: loopStages, steps: [step({ status: "failed" })] };
 
-      expect(devLoopView(run).steps[0].statusClass).toBe("stage-failed");
+      expect(devLoop(run).devLoop[0].statusClass).toBe("stage-failed");
     });
 
     it("falls back to seeded stages when steps are empty", () => {
@@ -209,9 +278,8 @@ describe("devLoopView", () => {
         steps: [],
       };
 
-      const view = devLoopView(run);
+      const view = devLoop(run);
 
-      expect(view.hasSteps).toBe(false);
       expect(view.hasDevLoop).toBe(true);
       expect(view.devLoop).toHaveLength(1);
       expect(view.devLoop[0]).toMatchObject({
@@ -229,12 +297,18 @@ describe("devLoopView", () => {
       const run = {
         ...baseRun,
         stages: [
-          { agent: "quality-loop", category: "quality-loop", model: "m2", status: "running" },
+          {
+            agent: "quality-loop",
+            category: "quality-loop",
+            model: "m2",
+            status: "running",
+            type: "loop",
+          },
         ],
         steps: [],
       };
 
-      const view = devLoopView(run);
+      const view = devLoop(run);
 
       expect(view.devLoop[0]).toMatchObject({
         agent: "quality-loop",
@@ -250,7 +324,7 @@ describe("devLoopView", () => {
         steps: [step({ agent: "test-runner", model: "m2" })],
       };
 
-      const view = devLoopView(run);
+      const view = devLoop(run);
 
       expect(view.devLoop).toHaveLength(1);
       expect(view.devLoop[0].agent).toBe("test-runner");
@@ -259,13 +333,14 @@ describe("devLoopView", () => {
     it("totals tokens and duration across the detail rows", () => {
       const run = {
         ...baseRun,
+        stages: loopStages,
         steps: [
           step({ inputTokens: 1000, outputTokens: 500, durationMs: 60000 }),
           step({ agent: "test-runner", inputTokens: 2000, outputTokens: 0, durationMs: 30000 }),
         ],
       };
 
-      const view = devLoopView(run);
+      const view = devLoop(run);
 
       expect(view.devLoopTotals.tokens).toBe(3500);
       expect(view.devLoopTotals.ms).toBe(90000);
@@ -273,16 +348,29 @@ describe("devLoopView", () => {
       expect(view.devLoopTotals.durationLabel).toBe("1m 30s");
     });
 
-    it("reports no detail rows when neither steps nor stages exist", () => {
-      const view = devLoopView(baseRun);
+    it("exposes no stages/steps/hasSteps outputs: stages stay input shape", () => {
+      const run = {
+        ...baseRun,
+        stages: loopStages,
+        steps: [step()],
+      };
 
-      expect(view.hasSteps).toBe(false);
+      const view = devLoop(run);
+
+      expect(view).not.toHaveProperty("stages");
+      expect(view).not.toHaveProperty("steps");
+      expect(view).not.toHaveProperty("hasSteps");
+    });
+
+    it("reports no detail rows when neither steps nor stages exist", () => {
+      const view = devLoop(baseRun);
+
       expect(view.hasDevLoop).toBe(false);
       expect(view.devLoop).toEqual([]);
     });
 
     it("reports zero progress when neither steps nor stages exist", () => {
-      const view = devLoopView(baseRun);
+      const view = devLoop(baseRun);
 
       expect(view.devLoopProgress).toEqual({ done: 0, total: 0, pct: 0 });
     });
@@ -301,36 +389,43 @@ describe("devLoopView", () => {
     });
 
     it("reports full progress when every step is done", () => {
-      const run = { ...baseRun, steps: [step(), step({ agent: "test-runner" })] };
+      const run = {
+        ...baseRun,
+        stages: loopStages,
+        steps: [step(), step({ agent: "test-runner" })],
+      };
 
-      expect(devLoopView(run).devLoopProgress).toEqual({ done: 2, total: 2, pct: 100 });
+      expect(devLoop(run).devLoopProgress).toEqual({ done: 2, total: 2, pct: 100 });
     });
 
     it("reports partial progress for a mix of done and running steps", () => {
       const run = {
         ...baseRun,
+        stages: loopStages,
         steps: [step(), step({ agent: "test-runner", status: "running" })],
       };
 
-      expect(devLoopView(run).devLoopProgress).toEqual({ done: 1, total: 2, pct: 50 });
+      expect(devLoop(run).devLoopProgress).toEqual({ done: 1, total: 2, pct: 50 });
     });
 
     it("counts failed steps as terminal", () => {
       const run = {
         ...baseRun,
+        stages: loopStages,
         steps: [step({ status: "failed" }), step({ agent: "test-runner", status: "running" })],
       };
 
-      expect(devLoopView(run).devLoopProgress).toEqual({ done: 1, total: 2, pct: 50 });
+      expect(devLoop(run).devLoopProgress).toEqual({ done: 1, total: 2, pct: 50 });
     });
 
     it("reports zero progress while every step is still running", () => {
       const run = {
         ...baseRun,
+        stages: loopStages,
         steps: [step({ status: "running" }), step({ agent: "test-runner", status: "pending" })],
       };
 
-      expect(devLoopView(run).devLoopProgress).toEqual({ done: 0, total: 2, pct: 0 });
+      expect(devLoop(run).devLoopProgress).toEqual({ done: 0, total: 2, pct: 0 });
     });
 
     it("derives progress from the stages fallback when steps are empty", () => {
@@ -340,15 +435,33 @@ describe("devLoopView", () => {
         steps: [],
       };
 
-      expect(devLoopView(run).devLoopProgress).toEqual({ done: 1, total: 1, pct: 100 });
+      expect(devLoop(run).devLoopProgress).toEqual({ done: 1, total: 1, pct: 100 });
     });
   });
 
   describe("grouped detail (categories)", () => {
     const categorizedStages = [
-      { agent: "implementation", category: "implementation", model: "m1", status: "running" },
-      { agent: "quality-loop", category: "quality-loop", model: "m2", status: "pending" },
-      { agent: "test-rerun", category: "test-rerun", model: "m1", status: "pending" },
+      {
+        agent: "implementation",
+        category: "implementation",
+        model: "m1",
+        status: "running",
+        type: "sequential",
+      },
+      {
+        agent: "quality-loop",
+        category: "quality-loop",
+        model: "m2",
+        status: "pending",
+        type: "loop",
+      },
+      {
+        agent: "test-rerun",
+        category: "test-rerun",
+        model: "m1",
+        status: "pending",
+        type: "sequential",
+      },
     ];
 
     const step = (overrides = {}) => ({
@@ -366,9 +479,8 @@ describe("devLoopView", () => {
     it("shows category dots only while the run is live: one header per stage, no rows", () => {
       const run = { ...baseRun, status: "running", stages: categorizedStages, steps: [] };
 
-      const view = devLoopView(run);
+      const view = devLoop(run);
 
-      expect(view.hasSteps).toBe(false);
       expect(view.hasDevGroups).toBe(true);
       expect(view.devGroups).toHaveLength(3);
       expect(view.devGroups.map((g) => g.category)).toEqual([
@@ -401,7 +513,7 @@ describe("devLoopView", () => {
         ],
       };
 
-      const view = devLoopView(run);
+      const view = devLoop(run);
 
       expect(view.devGroups).toHaveLength(3);
       expect(view.devGroups[0].category).toBe("implementation");
@@ -431,7 +543,7 @@ describe("devLoopView", () => {
         ],
       };
 
-      const view = devLoopView(run);
+      const view = devLoop(run);
       const loop = view.devGroups[1];
 
       expect(loop.steps[0]).toMatchObject({ isLoop: true, showIteration: false });
@@ -462,7 +574,7 @@ describe("devLoopView", () => {
         ],
       };
 
-      const view = devLoopView(run);
+      const view = devLoop(run);
 
       expect(view.devGroups[0].totals).toMatchObject({
         tokens: 1500,
@@ -490,7 +602,7 @@ describe("devLoopView", () => {
         ],
       };
 
-      const view = devLoopView(failed);
+      const view = devLoop(failed);
 
       expect(view.devGroups[0].statusClass).toBe("stage-running");
       expect(view.devGroups[1].statusClass).toBe("stage-pending");
@@ -504,7 +616,7 @@ describe("devLoopView", () => {
         steps: [{ ...step(), category: undefined }],
       };
 
-      const view = devLoopView(run);
+      const view = devLoop(run);
 
       expect(view.devGroups).toHaveLength(1);
       expect(view.devGroups[0].category).toBe("uncategorized");
@@ -521,7 +633,7 @@ describe("devLoopView", () => {
         steps: [step(), step({ agent: "ghost", category: "uncategorized" })],
       };
 
-      const view = devLoopView(run);
+      const view = devLoop(run);
 
       expect(view.devGroups.map((g) => g.category)).toEqual(["implementation", "uncategorized"]);
       expect(view.devGroups[0].steps).toHaveLength(1);
@@ -539,7 +651,7 @@ describe("devLoopView", () => {
         steps: [step(), step({ agent: "ghost", category: "ghost" })],
       };
 
-      const view = devLoopView(run);
+      const view = devLoop(run);
 
       expect(view.devGroups.map((g) => g.category)).toEqual(["implementation", "uncategorized"]);
       expect(view.devGroups[1]).toMatchObject({ model: "—", statusClass: "stage-pending" });
@@ -547,7 +659,7 @@ describe("devLoopView", () => {
     });
 
     it("reports no groups when neither steps nor stages exist", () => {
-      const view = devLoopView(baseRun);
+      const view = devLoop(baseRun);
 
       expect(view.hasDevGroups).toBe(false);
       expect(view.devGroups).toEqual([]);
