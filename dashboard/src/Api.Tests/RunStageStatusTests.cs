@@ -135,6 +135,12 @@ public class RunStageStatusTests
     }
 
     [Fact]
+    public void Uncategorized_PinsSharedLiteral()
+    {
+        Assert.Equal("uncategorized", RunStageStatus.Uncategorized);
+    }
+
+    [Fact]
     public void Derive_StagesWithoutCategory_ReadAsUncategorized()
     {
         // Runs persisted before categories carry no category on their stages;
@@ -142,14 +148,14 @@ public class RunStageStatusTests
         var views = Derive("running");
 
         Assert.Equal(3, views.Count);
-        Assert.All(views, v => Assert.Equal(RunStageStatus.Uncategorized, v.Category));
+        Assert.All(views, v => Assert.Equal("uncategorized", v.Category));
         Assert.All(views, v => Assert.Equal("pending", v.Status));
     }
 
     [Fact]
     public void Derive_UncategorizedBucketNeverGoesActive()
     {
-        var views = Derive("running", Pipeline, RunStageStatus.Uncategorized);
+        var views = Derive("running", Pipeline, "uncategorized");
 
         Assert.Equal(3, views.Count);
         Assert.All(views, v => Assert.Equal("pending", v.Status));

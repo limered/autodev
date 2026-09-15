@@ -1,6 +1,7 @@
 <script setup>
 import { computed, ref } from "vue";
 import { runView } from "../models/runView.js";
+import { isActiveRun } from "../models/runStatus.js";
 
 const props = defineProps({
   run: { type: Object, required: true },
@@ -29,11 +30,12 @@ function detailTitle(step) {
 function groupTitle(group) {
   return `${group.category} — ${group.model} — ${group.totals.tokensLabel} tokens · ${group.totals.durationLabel}`;
 }
-const showGroups = computed(
-  () =>
-    view.value.hasSteps &&
-    view.value.devGroups.filter((group) => group.steps.length > 0).length > 1,
+const isLive = computed(() => isActiveRun(props.run));
+const populatedGroups = computed(() =>
+  view.value.devGroups.filter((group) => group.steps.length > 0),
 );
+const showGroups = computed(() => !isLive.value && populatedGroups.value.length > 1);
+const showLiveDots = computed(() => isLive.value && view.value.devGroups.length > 1);
 function isLastRow(groupIndex, stepIndex) {
   const groups = view.value.devGroups;
   for (let scanIndex = groups.length - 1; scanIndex >= 0; scanIndex--) {
@@ -118,7 +120,25 @@ function isLastRow(groupIndex, stepIndex) {
         {{ view.devLoopTotals.durationLabel }}
       </button>
       <ol v-if="expanded" class="dev-loop" aria-label="Dev-loop detail">
-        <template v-if="showGroups">
+        <template v-if="showLiveDots">
+          <li
+            v-for="(group, groupIndex) in view.devGroups"
+            :key="`group-${group.category}-${groupIndex}`"
+            class="dev-loop-group"
+          >
+            <span class="dev-loop-rail" aria-hidden="true">
+              <span class="dev-loop-dot" :class="group.statusClass"></span>
+            </span>
+            <div class="dev-loop-group-chip" :class="group.statusClass" :title="groupTitle(group)">
+              <span class="dev-loop-group-name mono">{{ group.category }}</span>
+              <span class="dev-loop-model mono">{{ group.model }}</span>
+              <span class="dev-loop-stats mono"
+                >{{ group.totals.tokensLabel }} · {{ group.totals.durationLabel }}</span
+              >
+            </div>
+          </li>
+        </template>
+        <template v-else-if="showGroups">
           <template
             v-for="(group, groupIndex) in view.devGroups"
             :key="`group-${group.category}-${groupIndex}`"

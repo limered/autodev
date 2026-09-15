@@ -17,10 +17,14 @@ function formatDuration(ms) {
   return `${Math.floor(s / 60)}m ${String(s % 60).padStart(2, "0")}s`;
 }
 
+function normalizeCategory(value) {
+  return typeof value === "string" && value.trim() ? value : UNCATEGORIZED;
+}
+
 export function devLoopView(run) {
   const stages = (run.stages || []).map((stage) => ({
     agent: stage.agent,
-    category: stage.category ?? UNCATEGORIZED,
+    category: normalizeCategory(stage.category),
     model: stage.model,
     statusClass: stageStatusClass(stage.status),
   }));
@@ -40,7 +44,7 @@ export function devLoopView(run) {
     const isLoop = iteration !== 0 && LOOP_AGENTS.has(rawStep.agent);
     return {
       agent: rawStep.agent,
-      category: rawStep.category || UNCATEGORIZED,
+      category: normalizeCategory(rawStep.category),
       iteration,
       model: rawStep.model ?? "—",
       statusClass: stageStatusClass(rawStep.status),
@@ -87,14 +91,6 @@ export function devLoopView(run) {
   const devLoopTotal = devLoop.length;
   const devLoopPct = devLoopTotal === 0 ? 0 : Math.round((devLoopDone / devLoopTotal) * 100);
 
-  function headerStatusFor(rows) {
-    if (rows.some((row) => row.statusClass === "stage-failed")) return "stage-failed";
-    if (rows.length > 0 && rows.every((row) => row.statusClass === "stage-done"))
-      return "stage-done";
-    if (rows.some((row) => row.statusClass === "stage-running")) return "stage-running";
-    return "stage-pending";
-  }
-
   const stageByCategory = new Map();
   for (const stage of stages) {
     if (!stageByCategory.has(stage.category)) stageByCategory.set(stage.category, stage);
@@ -118,12 +114,14 @@ export function devLoopView(run) {
     return group;
   }
   for (const stage of stages) ensureGroup(stage.category);
-  for (const row of steps) ensureGroup(row.category).steps.push(row);
+  for (const row of steps) {
+    const key = stageByCategory.has(row.category) ? row.category : UNCATEGORIZED;
+    ensureGroup(key).steps.push(row);
+  }
   for (const group of devGroups) {
     if (group.steps.length === 0) continue;
     const tokens = group.steps.reduce((sum, step) => sum + step.inputTokens + step.outputTokens, 0);
     const ms = group.steps.reduce((sum, step) => sum + step.durationMs, 0);
-    group.statusClass = headerStatusFor(group.steps);
     group.totals = {
       tokens,
       ms,
