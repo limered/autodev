@@ -14,31 +14,42 @@
   (passed through to Invoke-MultipassOutput) so Pester drives scripted file
   contents without a live VM. Prod callers omit -Executor.
 
-  Pure converters (ConvertTo-PhaseTokens, ConvertTo-PhaseMeta,
-  Get-PhaseStepCandidates) take strings and need no VM at all.
+  Pure converters (ConvertTo-PhaseTokens, ConvertTo-PhaseMeta) take strings
+  and need no VM at all; Get-PhaseStepCandidates expands the parsed config.
 #>
 
 . (Join-Path $PSScriptRoot "HostVm.ps1")
 
-# The v1 relay order: every phase in execution order, one entry per loop
-# iteration. Iteration is 0 for single-run phases, 1..3 for quality-loop
-# scan/fix passes; the phase-4 test re-run is test-runner/1 so it lands as
-# its own row instead of overwriting the phase-2 step (the backend keys
-# steps on agent + iteration, last-write-wins).
+# Expands the parsed agents.json config into relay candidates in map order.
+# Sequential takes the next free iteration per worker, loop emits 1..N per member.
 function Get-PhaseStepCandidates {
-    return @(
-        [PSCustomObject]@{ Agent = 'feature-builder'; Iteration = 0 },
-        [PSCustomObject]@{ Agent = 'test-runner'; Iteration = 0 },
-        [PSCustomObject]@{ Agent = 'static-analysis'; Iteration = 1 },
-        [PSCustomObject]@{ Agent = 'feature-builder'; Iteration = 1 },
-        [PSCustomObject]@{ Agent = 'static-analysis'; Iteration = 2 },
-        [PSCustomObject]@{ Agent = 'feature-builder'; Iteration = 2 },
-        [PSCustomObject]@{ Agent = 'static-analysis'; Iteration = 3 },
-        [PSCustomObject]@{ Agent = 'feature-builder'; Iteration = 3 },
-        [PSCustomObject]@{ Agent = 'test-runner'; Iteration = 1 },
-        [PSCustomObject]@{ Agent = 'agentic-review'; Iteration = 0 },
-        [PSCustomObject]@{ Agent = 'pr-author'; Iteration = 0 }
-    )
+    param($Config)
+    $candidates = @()
+    foreach ($entry in @($Config)) {
+        if ($null -eq $entry) { continue }
+        $type = "$($entry.Type)".Trim().ToLowerInvariant()
+        $agents = @($entry.Agents)
+        if ($type -eq 'loop') {
+            $count = 0
+            try { $count = [int]$entry.Iterations } catch { $count = 0 }
+            for ($i = 1; $i -le $count; $i++) {
+                foreach ($agent in $agents) {
+                    if ([string]::IsNullOrWhiteSpace("$agent")) { continue }
+                    $candidates += [PSCustomObject]@{ Agent = "$agent"; Iteration = [int]$i }
+                }
+            }
+        }
+        else {
+            foreach ($agent in $agents) {
+                if ([string]::IsNullOrWhiteSpace("$agent")) { continue }
+                $used = @($candidates | Where-Object { $_.Agent -eq "$agent" } | ForEach-Object { $_.Iteration })
+                $iter = 0
+                while ($used -contains $iter) { $iter++ }
+                $candidates += [PSCustomObject]@{ Agent = "$agent"; Iteration = [int]$iter }
+            }
+        }
+    }
+    return $candidates
 }
 
 # First present numeric field wins; absent or non-numeric reads as 0.

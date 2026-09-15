@@ -79,17 +79,44 @@ Describe 'ConvertTo-PhaseMeta' {
 }
 
 Describe 'Get-PhaseStepCandidates' {
-    It 'covers all six phases plus loop iterations in execution order' {
-        $candidates = Get-PhaseStepCandidates
+    BeforeAll {
+        . (Join-Path $PSScriptRoot "AgentsConfig.ps1")
+        $script:V1Json = @'
+{
+  "stages": {
+    "implementation": { "type": "sequential", "agents": ["feature-builder", "test-runner"] },
+    "quality-loop": { "type": "loop", "agents": ["static-analysis", "feature-builder"], "iterations": 3 },
+    "test-rerun": { "type": "sequential", "agents": ["test-runner"] },
+    "agentic-review": { "type": "sequential", "agents": ["agentic-review"] },
+    "pr-author": { "type": "sequential", "agents": ["pr-author"] }
+  }
+}
+'@
+        $script:V1Config = ConvertFrom-AgentsConfigJson -Json $script:V1Json
+    }
+    It 'expands the v1 config in map order with distinct iteration keys' {
+        $candidates = Get-PhaseStepCandidates -Config $script:V1Config
         $candidates.Count | Should -Be 11
         $pairs = @($candidates | ForEach-Object { "$($_.Agent)/$($_.Iteration)" })
-        $pairs[0] | Should -Be 'feature-builder/0'
-        $pairs[1] | Should -Be 'test-runner/0'
-        $pairs[2] | Should -Be 'static-analysis/1'
-        $pairs[3] | Should -Be 'feature-builder/1'
-        $pairs[8] | Should -Be 'test-runner/1'
-        $pairs[9] | Should -Be 'agentic-review/0'
-        $pairs[10] | Should -Be 'pr-author/0'
+        $pairs -join ',' | Should -Be 'feature-builder/0,test-runner/0,static-analysis/1,feature-builder/1,static-analysis/2,feature-builder/2,static-analysis/3,feature-builder/3,test-runner/1,agentic-review/0,pr-author/0'
+    }
+    It 'emits sequential members at iteration 0 in map order' {
+        $config = ConvertFrom-AgentsConfigJson -Json '{"stages":{"a":{"type":"sequential","agents":["alpha","beta"]},"b":{"type":"sequential","agents":["gamma"]}}}'
+        $pairs = @((Get-PhaseStepCandidates -Config $config) | ForEach-Object { "$($_.Agent)/$($_.Iteration)" })
+        $pairs -join ',' | Should -Be 'alpha/0,beta/0,gamma/0'
+    }
+    It 'emits loop members at 1..N in member order per pass' {
+        $config = ConvertFrom-AgentsConfigJson -Json '{"stages":{"q":{"type":"loop","agents":["scan","fix"],"iterations":2}}}'
+        $pairs = @((Get-PhaseStepCandidates -Config $config) | ForEach-Object { "$($_.Agent)/$($_.Iteration)" })
+        $pairs -join ',' | Should -Be 'scan/1,fix/1,scan/2,fix/2'
+    }
+    It 'bumps a repeated sequential worker to the next free iteration key' {
+        $config = ConvertFrom-AgentsConfigJson -Json '{"stages":{"a":{"type":"sequential","agents":["builder"]},"b":{"type":"sequential","agents":["builder"]}}}'
+        $pairs = @((Get-PhaseStepCandidates -Config $config) | ForEach-Object { "$($_.Agent)/$($_.Iteration)" })
+        $pairs -join ',' | Should -Be 'builder/0,builder/1'
+    }
+    It 'returns nothing for an empty config' {
+        @(Get-PhaseStepCandidates -Config @()).Count | Should -Be 0
     }
 }
 
@@ -131,6 +158,8 @@ Describe 'Send-PhaseFinishedSteps relay' {
     BeforeAll {
         $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
         . (Join-Path $repoRoot 'factory-report.ps1')
+        . (Join-Path $PSScriptRoot 'AgentsConfig.ps1')
+        $script:RelayConfig = Read-AgentsConfig -Path (Join-Path $repoRoot 'agents.json')
     }
     It 'relays landed phases with host-attached model and skips the rest' {
         $files = @{
@@ -143,7 +172,7 @@ Describe 'Send-PhaseFinishedSteps relay' {
         $fakeModels = { param($agent) if ($agent -eq 'feature-builder') { return 'm1' }; return $null }
         $script:relayed = @()
         $fakeRelay = { param($fields) $script:relayed += $fields }
-        Send-PhaseFinishedSteps -RunId 'r1' -VmName 'v1' -ModelLookup $fakeModels -Executor $fakeCat -Relay $fakeRelay
+        Send-PhaseFinishedSteps -RunId 'r1' -VmName 'v1' -Config $script:RelayConfig -ModelLookup $fakeModels -Executor $fakeCat -Relay $fakeRelay
         $script:relayed.Count | Should -Be 1 # test-runner skipped: model-less is never sent
         $only = $script:relayed[0]
         $only['agent'] | Should -Be 'feature-builder'
@@ -164,7 +193,8 @@ Describe 'Send-PhaseFinishedSteps relay' {
         $fakeModels = { param($agent) return 'm9' }
         $script:relayed = @()
         $fakeRelay = { param($fields) $script:relayed += $fields }
-        Send-PhaseFinishedSteps -RunId 'r1' -VmName 'v1' -ModelLookup $fakeModels -Executor $fakeCat -Relay $fakeRelay
+        $tiny = ConvertFrom-AgentsConfigJson -Json '{"stages":{"implementation":{"type":"sequential","agents":["test-runner"]}}}'
+        Send-PhaseFinishedSteps -RunId 'r1' -VmName 'v1' -Config $tiny -ModelLookup $fakeModels -Executor $fakeCat -Relay $fakeRelay
         $script:relayed.Count | Should -Be 1
         $script:relayed[0]['status'] | Should -Be 'failed'
         $script:relayed[0].ContainsKey('cost') | Should -Be $false
@@ -173,8 +203,16 @@ Describe 'Send-PhaseFinishedSteps relay' {
         $fakeCat = { param($a) throw 'missing' }
         $script:relayed = @()
         $fakeRelay = { param($fields) $script:relayed += $fields }
-        { Send-PhaseFinishedSteps -RunId 'r1' -VmName 'v1' -ModelLookup { param($a) return 'm' } -Executor $fakeCat -Relay $fakeRelay } | Should -Not -Throw
+        { Send-PhaseFinishedSteps -RunId 'r1' -VmName 'v1' -Config $script:RelayConfig -ModelLookup { param($a) return 'm' } -Executor $fakeCat -Relay $fakeRelay } | Should -Not -Throw
         $script:relayed.Count | Should -Be 0
+    }
+    It 'walks candidates in Seam order with per-iteration file names' {
+        $config = ConvertFrom-AgentsConfigJson -Json '{"stages":{"a":{"type":"sequential","agents":["alpha"]},"q":{"type":"loop","agents":["scan"],"iterations":2}}}'
+        $script:seenPaths = @()
+        $fakeCat = { param($a) $script:seenPaths += $a[-1]; throw 'missing' }
+        $fakeRelay = { param($fields) }
+        Send-PhaseFinishedSteps -RunId 'r1' -VmName 'v1' -Config $config -ModelLookup { param($a) return 'm' } -Executor $fakeCat -Relay $fakeRelay
+        $script:seenPaths -join ',' | Should -Be '/tmp/phase-alpha-0.meta.json,/tmp/phase-scan-1.meta.json,/tmp/phase-scan-2.meta.json'
     }
     It 'attaches the seeded category from the lookup' {
         $files = @{
@@ -187,7 +225,7 @@ Describe 'Send-PhaseFinishedSteps relay' {
         $lookup = { param($agent, $iteration) if ($agent -eq 'test-runner') { return 'test-rerun' }; return 'implementation' }
         $script:relayed = @()
         $fakeRelay = { param($fields) $script:relayed += $fields }
-        Send-PhaseFinishedSteps -RunId 'r1' -VmName 'v1' -ModelLookup { param($a) return 'm' } -Executor $fakeCat -Relay $fakeRelay -CategoryLookup $lookup
+        Send-PhaseFinishedSteps -RunId 'r1' -VmName 'v1' -Config $script:RelayConfig -ModelLookup { param($a) return 'm' } -Executor $fakeCat -Relay $fakeRelay -CategoryLookup $lookup
         $script:relayed.Count | Should -Be 2
         $script:relayed[0]['category'] | Should -Be 'implementation'
         $script:relayed[1]['category'] | Should -Be 'test-rerun'
@@ -200,7 +238,7 @@ Describe 'Send-PhaseFinishedSteps relay' {
         $fakeCat = { param($a) $path = $a[-1]; if ($files.ContainsKey($path)) { return $files[$path] }; throw "missing $path" }
         $script:relayed = @()
         $fakeRelay = { param($fields) $script:relayed += $fields }
-        Send-PhaseFinishedSteps -RunId 'r1' -VmName 'v1' -ModelLookup { param($a) return 'm' } -Executor $fakeCat -Relay $fakeRelay -CategoryLookup { param($a, $i) return 'uncategorized' }
+        Send-PhaseFinishedSteps -RunId 'r1' -VmName 'v1' -Config $script:RelayConfig -ModelLookup { param($a) return 'm' } -Executor $fakeCat -Relay $fakeRelay -CategoryLookup { param($a, $i) return 'uncategorized' }
         $script:relayed.Count | Should -Be 1
         $script:relayed[0]['category'] | Should -Be 'uncategorized'
     }
@@ -212,13 +250,13 @@ Describe 'Send-PhaseFinishedSteps relay' {
         $fakeCat = { param($a) $path = $a[-1]; if ($files.ContainsKey($path)) { return $files[$path] }; throw "missing $path" }
         $script:relayed = @()
         $fakeRelay = { param($fields) $script:relayed += $fields }
-        Send-PhaseFinishedSteps -RunId 'r1' -VmName 'v1' -ModelLookup { param($a) return 'm' } -Executor $fakeCat -Relay $fakeRelay
+        Send-PhaseFinishedSteps -RunId 'r1' -VmName 'v1' -Config $script:RelayConfig -ModelLookup { param($a) return 'm' } -Executor $fakeCat -Relay $fakeRelay
         $script:relayed[0].ContainsKey('category') | Should -Be $false
         $script:relayed = @()
-        Send-PhaseFinishedSteps -RunId 'r1' -VmName 'v1' -ModelLookup { param($a) return 'm' } -Executor $fakeCat -Relay $fakeRelay -CategoryLookup { param($a, $i) return $null }
+        Send-PhaseFinishedSteps -RunId 'r1' -VmName 'v1' -Config $script:RelayConfig -ModelLookup { param($a) return 'm' } -Executor $fakeCat -Relay $fakeRelay -CategoryLookup { param($a, $i) return $null }
         $script:relayed[0].ContainsKey('category') | Should -Be $false
         $script:relayed = @()
-        Send-PhaseFinishedSteps -RunId 'r1' -VmName 'v1' -ModelLookup { param($a) return 'm' } -Executor $fakeCat -Relay $fakeRelay -CategoryLookup { param($a, $i) throw 'lookup broke' }
+        Send-PhaseFinishedSteps -RunId 'r1' -VmName 'v1' -Config $script:RelayConfig -ModelLookup { param($a) return 'm' } -Executor $fakeCat -Relay $fakeRelay -CategoryLookup { param($a, $i) throw 'lookup broke' }
         $script:relayed.Count | Should -Be 1
         $script:relayed[0].ContainsKey('category') | Should -Be $false
     }

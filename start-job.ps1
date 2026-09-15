@@ -246,7 +246,7 @@ try {
     # The model rides from the host-side agent frontmatter via Get-AgentModel.
     Write-Step "Relaying per-phase timing + tokens to the dashboard"
     try {
-        Send-PhaseFinishedSteps -RunId $RunId -VmName $VmName -ModelLookup $modelLookup -CategoryLookup $categoryLookup -Executor $watchExec
+        Send-PhaseFinishedSteps -RunId $RunId -VmName $VmName -Config $seedConfig -ModelLookup $modelLookup -CategoryLookup $categoryLookup -Executor $watchExec
     }
     catch {
         Write-Host "WARN: per-phase step relay failed: $_" -ForegroundColor Yellow
@@ -285,7 +285,7 @@ catch {
         # finished before the failure still land (re-emits are safe,
         # last-write-wins); steps must precede run-failed or they are dropped.
         try {
-            Send-PhaseFinishedSteps -RunId $RunId -VmName $VmName -ModelLookup $modelLookup -CategoryLookup $categoryLookup -Executor $watchExec
+            Send-PhaseFinishedSteps -RunId $RunId -VmName $VmName -Config $seedConfig -ModelLookup $modelLookup -CategoryLookup $categoryLookup -Executor $watchExec
         }
         catch {
             Write-Host "WARN: per-phase step relay failed: $_" -ForegroundColor Yellow

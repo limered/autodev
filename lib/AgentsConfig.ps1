@@ -41,13 +41,10 @@ function ConvertFrom-AgentsConfigJson {
         if ([string]::IsNullOrWhiteSpace($rawType)) {
             throw "Agents config stage '$id' must declare a type"
         }
-        if ($rawType -notin @('sequential', 'loop', 'parallel')) {
+        if ($rawType -notin @('sequential', 'loop')) {
             throw "Agents config stage '$id' has unknown type '$($node.type)' (expected sequential or loop)"
         }
         $type = $rawType
-        if ($type -eq 'parallel') {
-            $type = 'sequential'
-        }
         $agents = @()
         if ($null -ne $node.agents) {
             $agents = @(@($node.agents) | ForEach-Object { "$_" } | Where-Object { -not [string]::IsNullOrWhiteSpace($_) })
@@ -128,8 +125,9 @@ function Get-StepCategory {
     }
     $sequential = @($entries | Where-Object { $_.Type -ne 'loop' -and @($_.Agents) -contains $Agent })
     if ($sequential.Count -gt 0) {
-        if ($Iteration -ge 0 -and $Iteration -lt $sequential.Count) { return $sequential[$Iteration].Id }
-        return 'uncategorized'
+        if ($Iteration -lt 0) { return 'uncategorized' }
+        if ($Iteration -lt $sequential.Count) { return $sequential[$Iteration].Id }
+        return $sequential[-1].Id
     }
     $any = @($entries | Where-Object { @($_.Agents) -contains $Agent }) | Select-Object -First 1
     if ($any) { return $any.Id }
