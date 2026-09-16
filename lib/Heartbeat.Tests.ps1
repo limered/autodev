@@ -3,80 +3,66 @@ BeforeAll {
     . (Join-Path $PSScriptRoot "Heartbeat.ps1")
 }
 
-Describe 'Heartbeat poll helpers' {
-    It 'reads VM clock via Executor' {
-        $fake = { param($a) return '1000' }
-        Get-VmEpochSeconds -Name 'v' -Executor $fake | Should -Be 1000
-    }
-    It 'returns null when marker is missing' {
-        $fake = { param($a) throw 'no such file' }
-        Get-HeartbeatEpochSeconds -Name 'v' -Executor $fake | Should -Be $null
-    }
-    It 'returns null when phase file is missing' {
-        $fake = { param($a) throw 'no such file' }
-        Get-VmCurrentPhase -Name 'v' -Executor $fake | Should -Be $null
-    }
-    It 'returns null when category file is missing' {
-        $fake = { param($a) throw 'no such file' }
-        Get-VmCurrentCategory -Name 'v' -Executor $fake | Should -Be $null
-    }
-    It 'reads the category marker via Executor' {
-        $fake = { param($a) return 'quality-loop' }
-        Get-VmCurrentCategory -Name 'v' -Executor $fake | Should -Be 'quality-loop'
-    }
-    It 'samples epoch + phase together' {
+Describe 'Get-HeartbeatPoll' {
+    It 'drives sample, verdict, and completion through one Executor call' {
+        $script:calls = @()
         $fake = {
             param($a)
-            if ($a -contains 'date') { return '1000' }
-            if ($a -contains 'stat') { return '990' }
-            return 'feature-builder'
+            $script:calls += ,@($a)
+            return "now=1000`nhb=990`nphase=feature-builder`ncategory=quality-loop`ndone=MISSING`n"
         }
-        $s = Get-HeartbeatSample -Name 'v' -Executor $fake
-        $s.VmNow | Should -Be 1000
-        $s.HeartbeatEpoch | Should -Be 990
-        $s.CurrentPhase | Should -Be 'feature-builder'
+        $p = Get-HeartbeatPoll -Name 'v' -Executor $fake -StallThresholdSeconds 300
+        $script:calls.Count | Should -Be 1
+        $p.VmNow | Should -Be 1000
+        $p.HeartbeatEpoch | Should -Be 990
+        $p.CurrentPhase | Should -Be 'feature-builder'
+        $p.CurrentCategory | Should -Be 'quality-loop'
+        $p.DoneExit | Should -Be $null
+        $p.IsStalled | Should -Be $false
+        $p.StaleSeconds | Should -Be 10
     }
-    It 'samples the loop category alongside the worker phase' {
-        $fake = {
-            param($a)
-            if ($a -contains 'date') { return '1000' }
-            if ($a -contains 'stat') { return '990' }
-            if ($a -contains '/tmp/current-category') { return 'quality-loop' }
-            return 'static-analysis'
-        }
-        $s = Get-HeartbeatSample -Name 'v' -Executor $fake
-        $s.CurrentPhase | Should -Be 'static-analysis'
-        $s.CurrentCategory | Should -Be 'quality-loop'
+    It 'maps missing markers to null' {
+        $fake = { param($a) return "now=1000`nhb=MISSING`nphase=MISSING`ncategory=MISSING`ndone=MISSING`n" }
+        $p = Get-HeartbeatPoll -Name 'v' -Executor $fake -StallThresholdSeconds 300
+        $p.HeartbeatEpoch | Should -Be $null
+        $p.CurrentPhase | Should -Be $null
+        $p.CurrentCategory | Should -Be $null
+        $p.DoneExit | Should -Be $null
     }
-    It 'leaves phase and category null when no heartbeat marker exists' {
-        $fake = {
-            param($a)
-            if ($a -contains 'date') { return '1000' }
-            throw 'no such file'
-        }
-        $s = Get-HeartbeatSample -Name 'v' -Executor $fake
-        $s.HeartbeatEpoch | Should -Be $null
-        $s.CurrentPhase | Should -Be $null
-        $s.CurrentCategory | Should -Be $null
-    }
-}
-
-Describe 'Get-VmDoneExit' {
-    It 'returns the VM exit code when the done marker lands' {
-        $fake = { param($a) return '0' }
-        Get-VmDoneExit -Name 'v' -Executor $fake | Should -Be 0
+    It 'returns the done exit code when the marker lands' {
+        $fake = { param($a) return "now=1000`nhb=990`nphase=feature-builder`ncategory=feature-builder`ndone=0`n" }
+        Get-HeartbeatPoll -Name 'v' -Executor $fake -StallThresholdSeconds 300 |
+            Select-Object -ExpandProperty DoneExit | Should -Be 0
     }
     It 'returns non-zero exit codes so failures still fail the run' {
-        $fake = { param($a) return '1' }
-        Get-VmDoneExit -Name 'v' -Executor $fake | Should -Be 1
+        $fake = { param($a) return "now=1000`nhb=990`nphase=feature-builder`ncategory=feature-builder`ndone=1`n" }
+        Get-HeartbeatPoll -Name 'v' -Executor $fake -StallThresholdSeconds 300 |
+            Select-Object -ExpandProperty DoneExit | Should -Be 1
     }
-    It 'returns null when the marker is absent' {
-        $fake = { param($a) throw 'no such file' }
-        Get-VmDoneExit -Name 'v' -Executor $fake | Should -Be $null
+    It 'maps a non-numeric done marker to null' {
+        $fake = { param($a) return "now=1000`nhb=990`nphase=feature-builder`ncategory=feature-builder`ndone=oops`n" }
+        Get-HeartbeatPoll -Name 'v' -Executor $fake -StallThresholdSeconds 300 |
+            Select-Object -ExpandProperty DoneExit | Should -Be $null
     }
-    It 'returns null for a non-numeric marker' {
-        $fake = { param($a) return 'oops' }
-        Get-VmDoneExit -Name 'v' -Executor $fake | Should -Be $null
+    It 'flags a stale marker as stalled in the same poll' {
+        $fake = { param($a) return "now=1000`nhb=600`nphase=feature-builder`ncategory=feature-builder`ndone=MISSING`n" }
+        $p = Get-HeartbeatPoll -Name 'v' -Executor $fake -StallThresholdSeconds 300
+        $p.IsStalled | Should -Be $true
+        $p.StaleSeconds | Should -Be 400
+    }
+    It 'pins the clock to the first sample before the marker exists' {
+        $fake = { param($a) return "now=1000`nhb=MISSING`nphase=MISSING`ncategory=MISSING`ndone=MISSING`n" }
+        $p1 = Get-HeartbeatPoll -Name 'v' -Executor $fake -StallThresholdSeconds 300
+        $p1.IsStalled | Should -Be $false
+        $p2 = Get-HeartbeatPoll -Name 'v' -Executor $fake -StallThresholdSeconds 300 -VmStartEpoch $p1.VmStartEpoch
+        $p2.IsStalled | Should -Be $false
+        $late = { param($a) return "now=1400`nhb=MISSING`nphase=MISSING`ncategory=MISSING`ndone=MISSING`n" }
+        $p3 = Get-HeartbeatPoll -Name 'v' -Executor $late -StallThresholdSeconds 300 -VmStartEpoch $p1.VmStartEpoch
+        $p3.IsStalled | Should -Be $true
+    }
+    It 'throws when the VM clock is missing' {
+        $fake = { param($a) return "hb=990`nphase=x`ncategory=y`ndone=MISSING`n" }
+        { Get-HeartbeatPoll -Name 'v' -Executor $fake } | Should -Throw
     }
 }
 

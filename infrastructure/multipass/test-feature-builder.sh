@@ -119,14 +119,7 @@ BRANCH: $BRANCH
 BASE: $BASE
 REPO: $REPO"
 
-TICKER_PID=""
-stop_ticker() {
-  if [[ -n "$TICKER_PID" ]]; then
-    kill "$TICKER_PID" 2>/dev/null || true
-    TICKER_PID=""
-  fi
-}
-trap 'rc=$?; printf "%s" "$rc" > /tmp/factory-done 2>/dev/null || true; stop_ticker' EXIT
+trap 'rc=$?; printf "%s" "$rc" > /tmp/factory-done 2>/dev/null || true' EXIT
 
 # Maps a reporting worker to the seeded category slot it lights.
 phase_category() {
@@ -203,15 +196,13 @@ config_phase_category() {
 # written here: the host attaches it from the agent frontmatter at relay time,
 # so no secret crosses into the VM.
 #
-# Liveness = "the opencode process is alive", not "it printed a line this minute".
-# A long silent model turn (final commit/PR generation) emits no lines for minutes
-# and was false-killing healthy runs. So: a ticker touches the marker every 30s
-# while opencode's pid is alive. The ADR's real failure (a dead model that errors
-# every request) makes opencode exit fast -> pid gone -> ticker stops -> marker
-# goes stale as intended.
-# ponytail: process-liveness, not output-progress. A deadlocked-but-alive opencode
-# would keep the marker fresh forever; ADR 002 scopes the failure to a dead model
-# that *exits*, and VM-level hangs out of scope, so this is the right signal today.
+# Liveness = "the agent emitted a new output line" (ADR 002 output-progress
+# semantics), not "the opencode process is alive". The marker is touched only
+# inside the output loop below, so a deadlocked-but-alive agent that prints
+# nothing lets the marker go stale and the host stall verdict can fire for it.
+# Long-silence tolerance is explicit on the host: the watcher allows 10
+# minutes without output (a silent model completion emits no lines) before
+# declaring a stall, so legitimately quiet steps are not false-killed.
 run_agent_phase() {
   local agent="$1"
   local prompt="$2"
@@ -224,28 +215,28 @@ run_agent_phase() {
   printf '%s' "$agent" > /tmp/current-phase
   phase_category "$agent" "$iteration" > /tmp/current-category
   touch /tmp/heartbeat
-  # Truncate first so a retry never mixes two runs; a tail follows the file so
-  # the NDJSON stays visible live on the console while landing verbatim on disk.
-  # stdout (the NDJSON stream) lands in the file; stderr stays on the console.
+  # Truncate first so a retry never mixes two runs. stdout (the NDJSON stream)
+  # flows through the loop so each emitted line lands verbatim on disk, echoes
+  # live to the console, and touches the heartbeat; stderr stays on the console.
   : > "$jsonl"
-  tail -n +1 -F "$jsonl" 2>/dev/null &
-  local tail_pid=$!
   # No --model: each agent resolves its own model from the unpacked opencode
   # config (~/.config/opencode), so feature-builder, test-runner,
   # static-analysis, agentic-review and pr-author can differ. $MODEL is
   # reporting-only.
-  local start_ms end_ms
+  local start_ms end_ms rc=0
   start_ms=$(date +%s%3N)
-  $OPENCODE_BIN run --agent "$agent" --auto --format json "$prompt" </dev/null >>"$jsonl" &
-  local phase_pid=$!
-  ( while kill -0 "$phase_pid" 2>/dev/null; do sleep 30; touch /tmp/heartbeat 2>/dev/null; done ) &
-  TICKER_PID=$!
-  local rc=0
-  wait "$phase_pid" || rc=$?
+  set +e
+  set +o pipefail
+  $OPENCODE_BIN run --agent "$agent" --auto --format json "$prompt" </dev/null \
+    | while IFS= read -r line; do
+        printf '%s\n' "$line" >>"$jsonl"
+        printf '%s\n' "$line"
+        touch /tmp/heartbeat
+      done
+  rc=${PIPESTATUS[0]:-$?}
+  set -o pipefail
+  set -e
   end_ms=$(date +%s%3N)
-  stop_ticker
-  kill "$tail_pid" 2>/dev/null || true
-  wait "$tail_pid" 2>/dev/null || true
   local status="done"
   [[ "$rc" -eq 0 ]] || status="failed"
   printf '{"agent":"%s","iteration":%d,"durationMs":%d,"status":"%s"}\n' \

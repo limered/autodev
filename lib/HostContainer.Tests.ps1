@@ -105,4 +105,28 @@ Describe 'New-ContainerFileExecutor' {
         $exec = New-ContainerFileExecutor -SignalDir (Join-Path $script:fxDir 'absent')
         { & $exec @('exec', 'c1', '--', 'cat', '/tmp/current-phase') } | Should -Throw
     }
+    It 'answers the combined heartbeat poll from the signal dir' {
+        $pollDir = Join-Path $script:fxDir 'poll-fx'
+        New-Item -ItemType Directory -Path $pollDir -Force | Out-Null
+        'static-analysis' | Set-Content (Join-Path $pollDir 'current-phase') -NoNewline
+        'quality-loop' | Set-Content (Join-Path $pollDir 'current-category') -NoNewline
+        'x' | Set-Content (Join-Path $pollDir 'heartbeat') -NoNewline
+        $exec = New-ContainerFileExecutor -SignalDir $pollDir
+        $out = & $exec @('exec', 'c1', '--', 'bash', '-c', 'now=$(date +%s); echo probe')
+        $out | Should -Match 'now=\d+'
+        $out | Should -Match 'hb=\d+'
+        $out | Should -Match 'phase=static-analysis'
+        $out | Should -Match 'category=quality-loop'
+        $out | Should -Match 'done=MISSING'
+        Remove-Item -Recurse -Force $pollDir -ErrorAction SilentlyContinue
+    }
+    It 'maps a missing poll marker to MISSING' {
+        $emptyDir = Join-Path $script:fxDir 'poll-empty'
+        New-Item -ItemType Directory -Path $emptyDir -Force | Out-Null
+        $exec = New-ContainerFileExecutor -SignalDir $emptyDir
+        $out = & $exec @('exec', 'c1', '--', 'bash', '-c', 'probe')
+        $out | Should -Match 'hb=MISSING'
+        $out | Should -Match 'phase=MISSING'
+        Remove-Item -Recurse -Force $emptyDir -ErrorAction SilentlyContinue
+    }
 }

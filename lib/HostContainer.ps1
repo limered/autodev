@@ -136,6 +136,39 @@ function New-ContainerFileExecutor {
         param($Arguments)
         $tail = @($Arguments | Select-Object -Skip 3)
         if ($tail.Count -eq 0) { throw "unsupported container exec: $Arguments" }
+        # Combined heartbeat poll (one exec): answer the same key=value
+        # probe the VM answers via bash -c, reading the signal dir that is
+        # mounted as the guest's /tmp.
+        if ($tail[0] -eq 'bash') {
+            $now = [DateTimeOffset]::UtcNow.ToUnixTimeSeconds().ToString()
+            $hb = 'MISSING'
+            $hbPath = Join-Path $dir 'heartbeat'
+            if (Test-Path -LiteralPath $hbPath) {
+                $hb = ([DateTimeOffset](Get-Item -LiteralPath $hbPath).LastWriteTimeUtc).ToUnixTimeSeconds().ToString()
+            }
+            $ph = 'MISSING'
+            $phPath = Join-Path $dir 'current-phase'
+            if (Test-Path -LiteralPath $phPath) {
+                $raw = (Get-Content -LiteralPath $phPath -Raw)
+                $first = ("$raw" -split "`r?`n")[0].Trim()
+                if ($first -ne '') { $ph = $first }
+            }
+            $cg = 'MISSING'
+            $cgPath = Join-Path $dir 'current-category'
+            if (Test-Path -LiteralPath $cgPath) {
+                $raw = (Get-Content -LiteralPath $cgPath -Raw)
+                $first = ("$raw" -split "`r?`n")[0].Trim()
+                if ($first -ne '') { $cg = $first }
+            }
+            $dn = 'MISSING'
+            $dnPath = Join-Path $dir 'factory-done'
+            if (Test-Path -LiteralPath $dnPath) {
+                $raw = (Get-Content -LiteralPath $dnPath -Raw)
+                $first = ("$raw" -split "`r?`n")[0].Trim()
+                if ($first -ne '') { $dn = $first }
+            }
+            return ("now=$now`nhb=$hb`nphase=$ph`ncategory=$cg`ndone=$dn`n")
+        }
         if ($tail[0] -eq 'date') {
             return [DateTimeOffset]::UtcNow.ToUnixTimeSeconds().ToString()
         }
