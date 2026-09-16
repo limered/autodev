@@ -5,15 +5,23 @@
   Watch the VM /tmp/heartbeat marker while a background job runs and fail if it stalls.
 
 .DESCRIPTION
-  Polls the /tmp/heartbeat file inside the VM via multipass exec. Staleness is
-  measured against the VM's own clock (date +%s). If the marker is stale for
-  more than the configured threshold, the background job is stopped and this
-  script throws. If the job finishes before the threshold, its output is
-  returned and the script exits cleanly.
+  Polls the guest with one VM read per iteration (Get-HeartbeatPoll): the
+  VM clock, the /tmp/heartbeat mtime, the current-phase/category markers,
+  and the /tmp/factory-done exit code arrive together, and the stall verdict
+  is computed from the same poll. Staleness is measured against the VM's
+  own clock (date +%s). If the marker is stale for more than the configured
+  threshold, the background job is stopped and this script throws. If the
+  job finishes before the threshold, its output is returned and the script
+  exits cleanly.
 
   Before the first heartbeat is written, the staleness clock starts from the
   first VM clock sample taken while watching, so the job is not failed
   immediately.
+
+  Output-progress semantics (ADR 002): the marker advances only when the
+  agent emits a new output line. A long silent model turn emits nothing, so
+  the threshold defaults to 600s (10 minutes) — long-silence tolerance
+  explicit in the sampler.
 
 .PARAMETER VmName
   multipass VM name to poll.
@@ -22,7 +30,7 @@
   Background PowerShell job running the in-VM work.
 
 .PARAMETER StallThresholdSeconds
-  Heartbeat staleness threshold in seconds. Defaults to 300 (5 minutes).
+  Heartbeat staleness threshold in seconds. Defaults to 600 (10 minutes).
 
 .PARAMETER PollIntervalSeconds
   Seconds between polls. Defaults to 10.
@@ -31,7 +39,7 @@
 param(
     [Parameter(Mandatory = $true)][string]$VmName,
     [Parameter(Mandatory = $true)][System.Management.Automation.Job]$Job,
-    [int]$StallThresholdSeconds = 300,
+    [int]$StallThresholdSeconds = 600,
     [int]$PollIntervalSeconds = 10,
     [string]$RunId,
     [string]$RepoRoot,
@@ -54,9 +62,10 @@ try {
     $lastReportedHeartbeat = $null
 
     while ($Job.State -eq "Running") {
-        $sample = Get-HeartbeatSample -Name $VmName -Executor $Executor
-        $vmNow = $sample.VmNow
-        $heartbeatEpoch = $sample.HeartbeatEpoch
+        # One VM read per poll: sample, verdict, and completion together.
+        $poll = Get-HeartbeatPoll -Name $VmName -Executor $Executor -StallThresholdSeconds $StallThresholdSeconds -VmStartEpoch $vmStartEpoch
+        $vmStartEpoch = $poll.VmStartEpoch
+        $heartbeatEpoch = $poll.HeartbeatEpoch
 
         # Report a heartbeat only when the marker mtime actually advanced since
         # last reported — an idle agent simply stops reporting. The current-phase
@@ -67,14 +76,14 @@ try {
             $lastReportedHeartbeat = $heartbeatEpoch
             $at = [DateTimeOffset]::FromUnixTimeSeconds($heartbeatEpoch).UtcDateTime.ToString("o")
             $fields = @{ at = $at }
-            if ($sample.CurrentPhase) { $fields["currentPhase"] = $sample.CurrentPhase }
-            if ($sample.CurrentCategory) { $fields["currentCategory"] = $sample.CurrentCategory }
+            if ($poll.CurrentPhase) { $fields["currentPhase"] = $poll.CurrentPhase }
+            if ($poll.CurrentCategory) { $fields["currentCategory"] = $poll.CurrentCategory }
             Send-FactoryEvent -RunId $RunId -Type "heartbeat" -Fields $fields
         }
 
         # /tmp/factory-done is written by the VM on EXIT; when present the
         # streaming client hung, so stop it and continue from the marker.
-        $doneExit = Get-VmDoneExit -Name $VmName -Executor $Executor
+        $doneExit = $poll.DoneExit
         if ($doneExit -ne $null) {
             Stop-Job -Job $Job -ErrorAction SilentlyContinue
             Receive-Job -Job $Job -ErrorAction SilentlyContinue
@@ -85,10 +94,8 @@ try {
             return
         }
 
-        $verdict = Test-HeartbeatStall -VmNow $vmNow -HeartbeatEpoch $heartbeatEpoch -VmStartEpoch $vmStartEpoch -StallThresholdSeconds $StallThresholdSeconds
-        $vmStartEpoch = $verdict.VmStartEpoch
-        $staleSeconds = $verdict.StaleSeconds
-        if ($verdict.IsStalled) {
+        $staleSeconds = $poll.StaleSeconds
+        if ($poll.IsStalled) {
             $stallReason = "Heartbeat stale for ${staleSeconds}s (threshold ${StallThresholdSeconds}s); job appears stalled"
             if ($RunId) {
                 Send-FactoryEvent -RunId $RunId -Type "stall-detected" -Fields @{ failureReason = $stallReason }
