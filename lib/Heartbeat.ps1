@@ -22,7 +22,7 @@
   sampler, not in the marker.
 #>
 
-. (Join-Path $PSScriptRoot "HostVm.ps1")
+. (Join-Path $PSScriptRoot "RuntimeEnvironment.ps1")
 . (Join-Path $PSScriptRoot "JobIntake.ps1")
 
 # Single probe run inside the guest. One exec, five key=value lines:
@@ -86,7 +86,7 @@ function ConvertFrom-HeartbeatPollOutput {
 # completion together so the loop learns everything from a single call.
 function Get-HeartbeatPoll {
     param([string]$Name, [scriptblock]$Executor, [int]$StallThresholdSeconds = 600, $VmStartEpoch = $null)
-    $output = Invoke-MultipassOutput -Arguments @('exec', $Name, '--', 'bash', '-c', (Get-HeartbeatPollScript)) -Executor $Executor
+    $output = Invoke-RuntimeVmOutput -Arguments @('exec', $Name, '--', 'bash', '-c', (Get-HeartbeatPollScript)) -Executor $Executor
     $sample = ConvertFrom-HeartbeatPollOutput -Content $output
     $verdict = Test-HeartbeatStall -VmNow $sample.VmNow -HeartbeatEpoch $sample.HeartbeatEpoch -VmStartEpoch $VmStartEpoch -StallThresholdSeconds $StallThresholdSeconds
     return [PSCustomObject]@{

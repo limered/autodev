@@ -83,10 +83,10 @@ function Send-FactoryEvent {
 
 .DESCRIPTION
   V1 pull, not streaming: the caller invokes this once the in-VM work is done
-  (or failed) and the VM is still up, before Remove-Vm and before the terminal
+  (or failed) and the VM is still up, before Remove-RuntimeVm and before the terminal
   run-finished/run-failed event — steps must land first or the backend's
   terminal guard drops them. For every candidate phase the VM meta sidecar
-  (durationMs + status) and NDJSON (token usage) are pulled via multipass-cat;
+  (durationMs + status) and NDJSON (token usage) are pulled via runtime-cat;
   phases that never ran are skipped. The model is attached here on the host
   via -ModelMap (the shared Get-AgentModelMap over the agent frontmatter)
   and a model-less step is never sent — the backend drops it as a no-op. The

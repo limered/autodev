@@ -11,14 +11,14 @@
   (/tmp/phase-<agent>-<iteration>.jsonl, opencode `run --format json` output)
   plus a meta sidecar (/tmp/phase-<agent>-<iteration>.meta.json with
   durationMs + status). VM reads hide behind an injectable -Executor Seam
-  (passed through to Invoke-MultipassOutput) so Pester drives scripted file
+  (passed through to Invoke-RuntimeVmOutput) so Pester drives scripted file
   contents without a live VM. Prod callers omit -Executor.
 
   Pure converters (ConvertTo-PhaseTokens, ConvertTo-PhaseMeta) take strings
   and need no VM at all; Get-PhaseStepCandidates expands the parsed config.
 #>
 
-. (Join-Path $PSScriptRoot "HostVm.ps1")
+. (Join-Path $PSScriptRoot "RuntimeEnvironment.ps1")
 
 # Expands the parsed agents.json config into relay candidates in map order.
 # Sequential takes the next free iteration per worker, loop emits 1..N per member.
@@ -135,7 +135,7 @@ function Get-VmPhaseTokens {
     param([string]$VmName, [string]$Agent, [int]$Iteration, [scriptblock]$Executor)
     $path = "/tmp/phase-$Agent-$Iteration.jsonl"
     try {
-        $content = Invoke-MultipassOutput -Arguments @('exec', $VmName, '--', 'cat', $path) -Executor $Executor -TimeoutSeconds 15
+        $content = Invoke-RuntimeVmOutput -Arguments @('exec', $VmName, '--', 'cat', $path) -Executor $Executor -TimeoutSeconds 15
     }
     catch {
         return $null
@@ -150,7 +150,7 @@ function Get-VmPhaseMeta {
     param([string]$VmName, [string]$Agent, [int]$Iteration, [scriptblock]$Executor)
     $path = "/tmp/phase-$Agent-$Iteration.meta.json"
     try {
-        $content = Invoke-MultipassOutput -Arguments @('exec', $VmName, '--', 'cat', $path) -Executor $Executor -TimeoutSeconds 15
+        $content = Invoke-RuntimeVmOutput -Arguments @('exec', $VmName, '--', 'cat', $path) -Executor $Executor -TimeoutSeconds 15
     }
     catch {
         return $null

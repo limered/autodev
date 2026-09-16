@@ -24,7 +24,7 @@ $sshKey = Join-Path $secretsDir "bot-github"
 $sshPubKey = Join-Path $secretsDir "bot-github.pub"
 $patFile = Join-Path $secretsDir "github-pat.txt"
 
-. (Join-Path $RepoRoot "lib/HostVm.ps1")
+. (Join-Path $RepoRoot "lib/RuntimeEnvironment.ps1")
 
 $vmCreated = $false
 
@@ -35,17 +35,17 @@ try {
     if (-not (Test-Path $patFile)) { throw "PAT file not found: $patFile" }
 
     Write-Step "Launching VM $VmName"
-    New-VmFromBlueprint -Name $VmName -CloudInit $cloudInit
+    New-RuntimeVm -Name $VmName -CloudInit $cloudInit
     $vmCreated = $true
 
     Write-Step "Transferring bot SSH key, public key, PAT, and test script into VM"
-    Invoke-Multipass transfer $sshKey "$($VmName):/tmp/bot-github"
-    Invoke-Multipass transfer $sshPubKey "$($VmName):/tmp/bot-github.pub"
-    Invoke-Multipass transfer $patFile "$($VmName):/tmp/github-pat.txt"
-    Invoke-Multipass transfer $testScript "$($VmName):/tmp/test-bot-auth.sh"
+    Copy-ToRuntimeVm -Name $VmName -Source $sshKey -Dest "/tmp/bot-github"
+    Copy-ToRuntimeVm -Name $VmName -Source $sshPubKey -Dest "/tmp/bot-github.pub"
+    Copy-ToRuntimeVm -Name $VmName -Source $patFile -Dest "/tmp/github-pat.txt"
+    Copy-ToRuntimeVm -Name $VmName -Source $testScript -Dest "/tmp/test-bot-auth.sh"
 
     Write-Step "Running authentication test inside VM"
-    Invoke-Multipass exec $VmName '--' bash /tmp/test-bot-auth.sh
+    Invoke-RuntimeVm exec $VmName '--' bash /tmp/test-bot-auth.sh
 
     Write-Step "Authentication test passed"
 }
@@ -55,6 +55,6 @@ catch {
 }
 finally {
     if ($vmCreated) {
-        Remove-Vm -Name $VmName
+        Remove-RuntimeVm -Name $VmName
     }
 }

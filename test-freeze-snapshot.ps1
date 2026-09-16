@@ -18,7 +18,7 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
-. (Join-Path $RepoRoot "lib/HostVm.ps1")
+. (Join-Path $RepoRoot "lib/RuntimeEnvironment.ps1")
 $VmName = "freeze-test-$(Get-Date -Format 'yyyyMMdd-HHmmss')-$(Get-Random -Maximum 9999)"
 
 $watch = Join-Path $RepoRoot "watch-heartbeat.ps1"
@@ -27,7 +27,7 @@ $vmCreated = $false
 $snapshotPath = $null
 try {
     Write-Step "Launching test VM $VmName"
-    New-VmFromBlueprint -Name $VmName -Cpus '1' -Memory '1G' -Disk '5G' -NoWait
+    New-RuntimeVm -Name $VmName -Cpus '1' -Memory '1G' -Disk '5G' -NoWait
     $vmCreated = $true
 
     # Deliberate stall: sleep long, never touch /tmp/heartbeat.
@@ -54,7 +54,7 @@ try {
 }
 finally {
     if ($vmCreated -and -not $KeepVm) {
-        Remove-Vm -Name $VmName
+        Remove-RuntimeVm -Name $VmName
     }
 }
 

@@ -60,7 +60,7 @@ $ErrorActionPreference = "Stop"
 
 . (Join-Path $PSScriptRoot "lib/JobIntake.ps1")
 . (Join-Path $PSScriptRoot "lib/AgentsConfig.ps1")
-. (Join-Path $PSScriptRoot "lib/HostContainer.ps1")
+. (Join-Path $PSScriptRoot "lib/RuntimeEnvironment.ps1")
 
 $Repo = ConvertTo-OwnerRepo -RepoUrl $RepoUrl
 
@@ -81,7 +81,6 @@ $stages = @(ConvertTo-SeededStages -Config $seedConfig -ModelMap $agentModels)
 
 # Fire-and-forget dashboard reporting (no-op if .secrets/ config is absent).
 . (Join-Path $RepoRoot "factory-report.ps1")
-. (Join-Path $RepoRoot "lib/HostVm.ps1")
 Initialize-FactoryReport -RepoRoot $RepoRoot
 Send-FactoryEvent -RunId $RunId -Type "run-started" -Fields @{
     repo   = $Repo
@@ -105,13 +104,7 @@ $prUrl = $null
 $pr = $null
 
 try {
-    if ($Isolator -eq 'container') {
-        if (-not (Test-Path $testScript)) { throw "test script not found: $testScript" }
-    }
-    else {
-        if (-not (Test-Path $cloudInit)) { throw "cloud-init not found: $cloudInit" }
-        if (-not (Test-Path $testScript)) { throw "test script not found: $testScript" }
-    }
+    if (-not (Test-Path $testScript)) { throw "test script not found: $testScript" }
     if (-not (Test-Path $agentsJson)) { throw "agents.json not found: $agentsJson" }
     if (-not (Test-Path $patFile)) { throw "PAT file not found: $patFile" }
     if (-not (Test-Path $apiKeyFile)) { throw "opencode API key file not found: $apiKeyFile" }
@@ -121,94 +114,111 @@ try {
     $freezeCapture = $null
     $signalDir = $null
     $containerCli = $null
+    $CopyInitialFiles = $null
+    $CopyToRuntime = $null
+    $InvokeInRuntime = $null
+    $StartGuestJob = $null
+    $RemoveRuntime = $null
     if ($Isolator -eq 'container') {
         $containerCli = Get-ContainerCli
-        $signalDir = Join-Path (Get-HostTempDir) "factory-signals/$VmName"
-        New-Item -ItemType Directory -Path $signalDir -Force | Out-Null
-        $watchExec = New-ContainerFileExecutor -SignalDir $signalDir
-        $cliForCapture = $containerCli
-        $nameForCapture = $VmName
-        $freezeCapture = {
-            param($Command)
-            Invoke-ContainerOutput -Arguments @('exec', $nameForCapture, 'bash', '-c', $Command) -Cli $cliForCapture -TimeoutSeconds 15
-        }.GetNewClosure()
+        $preSignalDir = Join-Path (Get-HostTempDir) "factory-signals/$VmName"
+        $nameForRemove = $VmName
+        $cliForRemove = $containerCli
+        $dirForRemove = $preSignalDir
+        $RemoveRuntime = { Remove-RuntimeContainer -Name $nameForRemove -Cli $cliForRemove -SignalDir $dirForRemove }.GetNewClosure()
         $secretMounts = @(
             "${patFile}:/tmp/github-pat.txt:ro,z",
             "${apiKeyFile}:/tmp/opencode-api-key.txt:ro,z"
         )
         $sockMount = Get-ContainerSocketMount
         if ($sockMount) { $secretMounts += $sockMount }
-        New-ContainerFromImage -Name $VmName -Image $Image -SignalDir $signalDir `
-            -ExtraMounts $secretMounts -Cli $containerCli
+        $runtimeInfo = New-RuntimeContainer -Name $VmName -Image $Image -ExtraMounts $secretMounts -Cli $containerCli
+        $containerCli = $runtimeInfo.Cli
+        if (-not $containerCli) { $containerCli = Get-ContainerCli }
+        $signalDir = $runtimeInfo.SignalDir
+        $watchExec = New-RuntimeHeartbeatExecutorContainer -SignalDir $signalDir
+        $freezeCapture = New-RuntimeFreezeCaptureContainer -Name $VmName -Cli $containerCli
+        $nameCopy = $VmName
+        $cliCopy = $containerCli
+        $testScriptCopy = $testScript
+        $agentsJsonCopy = $agentsJson
+        $CopyToRuntime = { param($Source, $Dest) Copy-ToRuntimeContainer -Name $nameCopy -Source $Source -Dest $Dest -Cli $cliCopy }.GetNewClosure()
+        $InvokeInRuntime = { param([string]$Command) Invoke-RuntimeContainer -Arguments @('exec', $nameCopy, 'bash', '-c', $Command) -Cli $cliCopy }.GetNewClosure()
+        $CopyInitialFiles = {
+            Write-Step "Copying .opencode config and test script into container"
+            Copy-ToRuntimeContainer -Name $nameCopy -Source $testScriptCopy -Dest '/tmp/test-feature-builder.sh' -Cli $cliCopy
+            Copy-ToRuntimeContainer -Name $nameCopy -Source $agentsJsonCopy -Dest '/tmp/agents.json' -Cli $cliCopy
+            Invoke-RuntimeContainer -Arguments @('exec', $nameCopy, 'bash', '-c', "sed -i 's/\r`$//' /tmp/test-feature-builder.sh") -Cli $cliCopy
+        }.GetNewClosure()
+        $modelCopy = $Model
+        $branchCopy = $Branch
+        $specCopy = $Spec
+        $repoCopy = $Repo
+        $StartGuestJob = {
+            $jobScript = {
+                param($Cli, $InnerName, $InnerModel, $InnerBranch, $InnerSpec, $InnerRepo)
+                $ErrorActionPreference = "Continue"
+                $specB64 = [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($InnerSpec))
+                & $Cli exec $InnerName env "MODEL=$InnerModel" "ISSUE_B64=$specB64" bash /tmp/test-feature-builder.sh "$InnerBranch" "$InnerRepo" 2>&1 | ForEach-Object { "$_" }
+                if ($LASTEXITCODE -ne 0) {
+                    throw "container exec failed with exit code ${LASTEXITCODE}"
+                }
+            }
+            return (Start-Job -ScriptBlock $jobScript -ArgumentList $cliCopy, $nameCopy, $modelCopy, $branchCopy, $specCopy, $repoCopy)
+        }.GetNewClosure()
     }
     else {
-        New-VmFromBlueprint -Name $VmName -CloudInit $cloudInit
+        if (-not (Test-Path $cloudInit)) { throw "cloud-init not found: $cloudInit" }
+        $nameForRemoveVm = $VmName
+        $RemoveRuntime = { Remove-RuntimeVm -Name $nameForRemoveVm }.GetNewClosure()
+        New-RuntimeVm -Name $VmName -CloudInit $cloudInit
+        $nameCopy = $VmName
+        $testScriptCopy = $testScript
+        $agentsJsonCopy = $agentsJson
+        $patCopy = $patFile
+        $apiKeyCopy = $apiKeyFile
+        $CopyToRuntime = { param($Source, $Dest) Copy-ToRuntimeVm -Name $nameCopy -Source $Source -Dest $Dest }.GetNewClosure()
+        $InvokeInRuntime = { param([string]$Command) Invoke-RuntimeVm exec $nameCopy '--' bash -c $Command }.GetNewClosure()
+        $CopyInitialFiles = {
+            Write-Step "Transferring PAT, opencode API key, .opencode config, and test script into VM"
+            Copy-ToRuntimeVm -Name $nameCopy -Source $patCopy -Dest '/tmp/github-pat.txt'
+            Copy-ToRuntimeVm -Name $nameCopy -Source $apiKeyCopy -Dest '/tmp/opencode-api-key.txt'
+            Copy-ToRuntimeVm -Name $nameCopy -Source $testScriptCopy -Dest '/tmp/test-feature-builder.sh'
+            Copy-ToRuntimeVm -Name $nameCopy -Source $agentsJsonCopy -Dest '/tmp/agents.json'
+            Invoke-RuntimeVm exec $nameCopy '--' bash -c "sed -i 's/\r`$//' /tmp/test-feature-builder.sh"
+        }.GetNewClosure()
+        $modelCopy = $Model
+        $branchCopy = $Branch
+        $specCopy = $Spec
+        $repoCopy = $Repo
+        $StartGuestJob = {
+            $jobScript = {
+                param($InnerName, $InnerModel, $InnerBranch, $InnerSpec, $InnerRepo)
+                $ErrorActionPreference = "Continue"
+                $specB64 = [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($InnerSpec))
+                & multipass exec $InnerName '--' env "MODEL=$InnerModel" "ISSUE_B64=$specB64" bash /tmp/test-feature-builder.sh "$InnerBranch" "$InnerRepo" 2>&1 | ForEach-Object { "$_" }
+                if ($LASTEXITCODE -ne 0) {
+                    throw "multipass exec failed with exit code ${LASTEXITCODE}"
+                }
+            }
+            return (Start-Job -ScriptBlock $jobScript -ArgumentList $nameCopy, $modelCopy, $branchCopy, $specCopy, $repoCopy)
+        }.GetNewClosure()
     }
     $vmCreated = $true
 
-    if ($Isolator -eq 'container') {
-        Write-Step "Copying .opencode config and test script into container"
-        Copy-IntoContainer -Name $VmName -Source $testScript -Dest '/tmp/test-feature-builder.sh' -Cli $containerCli
-        Copy-IntoContainer -Name $VmName -Source $agentsJson -Dest '/tmp/agents.json' -Cli $containerCli
-        Invoke-Container -Arguments @('exec', $VmName, 'bash', '-c', "sed -i 's/\r`$//' /tmp/test-feature-builder.sh") -Cli $containerCli
-    }
-    else {
-        Write-Step "Transferring PAT, opencode API key, .opencode config, and test script into VM"
-        Invoke-Multipass transfer $patFile "$($VmName):/tmp/github-pat.txt"
-        Invoke-Multipass transfer $apiKeyFile "$($VmName):/tmp/opencode-api-key.txt"
-        Invoke-Multipass transfer $testScript "$($VmName):/tmp/test-feature-builder.sh"
-        # The category set travels with the job: the VM builds its category list on
-        # startup from this file and reports liveness by category over heartbeat.
-        # It was already read for seeding above, so it must exist here.
-        Invoke-Multipass transfer $agentsJson "$($VmName):/tmp/agents.json"
-        # The Windows working copy may be CRLF; strip CR so bash doesn't choke on
-        # "set -euo pipefail\r" and friends.
-        Invoke-Multipass exec $VmName '--' bash -c "sed -i 's/\r`$//' /tmp/test-feature-builder.sh"
-    }
+    & $CopyInitialFiles
 
     # Transfer the .opencode directory by tarring it, moving the archive into
-    # the VM, and extracting it to /tmp/.opencode.
+    # the guest, and extracting it to /tmp/.opencode.
     $opencodeTar = Join-Path (Get-HostTempDir) "opencode-config-$VmName.tar.gz"
     Remove-Item -LiteralPath $opencodeTar -ErrorAction SilentlyContinue
     & tar -czf $opencodeTar -C $RepoRoot ".opencode"
     if ($LASTEXITCODE -ne 0) { throw "tar failed creating .opencode archive" }
-    if ($Isolator -eq 'container') {
-        Copy-IntoContainer -Name $VmName -Source $opencodeTar -Dest '/tmp/opencode-config.tar.gz' -Cli $containerCli
-        Invoke-Container -Arguments @('exec', $VmName, 'bash', '-c', 'rm -rf /tmp/.opencode && tar -xzf /tmp/opencode-config.tar.gz -C /tmp') -Cli $containerCli
-    }
-    else {
-        Invoke-Multipass transfer $opencodeTar "$($VmName):/tmp/opencode-config.tar.gz"
-        Invoke-Multipass exec $VmName '--' bash -c "rm -rf /tmp/.opencode && tar -xzf /tmp/opencode-config.tar.gz -C /tmp"
-    }
+    & $CopyToRuntime $opencodeTar '/tmp/opencode-config.tar.gz'
+    & $InvokeInRuntime 'rm -rf /tmp/.opencode && tar -xzf /tmp/opencode-config.tar.gz -C /tmp'
 
     Write-Step "Running feature-builder job inside guest (repo: $Repo, branch: $Branch)"
-    if ($Isolator -eq 'container') {
-        $vmJobScript = {
-            param($Cli, $VmName, $Model, $Branch, $Spec, $Repo)
-            $ErrorActionPreference = "Continue"
-            $specB64 = [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($Spec))
-            & $Cli exec $VmName env "MODEL=$Model" "ISSUE_B64=$specB64" bash /tmp/test-feature-builder.sh "$Branch" "$Repo" 2>&1 | ForEach-Object { "$_" }
-            if ($LASTEXITCODE -ne 0) {
-                throw "container exec failed with exit code ${LASTEXITCODE}"
-            }
-        }
-        $vmJob = Start-Job -ScriptBlock $vmJobScript -ArgumentList $containerCli, $VmName, $Model, $Branch, $Spec, $Repo
-    }
-    else {
-        $vmJobScript = {
-            param($VmName, $Model, $Branch, $Spec, $Repo)
-            $ErrorActionPreference = "Continue"
-            # Base64 the issue token so spaces/quotes/newlines never reach the env/exec arg
-            # boundary (a bare word like "to" was being parsed as the command -> exit 127).
-            # The value now carries a GitHub issue number, not a spec body.
-            $specB64 = [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($Spec))
-            & multipass exec $VmName '--' env "MODEL=$Model" "ISSUE_B64=$specB64" bash /tmp/test-feature-builder.sh "$Branch" "$Repo" 2>&1 | ForEach-Object { "$_" }
-            if ($LASTEXITCODE -ne 0) {
-                throw "multipass exec failed with exit code ${LASTEXITCODE}"
-            }
-        }
-        $vmJob = Start-Job -ScriptBlock $vmJobScript -ArgumentList $VmName, $Model, $Branch, $Spec, $Repo
-    }
+    $vmJob = & $StartGuestJob
 
     Send-FactoryEvent -RunId $RunId -Type "agent-started" -Fields @{ vmName = $VmName }
 
@@ -253,9 +263,9 @@ catch {
     $failureReason = "$_"
     Write-Host "ERROR: $failureReason" -ForegroundColor Red
     if (-not $vmCreated -and -not $KeepVmOnFailure) {
-        # A launch that times out on cloud-init still leaves the VM behind;
+        # A launch that times out still leaves the guest behind;
         # purge it best-effort so retries don't pile up orphans.
-        try { Invoke-Multipass delete $VmName --purge } catch {}
+        try { if ($RemoveRuntime) { & $RemoveRuntime } } catch {}
     }
     if ($vmCreated) {
         # Best-effort step relay before the terminal event: phases that
@@ -288,13 +298,7 @@ catch {
 }
 finally {
     if ($vmCreated -and -not ($jobFailed -and $KeepVmOnFailure)) {
-        if ($Isolator -eq 'container') {
-            Remove-Container -Name $VmName -Cli $containerCli
-            if ($signalDir) { Remove-Item -Recurse -Force -LiteralPath $signalDir -ErrorAction SilentlyContinue }
-        }
-        else {
-            Remove-Vm -Name $VmName
-        }
+        & $RemoveRuntime
     }
     elseif ($vmCreated) {
         Write-Step "Keeping guest $VmName for debugging (job failed, -KeepVmOnFailure set)"
