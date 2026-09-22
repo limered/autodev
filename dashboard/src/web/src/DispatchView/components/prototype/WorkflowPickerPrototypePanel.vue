@@ -4,7 +4,9 @@ import { useRoute } from "vue-router";
 import { PROTOTYPE_ROWS } from "./prototypeWorkflows.js";
 import WorkflowPickerVariantA from "./WorkflowPickerVariantA.vue";
 import WorkflowPickerVariantB from "./WorkflowPickerVariantB.vue";
-import WorkflowPickerVariantC from "./WorkflowPickerVariantC.vue";
+import WorkflowPickerVariantC1 from "./WorkflowPickerVariantC1.vue";
+import WorkflowPickerVariantC2 from "./WorkflowPickerVariantC2.vue";
+import WorkflowPickerVariantC3 from "./WorkflowPickerVariantC3.vue";
 import PrototypeSwitcher from "./PrototypeSwitcher.vue";
 
 const route = useRoute();
@@ -18,9 +20,11 @@ function onPick(id, name) {
 const variants = [
   { key: "A", label: "inline dropdown" },
   { key: "B", label: "chip row + stage counts" },
-  { key: "C", label: "compact badge popover" },
+  { key: "C1", label: "text + floating name-only menu" },
+  { key: "C2", label: "text + count floating menu" },
+  { key: "C3", label: "text inline expanding list" },
 ];
-const variant = () => route.query.variant ?? "A";
+const variant = () => route.query.variant ?? "C1";
 </script>
 
 <template>
@@ -34,7 +38,9 @@ const variant = () => route.query.variant ?? "A";
       <header>#{{ row.rank }} {{ row.title }} ({{ row.repo }}#{{ row.number }}){{ row.runId ? " · claimed" : "" }}</header>
       <WorkflowPickerVariantA v-if="variant() === 'A'" :row="row" @pick="(n) => onPick(row.id, n)" />
       <WorkflowPickerVariantB v-else-if="variant() === 'B'" :row="row" @pick="(n) => onPick(row.id, n)" />
-      <WorkflowPickerVariantC v-else :row="row" @pick="(n) => onPick(row.id, n)" />
+      <WorkflowPickerVariantC1 v-else-if="variant() === 'C1'" :row="row" @pick="(n) => onPick(row.id, n)" />
+      <WorkflowPickerVariantC2 v-else-if="variant() === 'C2'" :row="row" @pick="(n) => onPick(row.id, n)" />
+      <WorkflowPickerVariantC3 v-else :row="row" @pick="(n) => onPick(row.id, n)" />
     </article>
     <PrototypeSwitcher :variants="variants" />
   </section>
