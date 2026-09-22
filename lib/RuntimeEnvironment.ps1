@@ -286,9 +286,13 @@ function New-RuntimeFreezeCaptureContainer {
     param([string]$Name, [string]$Cli)
     $nameForCapture = $Name
     $cliForCapture = $Cli
+    # Captured by value: the closure below outlives this scope, and a closed
+    # scriptblock cannot see this file's script-scope functions when the file
+    # is dot-sourced into a nested (non-entry) script.
+    $invokeContainerOutput = ${function:Invoke-RuntimeContainerOutput}
     return {
         param($Command)
-        Invoke-RuntimeContainerOutput -Arguments @('exec', $nameForCapture, 'bash', '-c', $Command) -Cli $cliForCapture -TimeoutSeconds 15
+        & $invokeContainerOutput -Arguments @('exec', $nameForCapture, 'bash', '-c', $Command) -Cli $cliForCapture -TimeoutSeconds 15
     }.GetNewClosure()
 }
 

@@ -58,6 +58,11 @@ param(
 
 $ErrorActionPreference = "Stop"
 
+# This script runs nested (dispatch-client.ps1 invokes it via &), so the
+# functions dot-sourced below live in a child script scope that
+# .GetNewClosure() closures cannot see. Deferred blocks in this file stay
+# plain scriptblocks so the lib functions resolve; only blocks that must
+# snapshot locals past this scope (or run in a background job) close over.
 . (Join-Path $PSScriptRoot "lib/JobIntake.ps1")
 . (Join-Path $PSScriptRoot "lib/AgentsConfig.ps1")
 . (Join-Path $PSScriptRoot "lib/RuntimeEnvironment.ps1")
@@ -73,7 +78,7 @@ if (-not $Model) {
 
 $seedConfig = Read-AgentsConfig -Path (Join-Path $RepoRoot "agents.json")
 $agentModels = Get-AgentModelMap -Config $seedConfig -RepoRoot $RepoRoot
-$categoryLookup = { param($agent, $iteration) Get-StepCategory -Agent "$agent" -Iteration ([int]$iteration) -Config $seedConfig }.GetNewClosure()
+$categoryLookup = { param($agent, $iteration) Get-StepCategory -Agent "$agent" -Iteration ([int]$iteration) -Config $seedConfig }
 $stages = @(ConvertTo-SeededStages -Config $seedConfig -ModelMap $agentModels)
 
 # The run id is either supplied by the dispatch client or defaulted above to a
@@ -125,7 +130,7 @@ try {
         $nameForRemove = $VmName
         $cliForRemove = $containerCli
         $dirForRemove = $preSignalDir
-        $RemoveRuntime = { Remove-RuntimeContainer -Name $nameForRemove -Cli $cliForRemove -SignalDir $dirForRemove }.GetNewClosure()
+        $RemoveRuntime = { Remove-RuntimeContainer -Name $nameForRemove -Cli $cliForRemove -SignalDir $dirForRemove }
         $secretMounts = @(
             "${patFile}:/tmp/github-pat.txt:ro,z",
             "${apiKeyFile}:/tmp/opencode-api-key.txt:ro,z"
@@ -142,14 +147,14 @@ try {
         $cliCopy = $containerCli
         $testScriptCopy = $testScript
         $agentsJsonCopy = $agentsJson
-        $CopyToRuntime = { param($Source, $Dest) Copy-ToRuntimeContainer -Name $nameCopy -Source $Source -Dest $Dest -Cli $cliCopy }.GetNewClosure()
-        $InvokeInRuntime = { param([string]$Command) Invoke-RuntimeContainer -Arguments @('exec', $nameCopy, 'bash', '-c', $Command) -Cli $cliCopy }.GetNewClosure()
+        $CopyToRuntime = { param($Source, $Dest) Copy-ToRuntimeContainer -Name $nameCopy -Source $Source -Dest $Dest -Cli $cliCopy }
+        $InvokeInRuntime = { param([string]$Command) Invoke-RuntimeContainer -Arguments @('exec', $nameCopy, 'bash', '-c', $Command) -Cli $cliCopy }
         $CopyInitialFiles = {
             Write-Step "Copying .opencode config and test script into container"
             Copy-ToRuntimeContainer -Name $nameCopy -Source $testScriptCopy -Dest '/tmp/test-feature-builder.sh' -Cli $cliCopy
             Copy-ToRuntimeContainer -Name $nameCopy -Source $agentsJsonCopy -Dest '/tmp/agents.json' -Cli $cliCopy
             Invoke-RuntimeContainer -Arguments @('exec', $nameCopy, 'bash', '-c', "sed -i 's/\r`$//' /tmp/test-feature-builder.sh") -Cli $cliCopy
-        }.GetNewClosure()
+        }
         $modelCopy = $Model
         $branchCopy = $Branch
         $specCopy = $Spec
@@ -170,15 +175,15 @@ try {
     else {
         if (-not (Test-Path $cloudInit)) { throw "cloud-init not found: $cloudInit" }
         $nameForRemoveVm = $VmName
-        $RemoveRuntime = { Remove-RuntimeVm -Name $nameForRemoveVm }.GetNewClosure()
+        $RemoveRuntime = { Remove-RuntimeVm -Name $nameForRemoveVm }
         New-RuntimeVm -Name $VmName -CloudInit $cloudInit
         $nameCopy = $VmName
         $testScriptCopy = $testScript
         $agentsJsonCopy = $agentsJson
         $patCopy = $patFile
         $apiKeyCopy = $apiKeyFile
-        $CopyToRuntime = { param($Source, $Dest) Copy-ToRuntimeVm -Name $nameCopy -Source $Source -Dest $Dest }.GetNewClosure()
-        $InvokeInRuntime = { param([string]$Command) Invoke-RuntimeVm exec $nameCopy '--' bash -c $Command }.GetNewClosure()
+        $CopyToRuntime = { param($Source, $Dest) Copy-ToRuntimeVm -Name $nameCopy -Source $Source -Dest $Dest }
+        $InvokeInRuntime = { param([string]$Command) Invoke-RuntimeVm exec $nameCopy '--' bash -c $Command }
         $CopyInitialFiles = {
             Write-Step "Transferring PAT, opencode API key, .opencode config, and test script into VM"
             Copy-ToRuntimeVm -Name $nameCopy -Source $patCopy -Dest '/tmp/github-pat.txt'
@@ -186,7 +191,7 @@ try {
             Copy-ToRuntimeVm -Name $nameCopy -Source $testScriptCopy -Dest '/tmp/test-feature-builder.sh'
             Copy-ToRuntimeVm -Name $nameCopy -Source $agentsJsonCopy -Dest '/tmp/agents.json'
             Invoke-RuntimeVm exec $nameCopy '--' bash -c "sed -i 's/\r`$//' /tmp/test-feature-builder.sh"
-        }.GetNewClosure()
+        }
         $modelCopy = $Model
         $branchCopy = $Branch
         $specCopy = $Spec

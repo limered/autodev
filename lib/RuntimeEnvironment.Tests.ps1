@@ -151,13 +151,11 @@ Describe 'New-RuntimeContainer SignalDir' {
         $capture | Should -Not -Be $null
     }
     It 'New-RuntimeFreezeCaptureContainer delegates exec to Invoke-RuntimeContainerOutput' {
-        $hadGlobal = Test-Path -Path 'function:global:Invoke-RuntimeContainerOutput'
-        $savedGlobal = $null
-        if ($hadGlobal) { $savedGlobal = ${function:global:Invoke-RuntimeContainerOutput} }
+        $realOutput = ${function:Invoke-RuntimeContainerOutput}
         $script:seenArgs = $null
         $script:seenCli = $null
         $script:seenTimeout = $null
-        function global:Invoke-RuntimeContainerOutput {
+        function Invoke-RuntimeContainerOutput {
             param($Arguments, $Cli, $TimeoutSeconds)
             $script:seenArgs = $Arguments
             $script:seenCli = $Cli
@@ -172,10 +170,7 @@ Describe 'New-RuntimeContainer SignalDir' {
             $script:seenTimeout | Should -Be 15
         }
         finally {
-            Remove-Item -Path 'function:global:Invoke-RuntimeContainerOutput' -ErrorAction SilentlyContinue
-            if ($hadGlobal) {
-                ${function:global:Invoke-RuntimeContainerOutput} = $savedGlobal
-            }
+            ${function:Invoke-RuntimeContainerOutput} = $realOutput
         }
     }
 }
@@ -285,5 +280,18 @@ Describe 'Save-FreezeSnapshot Capture Seam' {
             $j.freeM | Should -Be 'ok'
         }
         finally { Remove-Item -Recurse -Force $tmp -ErrorAction SilentlyContinue }
+    }
+}
+
+Describe 'Nested-scope closure resolution' {
+    It 'freeze capture resolves its callee when the lib is dot-sourced in a child scope' {
+        $lib = Join-Path $PSScriptRoot 'RuntimeEnvironment.ps1'
+        $result = & {
+            param($Lib)
+            . $Lib
+            $cap = New-RuntimeFreezeCaptureContainer -Name 'c1' -Cli 'nonexistent-cli-xyz'
+            Invoke-CaptureSafe -Name 'c1' -Command 'true' -Capture $cap
+        } -Lib $lib
+        "$result" | Should -Not -Match 'not recognized'
     }
 }
