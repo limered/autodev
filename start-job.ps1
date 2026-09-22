@@ -261,6 +261,7 @@ try {
 catch {
     $jobFailed = $true
     $failureReason = "$_"
+    if ($_.ScriptStackTrace) { $failureReason += "`n$($_.ScriptStackTrace)" }
     Write-Host "ERROR: $failureReason" -ForegroundColor Red
     if (-not $vmCreated -and -not $KeepVmOnFailure) {
         # A launch that times out still leaves the guest behind;
