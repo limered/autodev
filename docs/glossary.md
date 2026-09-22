@@ -19,6 +19,7 @@
 | **Heartbeat** | A marker file in the job VM, touched by a wrapper only when the agent emits new output. A stale marker means the agent has stopped making progress. The host polls its freshness; staleness beyond 5 minutes signals a stall. |
 | **Freeze snapshot** | A JSON manifest of the VM's state (agent log tail, marker timestamp, job params, `ps aux`/`free -m`/`df -h`) captured on the host when a stall is detected, before the VM is destroyed, so the freeze can be debugged later. Stored under `.scratch/freezes/<job>-<timestamp>/`. |
 | **pipeline shape** | The ordered stage catalog of a job: stage ids, member workers, and loop iteration counts in `agents.json` map order. Owned by `lib/AgentsConfig.ps1` (ADR 003). |
+| **workflow** | A named ordered subset of the stage catalog; the picker picks one per queue row and the runner executes its stages in listed order. |
 | **slot** | The seeded category a finished `(agent, iteration)` phase fills per `Get-StepCategory`. Overflow clamps to the last matching slot. |
 | **candidate** | One `(agent, iteration)` phase entry derived from pipeline shape for relay (`Get-PhaseStepCandidates`). |
 | **uncategorized** | The bucket for stages and steps with no configured category. Detail rows for unmapped workers group here; the bucket never matches a heartbeat report, so it cannot light a stage. Literal pinned by contract test per tier (PS, API, RunView). |
