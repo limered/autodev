@@ -1,54 +1,54 @@
 <script setup>
 import { ref } from "vue";
 import { useRoute } from "vue-router";
-import { PROTOTYPE_ROWS } from "./prototypeWorkflows.js";
-import WorkflowPickerVariantA from "./WorkflowPickerVariantA.vue";
-import WorkflowPickerVariantB from "./WorkflowPickerVariantB.vue";
-import WorkflowPickerVariantC1 from "./WorkflowPickerVariantC1.vue";
 import WorkflowPickerVariantC2 from "./WorkflowPickerVariantC2.vue";
-import WorkflowPickerVariantC3 from "./WorkflowPickerVariantC3.vue";
+import WorkflowPickerVariantD1 from "./WorkflowPickerVariantD1.vue";
+import WorkflowPickerVariantD2 from "./WorkflowPickerVariantD2.vue";
+import WorkflowPickerVariantD3 from "./WorkflowPickerVariantD3.vue";
 import PrototypeSwitcher from "./PrototypeSwitcher.vue";
 
 const route = useRoute();
-const rows = ref(PROTOTYPE_ROWS.map((r) => ({ ...r })));
+const row = ref({
+  id: "q1",
+  rank: 1,
+  title: "Add login page",
+  repo: "acme/web",
+  number: 101,
+  htmlUrl: "https://example.com/acme/web/101",
+  runId: null,
+  picked: "full",
+  catalog: "normal",
+});
 
-function onPick(id, name) {
-  const row = rows.value.find((r) => r.id === id);
-  if (row && !row.runId) row.picked = name;
+function onPick(name) {
+  row.value.picked = name;
 }
 
 const variants = [
-  { key: "A", label: "inline dropdown" },
-  { key: "B", label: "chip row + stage counts" },
-  { key: "C1", label: "text + floating name-only menu" },
-  { key: "C2", label: "text + count floating menu" },
-  { key: "C3", label: "text inline expanding list" },
+  { key: "C2", label: "C2 baseline (fragment)" },
+  { key: "D1", label: "full card, picker under title" },
+  { key: "D2", label: "full card, picker inline right" },
+  { key: "D3", label: "full card, picker in footer" },
 ];
-const variant = () => route.query.variant ?? "C1";
+const variant = () => route.query.variant ?? "D1";
 </script>
 
 <template>
   <section class="prototype-panel">
     <p class="prototype-note">
       PROTOTYPE for <a href="https://github.com/limered/autodev/issues/234">#234</a> — throwaway, in-memory only.
-      Rows cover: editable unclaimed, frozen claimed, missing catalog, vanished pick.
-      State after every action: {{ rows.map((r) => `${r.id}=${r.picked}${r.runId ? "(frozen)" : ""}`).join(", ") }}
+      Single #1 state (unclaimed, normal catalog). Remove is a no-op stub.
+      State after every pick: {{ `${row.id}=${row.picked}` }}
     </p>
-    <article v-for="row in rows" :key="row.id" class="prototype-row">
-      <header>#{{ row.rank }} {{ row.title }} ({{ row.repo }}#{{ row.number }}){{ row.runId ? " · claimed" : "" }}</header>
-      <WorkflowPickerVariantA v-if="variant() === 'A'" :row="row" @pick="(n) => onPick(row.id, n)" />
-      <WorkflowPickerVariantB v-else-if="variant() === 'B'" :row="row" @pick="(n) => onPick(row.id, n)" />
-      <WorkflowPickerVariantC1 v-else-if="variant() === 'C1'" :row="row" @pick="(n) => onPick(row.id, n)" />
-      <WorkflowPickerVariantC2 v-else-if="variant() === 'C2'" :row="row" @pick="(n) => onPick(row.id, n)" />
-      <WorkflowPickerVariantC3 v-else :row="row" @pick="(n) => onPick(row.id, n)" />
-    </article>
+    <WorkflowPickerVariantC2 v-if="variant() === 'C2'" :row="row" @pick="onPick" />
+    <WorkflowPickerVariantD1 v-else-if="variant() === 'D1'" :row="row" @pick="onPick" />
+    <WorkflowPickerVariantD2 v-else-if="variant() === 'D2'" :row="row" @pick="onPick" />
+    <WorkflowPickerVariantD3 v-else :row="row" @pick="onPick" />
     <PrototypeSwitcher :variants="variants" />
   </section>
 </template>
 
 <style scoped>
-.prototype-panel { margin-top: 1.5rem; border: 2px dashed #ff0; padding: 1rem; }
-.prototype-note { font-size: 0.8rem; }
-.prototype-row { border-top: 1px solid var(--border); padding: 0.6rem 0; }
-.prototype-row header { font-size: 0.85rem; font-weight: 600; }
+.prototype-panel { margin-top: 1.5rem; border: 2px dashed #ff0; padding: 1rem; display: flex; flex-direction: column; gap: 0.75rem; }
+.prototype-note { font-size: 0.8rem; margin: 0; }
 </style>
