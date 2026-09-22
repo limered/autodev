@@ -150,6 +150,34 @@ Describe 'New-RuntimeContainer SignalDir' {
         $capture = New-RuntimeFreezeCaptureContainer -Name 'c1' -Cli 'podman'
         $capture | Should -Not -Be $null
     }
+    It 'New-RuntimeFreezeCaptureContainer delegates exec to Invoke-RuntimeContainerOutput' {
+        $hadGlobal = Test-Path -Path 'function:global:Invoke-RuntimeContainerOutput'
+        $savedGlobal = $null
+        if ($hadGlobal) { $savedGlobal = ${function:global:Invoke-RuntimeContainerOutput} }
+        $script:seenArgs = $null
+        $script:seenCli = $null
+        $script:seenTimeout = $null
+        function global:Invoke-RuntimeContainerOutput {
+            param($Arguments, $Cli, $TimeoutSeconds)
+            $script:seenArgs = $Arguments
+            $script:seenCli = $Cli
+            $script:seenTimeout = $TimeoutSeconds
+            return 'ok'
+        }
+        try {
+            $capture = New-RuntimeFreezeCaptureContainer -Name 'c1' -Cli 'podman'
+            & $capture 'ps aux' | Should -Be 'ok'
+            ($script:seenArgs -join ' ') | Should -Be 'exec c1 bash -c ps aux'
+            $script:seenCli | Should -Be 'podman'
+            $script:seenTimeout | Should -Be 15
+        }
+        finally {
+            Remove-Item -Path 'function:global:Invoke-RuntimeContainerOutput' -ErrorAction SilentlyContinue
+            if ($hadGlobal) {
+                ${function:global:Invoke-RuntimeContainerOutput} = $savedGlobal
+            }
+        }
+    }
 }
 
 Describe 'Get-ContainerSocketMount' {
