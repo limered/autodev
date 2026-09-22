@@ -1,9 +1,11 @@
 <script setup>
 import { computed } from "vue";
+import { useRoute } from "vue-router";
 import { usePollingFeed } from "../../_shared/services/usePollingFeed.js";
 import { hostView } from "../models/hostView.js";
 import EligibleIssuesColumn from "./EligibleIssuesColumn.vue";
 import RunQueueColumn from "./RunQueueColumn.vue";
+import WorkflowPickerPrototypePanel from "./prototype/WorkflowPickerPrototypePanel.vue";
 
 // Read composition layer for the dispatch split: owns the three feeds and
 // the cross-feed wiring — the header indicators and the queued-issue ids the
@@ -26,6 +28,15 @@ const queuedIssueIds = computed(() => new Set(queue.value.map((q) => q.issueId))
 const connectionError = computed(() => issuesFeed.error.value || queueFeed.error.value);
 const isPollingLoading = computed(() => issuesFeed.isLoading.value || queueFeed.isLoading.value);
 const hostBadge = computed(() => hostView(host.value, Date.now()));
+const route = (() => {
+  try {
+    return useRoute() ?? { query: {} };
+  } catch {
+    return { query: {} };
+  }
+})();
+const showPrototype = computed(() => (route?.query?.variant ?? undefined) !== undefined);
+const isProd = import.meta.env.PROD;
 </script>
 
 <template>
@@ -64,6 +75,8 @@ const hostBadge = computed(() => hostView(host.value, Date.now()));
         :reload-queue="queueFeed.load"
       />
     </div>
+
+    <WorkflowPickerPrototypePanel v-if="showPrototype && !isProd" />
   </section>
 </template>
 
