@@ -14,6 +14,9 @@
     "static-analysis": {
       "mode": "primary"
     },
+    "code-review": {
+      "mode": "primary"
+    },
     "agentic-review": {
       "mode": "primary"
     }
