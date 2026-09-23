@@ -16,11 +16,6 @@ public interface IQueueStore
     Task<bool> Delete(long id);
 }
 
-/// <summary>
-/// The claim result: where to clone, what to do, and which catalog the run must
-/// use. A null <see cref="CatalogContent"/> with the factory-fallback source means
-/// "no target file": the runner uses the factory catalog.
-/// </summary>
 public record ClaimedQueueItem(
     Guid RunId,
     string RepoUrl,

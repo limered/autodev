@@ -1,11 +1,5 @@
 namespace Api.Catalogs;
 
-/// <summary>
-/// Pure catalog decisions shared by the fetcher, the cache, and the fakes so the
-/// fallback and guard rules live once. The target-repo file fully replaces the
-/// factory catalog when present; absent or no-access maps to the factory fallback
-/// and never fails the sync.
-/// </summary>
 public static class CatalogRules
 {
     public const string TargetCatalogPath = "agents.json";
@@ -47,11 +41,6 @@ public static class CatalogRules
 
     public static bool IsChanged(string? cachedSha, string? freshSha)
     {
-        if (cachedSha is null || freshSha is null)
-        {
-            return !string.Equals(cachedSha, freshSha, StringComparison.Ordinal);
-        }
-
         return !string.Equals(cachedSha, freshSha, StringComparison.Ordinal);
     }
 }

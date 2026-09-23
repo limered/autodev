@@ -1,10 +1,5 @@
 namespace Api.Catalogs;
 
-/// <summary>
-/// The cached copy of one repo's target catalog. A null <see cref="Sha"/> with
-/// the factory-fallback source means "no usable target file": consumers use the
-/// factory catalog. The row exists per repo so sync and claim stay server-side.
-/// </summary>
 public sealed record TargetCatalog(
     string Repo,
     string? Sha,
