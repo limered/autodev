@@ -5,6 +5,7 @@ BeforeAll {
 {
   "stages": {
     "implementation": { "type": "sequential", "agents": ["feature-builder", "test-runner"] },
+    "review-loop": { "type": "loop", "agents": ["code-review", "feature-builder"], "iterations": 3 },
     "quality-loop": { "type": "loop", "agents": ["static-analysis", "feature-builder"], "iterations": 3 },
     "test-rerun": { "type": "sequential", "agents": ["test-runner"] },
     "agentic-review": { "type": "sequential", "agents": ["agentic-review"] },
@@ -17,13 +18,15 @@ BeforeAll {
 Describe 'ConvertFrom-AgentsConfigJson' {
     It 'parses the v1 set in map order with the loop iteration count' {
         $entries = ConvertFrom-AgentsConfigJson -Json $script:V1Json
-        ($entries | ForEach-Object { $_.Id }) -join ',' | Should -Be 'implementation,quality-loop,test-rerun,agentic-review,pr-author'
-        ($entries | ForEach-Object { $_.Type }) -join ',' | Should -Be 'sequential,loop,sequential,sequential,sequential'
+        ($entries | ForEach-Object { $_.Id }) -join ',' | Should -Be 'implementation,review-loop,quality-loop,test-rerun,agentic-review,pr-author'
+        ($entries | ForEach-Object { $_.Type }) -join ',' | Should -Be 'sequential,loop,loop,sequential,sequential,sequential'
         $entries[0].Agents -join ',' | Should -Be 'feature-builder,test-runner'
-        $entries[1].Agents -join ',' | Should -Be 'static-analysis,feature-builder'
+        $entries[1].Agents -join ',' | Should -Be 'code-review,feature-builder'
+        $entries[2].Agents -join ',' | Should -Be 'static-analysis,feature-builder'
         $entries[1].Iterations | Should -Be 3
+        $entries[2].Iterations | Should -Be 3
         $entries[0].Iterations | Should -Be $null
-        $entries[2].Iterations | Should -Be $null
+        $entries[3].Iterations | Should -Be $null
     }
     It 'preserves arbitrary map order' {
         $json = '{"stages":{"pr-author":{"type":"sequential","agents":["pr-author"]},"implementation":{"type":"sequential","agents":["feature-builder"]},"quality-loop":{"type":"loop","agents":["static-analysis"],"iterations":2}}}'
@@ -32,9 +35,9 @@ Describe 'ConvertFrom-AgentsConfigJson' {
     }
     It 'allows the same worker across categories' {
         $entries = ConvertFrom-AgentsConfigJson -Json $script:V1Json
-        $entries.Count | Should -Be 5
+        $entries.Count | Should -Be 6
         @($entries | Where-Object { $_.Agents -contains 'test-runner' }).Count | Should -Be 2
-        @($entries | Where-Object { $_.Agents -contains 'feature-builder' }).Count | Should -Be 2
+        @($entries | Where-Object { $_.Agents -contains 'feature-builder' }).Count | Should -Be 3
     }
     It 'rejects parallel without coercion' {
         $json = '{"stages":{"a":{"type":"parallel","agents":["feature-builder"]}}}'
@@ -70,29 +73,30 @@ Describe 'ConvertFrom-AgentsConfigJson' {
 }
 
 Describe 'ConvertTo-SeededStages' {
-    It 'seeds the five v1 categories in map order with their models' {
+    It 'seeds the six v1 categories in map order with their models' {
         $config = ConvertFrom-AgentsConfigJson -Json $script:V1Json
         $lookup = { param($agent) return "model-$agent" }
         $stages = @(ConvertTo-SeededStages -Config $config -ModelLookup $lookup)
-        $stages.Count | Should -Be 5
-        ($stages | ForEach-Object { $_['category'] }) -join ',' | Should -Be 'implementation,quality-loop,test-rerun,agentic-review,pr-author'
-        ($stages | ForEach-Object { $_['agent'] }) -join ',' | Should -Be 'implementation,quality-loop,test-rerun,agentic-review,pr-author'
+        $stages.Count | Should -Be 6
+        ($stages | ForEach-Object { $_['category'] }) -join ',' | Should -Be 'implementation,review-loop,quality-loop,test-rerun,agentic-review,pr-author'
+        ($stages | ForEach-Object { $_['agent'] }) -join ',' | Should -Be 'implementation,review-loop,quality-loop,test-rerun,agentic-review,pr-author'
         $stages[0]['model'] | Should -Be 'model-feature-builder'
-        $stages[1]['model'] | Should -Be 'model-static-analysis'
-        $stages[2]['model'] | Should -Be 'model-test-runner'
-        $stages[3]['model'] | Should -Be 'model-agentic-review'
-        $stages[4]['model'] | Should -Be 'model-pr-author'
+        $stages[1]['model'] | Should -Be 'model-code-review'
+        $stages[2]['model'] | Should -Be 'model-static-analysis'
+        $stages[3]['model'] | Should -Be 'model-test-runner'
+        $stages[4]['model'] | Should -Be 'model-agentic-review'
+        $stages[5]['model'] | Should -Be 'model-pr-author'
     }
     It 'seeds the stage type so the dashboard reads loop membership from the payload' {
         $config = ConvertFrom-AgentsConfigJson -Json $script:V1Json
         $stages = @(ConvertTo-SeededStages -Config $config -ModelLookup { param($a) return 'm' })
-        ($stages | ForEach-Object { $_['type'] }) -join ',' | Should -Be 'sequential,loop,sequential,sequential,sequential'
+        ($stages | ForEach-Object { $_['type'] }) -join ',' | Should -Be 'sequential,loop,loop,sequential,sequential,sequential'
     }
     It 'emits distinct categories when workers repeat' {
         $config = ConvertFrom-AgentsConfigJson -Json $script:V1Json
         $stages = @(ConvertTo-SeededStages -Config $config -ModelLookup { param($a) return 'm' })
         $categories = @($stages | ForEach-Object { $_['category'] } | Sort-Object -Unique)
-        $categories.Count | Should -Be 5
+        $categories.Count | Should -Be 6
     }
     It 'throws when a model is missing' {
         $config = ConvertFrom-AgentsConfigJson -Json $script:V1Json
@@ -120,10 +124,14 @@ Describe 'Get-StepCategory' {
         $pairs = @(
             @('feature-builder', 0, 'implementation'),
             @('test-runner', 0, 'implementation'),
+            @('code-review', 1, 'review-loop'),
+            @('feature-builder', 1, 'review-loop'),
+            @('code-review', 3, 'review-loop'),
+            @('feature-builder', 3, 'review-loop'),
             @('static-analysis', 1, 'quality-loop'),
-            @('feature-builder', 1, 'quality-loop'),
             @('static-analysis', 3, 'quality-loop'),
-            @('feature-builder', 3, 'quality-loop'),
+            @('feature-builder', 4, 'quality-loop'),
+            @('feature-builder', 6, 'quality-loop'),
             @('test-runner', 1, 'test-rerun'),
             @('agentic-review', 0, 'agentic-review'),
             @('pr-author', 0, 'pr-author')
@@ -149,6 +157,7 @@ Describe 'Get-StepCategory' {
     }
     It 'maps a loop-only worker on pass zero to its loop slot' {
         Get-StepCategory -Agent 'static-analysis' -Iteration 0 -Config $script:config | Should -Be 'quality-loop'
+        Get-StepCategory -Agent 'code-review' -Iteration 0 -Config $script:config | Should -Be 'review-loop'
     }
     It 'derives sequential slots from map order, not hardcoded names' {
         $json = '{"stages":{"build":{"type":"sequential","agents":["builder"]},"retest":{"type":"sequential","agents":["builder"]}}}'
@@ -179,7 +188,7 @@ Describe 'Get-AgentModel' {
 
 Describe 'Get-AgentModelMap' {
     BeforeAll {
-        $script:MapJson = '{"stages":{"implementation":{"type":"sequential","agents":["feature-builder","test-runner"]},"quality-loop":{"type":"loop","agents":["static-analysis","feature-builder"],"iterations":2}}}'
+        $script:MapJson = '{"stages":{"implementation":{"type":"sequential","agents":["feature-builder","test-runner"]},"review-loop":{"type":"loop","agents":["code-review","feature-builder"],"iterations":2},"quality-loop":{"type":"loop","agents":["static-analysis","feature-builder"],"iterations":2}}}'
         $script:MapConfig = ConvertFrom-AgentsConfigJson -Json $script:MapJson
         $script:MapReader = {
             param($p)
@@ -195,11 +204,12 @@ Describe 'Get-AgentModelMap' {
             return (& $script:MapReader $p)
         }
         $map = Get-AgentModelMap -Config $script:MapConfig -RepoRoot '/repo' -FileReader $counting
-        $map.Count | Should -Be 3
+        $map.Count | Should -Be 4
         $map['feature-builder'] | Should -Be 'model-feature-builder'
         $map['test-runner'] | Should -Be 'model-test-runner'
+        $map['code-review'] | Should -Be 'model-code-review'
         $map['static-analysis'] | Should -Be 'model-static-analysis'
-        @($script:readerCalls | Sort-Object -Unique).Count | Should -Be 3
+        @($script:readerCalls | Sort-Object -Unique).Count | Should -Be 4
     }
     It 'throws the shared shape naming agent and category when a definition is missing' {
         $reader = {
@@ -237,16 +247,18 @@ Describe 'ConvertTo-SeededStages ModelMap' {
         $config = ConvertFrom-AgentsConfigJson -Json $script:V1Json
         $map = @{
             'feature-builder' = 'model-feature-builder'
+            'code-review'     = 'model-code-review'
             'static-analysis' = 'model-static-analysis'
             'test-runner'     = 'model-test-runner'
             'agentic-review'  = 'model-agentic-review'
             'pr-author'       = 'model-pr-author'
         }
         $stages = @(ConvertTo-SeededStages -Config $config -ModelMap $map)
-        $stages.Count | Should -Be 5
-        ($stages | ForEach-Object { $_['category'] }) -join ',' | Should -Be 'implementation,quality-loop,test-rerun,agentic-review,pr-author'
+        $stages.Count | Should -Be 6
+        ($stages | ForEach-Object { $_['category'] }) -join ',' | Should -Be 'implementation,review-loop,quality-loop,test-rerun,agentic-review,pr-author'
         $stages[0]['model'] | Should -Be 'model-feature-builder'
-        $stages[1]['model'] | Should -Be 'model-static-analysis'
+        $stages[1]['model'] | Should -Be 'model-code-review'
+        $stages[2]['model'] | Should -Be 'model-static-analysis'
     }
     It 'throws the shared error shape on a map miss' {
         $config = ConvertFrom-AgentsConfigJson -Json $script:V1Json
@@ -267,7 +279,9 @@ Describe 'Read-AgentsConfig' {
     }
     It 'reads the repo-root v1 set in map order' {
         $entries = Read-AgentsConfig -Path (Join-Path $script:repoRoot 'agents.json')
-        ($entries | ForEach-Object { $_.Id }) -join ',' | Should -Be 'implementation,quality-loop,test-rerun,agentic-review,pr-author'
+        ($entries | ForEach-Object { $_.Id }) -join ',' | Should -Be 'implementation,review-loop,quality-loop,test-rerun,agentic-review,pr-author'
+        $reviewLoop = @($entries | Where-Object { $_.Id -eq 'review-loop' })[0]
+        $reviewLoop.Iterations | Should -Be 3
         $loop = @($entries | Where-Object { $_.Id -eq 'quality-loop' })[0]
         $loop.Iterations | Should -Be 3
     }

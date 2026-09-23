@@ -85,6 +85,7 @@ Describe 'Get-PhaseStepCandidates' {
 {
   "stages": {
     "implementation": { "type": "sequential", "agents": ["feature-builder", "test-runner"] },
+    "review-loop": { "type": "loop", "agents": ["code-review", "feature-builder"], "iterations": 3 },
     "quality-loop": { "type": "loop", "agents": ["static-analysis", "feature-builder"], "iterations": 3 },
     "test-rerun": { "type": "sequential", "agents": ["test-runner"] },
     "agentic-review": { "type": "sequential", "agents": ["agentic-review"] },
@@ -96,9 +97,9 @@ Describe 'Get-PhaseStepCandidates' {
     }
     It 'expands the v1 config in map order with distinct iteration keys' {
         $candidates = Get-PhaseStepCandidates -Config $script:V1Config
-        $candidates.Count | Should -Be 11
+        $candidates.Count | Should -Be 17
         $pairs = @($candidates | ForEach-Object { "$($_.Agent)/$($_.Iteration)" })
-        $pairs -join ',' | Should -Be 'feature-builder/0,test-runner/0,static-analysis/1,feature-builder/1,static-analysis/2,feature-builder/2,static-analysis/3,feature-builder/3,test-runner/1,agentic-review/0,pr-author/0'
+        $pairs -join ',' | Should -Be 'feature-builder/0,test-runner/0,code-review/1,feature-builder/1,code-review/2,feature-builder/2,code-review/3,feature-builder/3,static-analysis/1,feature-builder/4,static-analysis/2,feature-builder/5,static-analysis/3,feature-builder/6,test-runner/1,agentic-review/0,pr-author/0'
     }
     It 'emits sequential members at iteration 0 in map order' {
         $config = ConvertFrom-AgentsConfigJson -Json '{"stages":{"a":{"type":"sequential","agents":["alpha","beta"]},"b":{"type":"sequential","agents":["gamma"]}}}'
@@ -109,6 +110,11 @@ Describe 'Get-PhaseStepCandidates' {
         $config = ConvertFrom-AgentsConfigJson -Json '{"stages":{"q":{"type":"loop","agents":["scan","fix"],"iterations":2}}}'
         $pairs = @((Get-PhaseStepCandidates -Config $config) | ForEach-Object { "$($_.Agent)/$($_.Iteration)" })
         $pairs -join ',' | Should -Be 'scan/1,fix/1,scan/2,fix/2'
+    }
+    It 'continues a shared worker past the first loop so relay files never collide' {
+        $config = ConvertFrom-AgentsConfigJson -Json '{"stages":{"r":{"type":"loop","agents":["scan","fix"],"iterations":2},"q":{"type":"loop","agents":["audit","fix"],"iterations":2}}}'
+        $pairs = @((Get-PhaseStepCandidates -Config $config) | ForEach-Object { "$($_.Agent)/$($_.Iteration)" })
+        $pairs -join ',' | Should -Be 'scan/1,fix/1,scan/2,fix/2,audit/1,fix/3,audit/2,fix/4'
     }
     It 'bumps a repeated sequential worker to the next free iteration key' {
         $config = ConvertFrom-AgentsConfigJson -Json '{"stages":{"a":{"type":"sequential","agents":["builder"]},"b":{"type":"sequential","agents":["builder"]}}}'

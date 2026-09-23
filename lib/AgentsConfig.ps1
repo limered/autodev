@@ -316,6 +316,41 @@ function Get-StepCategory {
     param([string]$Agent, [int]$Iteration, $Config)
     $entries = @($Config)
     if ([string]::IsNullOrWhiteSpace($Agent) -or $entries.Count -eq 0) { return 'uncategorized' }
+    # Exact match first: replay the candidate assignment (loops take the next
+    # free iteration per worker, so a worker shared by two loops owns
+    # distinct iterations in each) and return the owning entry.
+    $used = @{}
+    foreach ($entry in $entries) {
+        $entryType = "$($entry.Type)".Trim().ToLowerInvariant()
+        $entryAgents = @($entry.Agents)
+        if ($entryType -eq 'loop') {
+            $count = 0
+            try { $count = [int]$entry.Iterations } catch { $count = 0 }
+            for ($i = 1; $i -le $count; $i++) {
+                foreach ($a in $entryAgents) {
+                    if ([string]::IsNullOrWhiteSpace("$a")) { continue }
+                    $u = @()
+                    if ($used.ContainsKey("$a")) { $u = @($used["$a"]) }
+                    $iter = 1
+                    while ($u -contains $iter) { $iter++ }
+                    $used["$a"] = @($u + $iter)
+                    if ("$a" -eq $Agent -and $iter -eq $Iteration) { return $entry.Id }
+                }
+            }
+        }
+        else {
+            foreach ($a in $entryAgents) {
+                if ([string]::IsNullOrWhiteSpace("$a")) { continue }
+                $u = @()
+                if ($used.ContainsKey("$a")) { $u = @($used["$a"]) }
+                $iter = 0
+                while ($u -contains $iter) { $iter++ }
+                $used["$a"] = @($u + $iter)
+                if ("$a" -eq $Agent -and $iter -eq $Iteration) { return $entry.Id }
+            }
+        }
+    }
+    # Fallback for out-of-range iterations: legacy slot resolution.
     if ($Iteration -ne 0) {
         $loop = @($entries | Where-Object { $_.Type -eq 'loop' -and @($_.Agents) -contains $Agent }) | Select-Object -First 1
         if ($loop) { return $loop.Id }

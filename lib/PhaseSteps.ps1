@@ -21,7 +21,11 @@
 . (Join-Path $PSScriptRoot "RuntimeEnvironment.ps1")
 
 # Expands the parsed agents.json config into relay candidates in map order.
-# Sequential takes the next free iteration per worker, loop emits 1..N per member.
+# Sequential takes the next free iteration per worker, loop emits per pass
+# with each member taking the next free iteration for that worker — so a
+# worker shared by two loops (feature-builder in review-loop and
+# quality-loop) owns distinct iterations in each and their relay files
+# (/tmp/phase-<agent>-<iteration>.jsonl) never collide.
 function Get-PhaseStepCandidates {
     param($Config)
     $candidates = @()
@@ -35,7 +39,10 @@ function Get-PhaseStepCandidates {
             for ($i = 1; $i -le $count; $i++) {
                 foreach ($agent in $agents) {
                     if ([string]::IsNullOrWhiteSpace("$agent")) { continue }
-                    $candidates += [PSCustomObject]@{ Agent = "$agent"; Iteration = [int]$i }
+                    $used = @($candidates | Where-Object { $_.Agent -eq "$agent" } | ForEach-Object { $_.Iteration })
+                    $iter = 1
+                    while ($used -contains $iter) { $iter++ }
+                    $candidates += [PSCustomObject]@{ Agent = "$agent"; Iteration = [int]$iter }
                 }
             }
         }
