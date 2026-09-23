@@ -4,7 +4,12 @@
       "type": "sequential",
       "agents": ["feature-builder", "test-runner"]
     },
-    "quality-loop": {
+    "review-loop": {
+      "type": "loop",
+      "agents": ["code-review", "feature-builder"],
+      "iterations": 3
+    },
+    "static-loop": {
       "type": "loop",
       "agents": ["static-analysis", "feature-builder"],
       "iterations": 3
@@ -13,7 +18,7 @@
       "type": "sequential",
       "agents": ["test-runner"]
     },
-    "agentic-review": {
+    "architecture-review": {
       "type": "sequential",
       "agents": ["agentic-review"]
     },
