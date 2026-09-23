@@ -26,5 +26,10 @@
       "type": "sequential",
       "agents": ["pr-author"]
     }
-  }
+  },
+  "workflows": {
+    "full": ["implementation", "review-loop", "static-loop", "test-rerun", "architecture-review", "pr-author"],
+    "quick": ["implementation", "pr-author"]
+  },
+  "defaultWorkflow": "full"
 }

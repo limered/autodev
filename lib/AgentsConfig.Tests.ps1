@@ -279,10 +279,10 @@ Describe 'Read-AgentsConfig' {
     }
     It 'reads the repo-root v1 set in map order' {
         $entries = Read-AgentsConfig -Path (Join-Path $script:repoRoot 'agents.json')
-        ($entries | ForEach-Object { $_.Id }) -join ',' | Should -Be 'implementation,review-loop,quality-loop,test-rerun,agentic-review,pr-author'
+        ($entries | ForEach-Object { $_.Id }) -join ',' | Should -Be 'implementation,review-loop,static-loop,test-rerun,architecture-review,pr-author'
         $reviewLoop = @($entries | Where-Object { $_.Id -eq 'review-loop' })[0]
         $reviewLoop.Iterations | Should -Be 3
-        $loop = @($entries | Where-Object { $_.Id -eq 'quality-loop' })[0]
+        $loop = @($entries | Where-Object { $_.Id -eq 'static-loop' })[0]
         $loop.Iterations | Should -Be 3
     }
     It 'throws for a missing file' {
@@ -321,7 +321,7 @@ Describe 'ConvertFrom-AgentsWorkflowsJson' {
         $config = ConvertFrom-AgentsConfigJson -Json $script:V1Json
         $catalog = ConvertFrom-AgentsWorkflowsJson -Json $script:V1Json -Config $config
         @($catalog.Workflows.Keys) -join ',' | Should -Be 'default'
-        $catalog.Workflows['default'] -join ',' | Should -Be 'implementation,quality-loop,test-rerun,agentic-review,pr-author'
+        $catalog.Workflows['default'] -join ',' | Should -Be 'implementation,review-loop,quality-loop,test-rerun,agentic-review,pr-author'
         $catalog.DefaultWorkflow | Should -Be 'default'
     }
     It 'leaves stages parsing unchanged when workflows are present' {
@@ -447,12 +447,13 @@ Describe 'Read-AgentsWorkflowCatalog' {
     BeforeAll {
         $script:repoRoot = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
     }
-    It 'reads the repo-root stages-only file as the default workflow' {
+    It 'reads the repo-root named workflows with the default marker' {
         $catalog = Read-AgentsWorkflowCatalog -Path (Join-Path $script:repoRoot 'agents.json')
-        ($catalog.Stages | ForEach-Object { $_.Id }) -join ',' | Should -Be 'implementation,quality-loop,test-rerun,agentic-review,pr-author'
-        @($catalog.Workflows.Keys) -join ',' | Should -Be 'default'
-        $catalog.Workflows['default'] -join ',' | Should -Be 'implementation,quality-loop,test-rerun,agentic-review,pr-author'
-        $catalog.DefaultWorkflow | Should -Be 'default'
+        ($catalog.Stages | ForEach-Object { $_.Id }) -join ',' | Should -Be 'implementation,review-loop,static-loop,test-rerun,architecture-review,pr-author'
+        @($catalog.Workflows.Keys) -join ',' | Should -Be 'full,quick'
+        $catalog.Workflows['full'] -join ',' | Should -Be 'implementation,review-loop,static-loop,test-rerun,architecture-review,pr-author'
+        $catalog.Workflows['quick'] -join ',' | Should -Be 'implementation,pr-author'
+        $catalog.DefaultWorkflow | Should -Be 'full'
     }
     It 'throws for a missing file' {
         { Read-AgentsWorkflowCatalog -Path (Join-Path $PSScriptRoot 'no-such-agents.json') } | Should -Throw
