@@ -4,10 +4,13 @@
 # repo, injects the .opencode agent configuration, then runs the opencode
 # phases headlessly in the same clone: implement (feature-builder agent:
 # issue token in, implemented branch pushed), test (test-runner agent),
+# review loop (<=3 iterations of code-review scans, each followed by a
+# feature-builder fix-findings pass while AFK findings remain - never a red
+# gate, so the review sees the implementation before static-analysis touches it),
 # quality loop (<=3 iterations of static-analysis scans, each followed by a
 # feature-builder fix-findings pass while AFK findings remain - never a red
-# gate), test again (autofixes and fix refactors can break behaviour),
-# agentic-review (review findings filed as ready-for-human tracker issues)
+# gate), test again (review fixes and autofixes can break behaviour),
+# agentic-review (architecture findings filed as ready-for-human tracker issues)
 # and - after a gate plus a hook point - PR (pr-author agent: PR authored
 # from the branch diff and POSTed).
 # The calling PowerShell harness verifies the resulting branch/PR.
@@ -128,10 +131,14 @@ phase_category() {
   if [[ "${#CATEGORY_SPECS[@]}" -gt 0 ]]; then
     config_phase_category "$agent" "$iteration" && return 0
   fi
-  if [[ "$agent" == "static-analysis" ]]; then
+  if [[ "$agent" == "code-review" ]]; then
+    printf 'review-loop'
+  elif [[ "$agent" == "static-analysis" ]]; then
     printf 'quality-loop'
   elif [[ "$agent" == "feature-builder" && "$iteration" != "0" ]]; then
-    printf 'quality-loop'
+    # Fix passes in both loops share this worker: review-loop owns 1..3,
+    # quality-loop continues at 4..6 (mirrors Get-PhaseStepCandidates).
+    if [[ "$iteration" -ge 4 ]]; then printf 'quality-loop'; else printf 'review-loop'; fi
   else
     printf '%s' "$agent"
   fi
@@ -181,9 +188,9 @@ config_phase_category() {
 # as it begins, so the host heartbeat poller can relay the current phase up to
 # the backend without any new secrets crossing into the VM.
 # /tmp/current-category is the category marker: each phase writes the seeded
-# slot it fills here as it begins (quality-loop for the loop's scan and fix
-# workers), so the host relays liveness by category and the dashboard lights
-# the seeded slot even when the worker name differs from it.
+# slot it fills here as it begins (review-loop / quality-loop for each loop's
+# scan and fix workers), so the host relays liveness by category and the
+# dashboard lights the seeded slot even when the worker name differs from it.
 #
 # Per-step instrumentation (dev-loop detail): wall time is measured in-VM around
 # the opencode call and the `--format json` NDJSON is redirected to
@@ -207,13 +214,20 @@ run_agent_phase() {
   local agent="$1"
   local prompt="$2"
   local iteration="${3:-0}"
+  local category_override="${4:-}"
   local jsonl="/tmp/phase-${agent}-${iteration}.jsonl"
   local meta="/tmp/phase-${agent}-${iteration}.meta.json"
   # Write the phase marker before touching the heartbeat so the host reads a
   # consistent (phase, heartbeat-mtime) pair when it observes the mtime advance.
-  # The category marker rides alongside it for the same read.
+  # The category marker rides alongside it for the same read. Loops pass
+  # their slot explicitly (a worker shared by two loops cannot be resolved
+  # from its name alone); other phases fall back to the config lookup.
   printf '%s' "$agent" > /tmp/current-phase
-  phase_category "$agent" "$iteration" > /tmp/current-category
+  if [[ -n "$category_override" ]]; then
+    printf '%s' "$category_override" > /tmp/current-category
+  else
+    phase_category "$agent" "$iteration" > /tmp/current-category
+  fi
   touch /tmp/heartbeat
   # Truncate first so a retry never mixes two runs. stdout (the NDJSON stream)
   # flows through the loop so each emitted line lands verbatim on disk, echoes
@@ -221,7 +235,7 @@ run_agent_phase() {
   : > "$jsonl"
   # No --model: each agent resolves its own model from the unpacked opencode
   # config (~/.config/opencode), so feature-builder, test-runner,
-  # static-analysis, agentic-review and pr-author can differ. $MODEL is
+  # code-review, static-analysis, agentic-review and pr-author can differ. $MODEL is
   # reporting-only.
   local start_ms end_ms rc=0
   start_ms=$(date +%s%3N)
@@ -244,7 +258,33 @@ run_agent_phase() {
   return "$rc"
 }
 
-# Quality loop (phase 3): up to 3 iterations of static-analysis scan ->
+# Review loop (phase 3): up to 3 iterations of code-review scan ->
+# feature-builder fix-findings pass. The control signal is the `status`
+# sentinel the code-review agent appends to .factory/code-review-result.json;
+# the agent's exit code means only that the agent itself broke -> hard fail().
+# Never fail() on findings: `hitl-only` (everything left is for a human) and
+# cap exhaustion both proceed to the next phase. Reads the SPECs defined at
+# the phase 3 call site below ($REVIEW_SPEC for the scan, $REVIEW_FIX_SPEC for
+# the fix pass).
+run_review_loop() {
+  for i in 1 2 3; do
+    run_agent_phase code-review "$REVIEW_SPEC" "$i" "review-loop" || fail "code-review agent crashed"
+    status=$(tail -n1 .factory/code-review-result.json | jq -r .status) || fail "code-review agent crashed: cannot read status sentinel from .factory/code-review-result.json"
+    case "$status" in
+      clean|hitl-only) return 0 ;;                      # nothing left to auto-fix
+      fixed)  run_agent_phase feature-builder "$REVIEW_FIX_SPEC" "$i" "review-loop" || fail "fix pass crashed" ;;
+      *) fail "code-review returned unknown status sentinel: $status" ;;
+    esac
+  done
+  # ponytail: 3x is a backstop, not the real exit. Self-escalation converts a
+  # finding that survives one fix pass to HITL (already on the tracker), so
+  # still-AFK at iteration 3 is a genuinely churning finding, vanishingly
+  # rare. Proceed rather than fail(); the human reviewing the PR is the final
+  # backstop.
+  return 0
+}
+
+# Quality loop (phase 4): up to 3 iterations of static-analysis scan ->
 # feature-builder fix-findings pass. The control signal is the `status`
 # sentinel the static-analysis agent appends to .factory/static-analysis-result.json;
 # the agent's exit code means only that the agent itself broke -> hard fail().
@@ -254,11 +294,14 @@ run_agent_phase() {
 # fix pass).
 run_quality_loop() {
   for i in 1 2 3; do
-    run_agent_phase static-analysis "$QUALITY_SPEC" "$i" || fail "static-analysis agent crashed"
+    run_agent_phase static-analysis "$QUALITY_SPEC" "$i" "quality-loop" || fail "static-analysis agent crashed"
     status=$(tail -n1 .factory/static-analysis-result.json | jq -r .status) || fail "static-analysis agent crashed: cannot read status sentinel from .factory/static-analysis-result.json"
     case "$status" in
       clean|hitl-only) return 0 ;;                      # nothing left to auto-fix
-      fixed)  run_agent_phase feature-builder "$FIX_SPEC" "$i" || fail "fix pass crashed" ;;
+      # Fix passes continue the shared worker's numbering at 4..6 (the review
+      # loop's fix passes own 1..3) so relay files never collide — mirrors
+      # Get-PhaseStepCandidates' next-free assignment on the host.
+      fixed)  run_agent_phase feature-builder "$FIX_SPEC" "$((i+3))" "quality-loop" || fail "fix pass crashed" ;;
       *) fail "static-analysis returned unknown status sentinel: $status" ;;
     esac
   done
@@ -270,7 +313,7 @@ run_quality_loop() {
   return 0
 }
 
-echo "Running phase 1/6 (implement): OPENCODE_API_KEY=*** $OPENCODE_BIN run --agent feature-builder --auto --format json \"...\""
+echo "Running phase 1/7 (implement): OPENCODE_API_KEY=*** $OPENCODE_BIN run --agent feature-builder --auto --format json \"...\""
 if ! run_agent_phase feature-builder "$IMPL_SPEC" 0; then
   fail "implement phase failed: opencode run exited non-zero (see log above)"
 fi
@@ -296,22 +339,57 @@ pass "gate passed: HEAD is $AHEAD_COUNT commit(s) ahead of $BASE_REF"
 #     The test-runner reads the target repo's AGENTS.md for
 #     `test-harness.<name>: <command>` entries and runs every one. If no
 #     harness is declared, or any harness exits non-zero, the run fails here:
-#     the branch stays pushed, but the quality loop below does not run. This
-#     is the first of two test phases; phase 4 re-runs every harness after
-#     the quality loop's autofix/fix commits.
+#     the branch stays pushed, but the review loop below does not run. This
+#     is the first of two test phases; phase 5 re-runs every harness after
+#     the review and quality loops' fix commits.
 #     -----------------------------------------------------------------------
 TEST_SPEC="BRANCH: $BRANCH
 BASE: $BASE
 REPO: $REPO"
 
-echo "Running phase 2/6 (test): OPENCODE_API_KEY=*** $OPENCODE_BIN run --agent test-runner --auto --format json \"...\""
+echo "Running phase 2/7 (test): OPENCODE_API_KEY=*** $OPENCODE_BIN run --agent test-runner --auto --format json \"...\""
 if ! run_agent_phase test-runner "$TEST_SPEC" 0; then
   fail "test phase failed: a declared harness is red or no harness was declared (see log above)"
 fi
 pass "test phase completed (test-runner exited 0, every harness green)"
 
 # 12. -----------------------------------------------------------------------
-#     Phase 3 - quality loop: up to 3 iterations of static-analysis ->
+#     Phase 3 - review loop: up to 3 iterations of code-review ->
+#     feature-builder (fix-findings mode) in the same clone. Runs before the
+#     quality loop so the review sees the feature implementation before
+#     static-analysis autofixes touch it.
+#
+#     Each code-review run executes the /code-review skill headless on the
+#     BASE...HEAD diff against the issue, classifies residual findings
+#     afk/hitl (self-escalating any finding that survived an earlier fix pass
+#     to hitl), files the HITL roll-up issue, and appends the `status`
+#     sentinel the loop reads: `clean`/`hitl-only` -> nothing left to
+#     auto-fix, loop stops; `fixed` -> feature-builder applies the afk fixes,
+#     then re-scan.
+#     A completed scan is always a success - findings are data, not a red
+#     gate - so fail() fires only on an agent crash. Cap exhaustion (still
+#     `fixed` after 3 iterations) proceeds like `hitl-only` does: never
+#     block the PR on findings; the human reviewing it is the backstop.
+#     .factory/ scratch (code-review-findings.json, code-review-result.json)
+#     is gitignored, so it never enters fix commits or the PR diff.
+#     -----------------------------------------------------------------------
+REVIEW_SPEC="ISSUE: $ISSUE
+BRANCH: $BRANCH
+BASE: $BASE
+REPO: $REPO"
+
+REVIEW_FIX_SPEC="MODE: fix-findings
+FINDINGS: .factory/code-review-findings.json
+BRANCH: $BRANCH
+BASE: $BASE
+REPO: $REPO"
+
+echo "Running phase 3/7 (review-loop): OPENCODE_API_KEY=*** $OPENCODE_BIN run --agent code-review --auto --format json \"...\" (then --agent feature-builder in fix-findings mode while status is fixed)"
+run_review_loop
+pass "review loop completed (status clean/hitl-only, or 3-iteration cap exhausted - never a red gate)"
+
+# 13. -----------------------------------------------------------------------
+#     Phase 4 - quality loop: up to 3 iterations of static-analysis ->
 #     feature-builder (fix-findings mode) in the same clone.
 #
 #     Each static-analysis run discovers the repo's own analysers, applies
@@ -338,52 +416,52 @@ BRANCH: $BRANCH
 BASE: $BASE
 REPO: $REPO"
 
-echo "Running phase 3/6 (quality-loop): OPENCODE_API_KEY=*** $OPENCODE_BIN run --agent static-analysis --auto --format json \"...\" (then --agent feature-builder in fix-findings mode while status is fixed)"
+echo "Running phase 4/7 (quality-loop): OPENCODE_API_KEY=*** $OPENCODE_BIN run --agent static-analysis --auto --format json \"...\" (then --agent feature-builder in fix-findings mode while status is fixed)"
 run_quality_loop
 pass "quality loop completed (status clean/hitl-only, or 3-iteration cap exhausted - never a red gate)"
 
-# 13. -----------------------------------------------------------------------
-#     Phase 4 - test (re-run): run the test-runner agent again in the same
-#     clone, after the quality loop. The loop's autofix checkpoint commits
-#     and fix-findings refactors can change behaviour, so every declared
-#     harness must be green again before review and PR. Same failure
+# 14. -----------------------------------------------------------------------
+#     Phase 5 - test (re-run): run the test-runner agent again in the same
+#     clone, after the review and quality loops. The loops' fix-findings
+#     refactors and autofix checkpoint commits can change behaviour, so every
+#     declared harness must be green again before review and PR. Same failure
 #     semantics as phase 2: a red harness fails the run here. Iteration 1
 #     (phase 2 used 0): the backend keys steps on (agent, iteration), so the
 #     re-run lands as its own row instead of overwriting the phase-2 step.
 #     -----------------------------------------------------------------------
-echo "Running phase 4/6 (test re-run): OPENCODE_API_KEY=*** $OPENCODE_BIN run --agent test-runner --auto --format json \"...\""
+echo "Running phase 5/7 (test re-run): OPENCODE_API_KEY=*** $OPENCODE_BIN run --agent test-runner --auto --format json \"...\""
 if ! run_agent_phase test-runner "$TEST_SPEC" 1; then
-  fail "test re-run phase failed: a declared harness is red after the quality loop (see log above)"
+  fail "test re-run phase failed: a declared harness is red after the review/quality loops (see log above)"
 fi
 pass "test re-run phase completed (test-runner exited 0, every harness still green)"
 
-# 14. Phase 5 - agentic-review: run the agentic-review agent in the same clone,
-#     after the quality loop (and its test re-run) and before the PR phase. It
-#     runs the two review skills headless (/code-review on the BASE...HEAD diff
-#     against the issue, improve-codebase-architecture explore-only) and files
-#     each skill's findings as one ready-for-human tracker issue. It never
+# 15. Phase 6 - agentic-review: run the agentic-review agent in the same clone,
+#     after the review and quality loops (and the test re-run) and before the
+#     PR phase. It runs the improve-codebase-architecture skill headless
+#     (explore-only) and files its candidates as one ready-for-human tracker
+#     issue. Standards + Spec code review already ran in the review loop, so
+#     this phase is architecture-only. It never
 #     fixes and never fails the run for findings - a non-zero exit here means
-#     an operational failure (PAT missing, tracker unreachable), not review
+#     an operational failure (PAT missing, tracker unreachable), not
 #     findings.
-AR_SPEC="ISSUE: $ISSUE
-BRANCH: $BRANCH
+AR_SPEC="BRANCH: $BRANCH
 BASE: $BASE
 REPO: $REPO"
 
-echo "Running phase 5/6 (agentic-review): OPENCODE_API_KEY=*** $OPENCODE_BIN run --agent agentic-review --auto --format json \"...\""
+echo "Running phase 6/7 (agentic-review): OPENCODE_API_KEY=*** $OPENCODE_BIN run --agent agentic-review --auto --format json \"...\""
 if ! run_agent_phase agentic-review "$AR_SPEC" 0; then
   fail "agentic-review phase failed: opencode run exited non-zero (operational failure, see log above)"
 fi
 pass "agentic-review phase completed (agentic-review exited 0)"
 
-# 15. Phase 6 - PR: run the pr-author agent as a distinct opencode run in the
+# 16. Phase 7 - PR: run the pr-author agent as a distinct opencode run in the
 #     same clone. It authors the PR title and body from the branch diff and
 #     POSTs the pull request.
 PR_SPEC="BRANCH: $BRANCH
 BASE: $BASE
 REPO: $REPO"
 
-echo "Running phase 6/6 (PR): OPENCODE_API_KEY=*** $OPENCODE_BIN run --agent pr-author --auto --format json \"...\""
+echo "Running phase 7/7 (PR): OPENCODE_API_KEY=*** $OPENCODE_BIN run --agent pr-author --auto --format json \"...\""
 if ! run_agent_phase pr-author "$PR_SPEC" 0; then
   fail "pr phase failed: opencode run exited non-zero (see log above)"
 fi
