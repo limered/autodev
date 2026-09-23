@@ -106,6 +106,43 @@ describe("RunQueueColumn", () => {
 
     expect(html).toContain("The queue is empty.");
   });
+
+  it("shows the workflow trigger with default name and count on unclaimed rows", async () => {
+    const html = await renderColumn({
+      queue: [queued("q1", 1, "First task")],
+      catalog: {
+        defaultWorkflow: "full",
+        workflows: [
+          { name: "full", stageCount: 5 },
+          { name: "quick", stageCount: 2 },
+        ],
+      },
+    });
+
+    expect(html).toContain("workflow-trigger");
+    expect(html).toContain("full");
+    expect(html).toContain("5");
+  });
+
+  it("shows frozen workflow text with no trigger on claimed rows", async () => {
+    const html = await renderColumn({
+      queue: [queued("q1", 1, "First task", { runId: "r1", runStatus: "running" })],
+      catalog: {
+        defaultWorkflow: "full",
+        workflows: [{ name: "full", stageCount: 5 }],
+      },
+    });
+
+    expect(html).toContain("frozen");
+    expect(html).not.toContain("workflow-trigger");
+  });
+
+  it("shows the muted default notice when the factory catalog is missing", async () => {
+    const html = await renderColumn({ queue: [queued("q1", 1, "First task")], catalog: null });
+
+    expect(html).toContain("default (no catalog)");
+    expect(html).not.toContain("workflow-trigger");
+  });
 });
 
 function makeReloads() {

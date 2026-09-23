@@ -2,9 +2,12 @@
 import { computed } from "vue";
 import ErrorBanner from "../../_shared/components/ErrorBanner.vue";
 import { queueRowView } from "../models/queueView.js";
+import { workflowRowState } from "../models/workflowView.js";
 import { useQueueFeedShadow } from "../services/useQueueFeedShadow.js";
 import { useQueueHandlers } from "../services/useQueueHandlers.js";
+import { useWorkflowPicks } from "../services/useWorkflowPicks.js";
 import IssueRef from "./IssueRef.vue";
+import WorkflowPicker from "./WorkflowPicker.vue";
 
 // The run-queue column of the DispatchView split: owns everything its
 // buttons do — the queue write actions and each action's run()-then-load()
@@ -23,6 +26,10 @@ const props = defineProps({
   reloadIssues: { type: Function, required: true },
   // Loads the /queue feed; every queue write re-syncs it.
   reloadQueue: { type: Function, required: true },
+  // Factory workflow catalog from GET /workflows, or null while unloaded.
+  catalog: { type: Object, default: null },
+  // String error message from the /workflows feed, or null while in sync.
+  catalogError: { type: String, default: null },
 });
 
 // Wired queue handlers: every write re-syncs the feeds that show its effect —
@@ -58,6 +65,19 @@ const {
   onDragEnd,
   onDrop,
 } = useQueueFeedShadow({ feed: () => props.queue, isSaving, onReorder: reorder });
+
+// Per-row workflow picks stay local to the column: freely changeable until
+// the row is claimed, frozen into plain text after. The claim-freeze pass
+// persists the pick; this shell only carries the choice in memory.
+const { activePick, setPick } = useWorkflowPicks();
+
+const workflowEntries = computed(() => props.catalog?.workflows ?? []);
+function workflowState(item) {
+  return workflowRowState(props.catalog, item, activePick(item.id, props.catalog?.defaultWorkflow));
+}
+function onPick(item, name) {
+  setPick(item.id, name);
+}
 
 const nextQueueItem = computed(() => localQueue.value[0] ?? null);
 
@@ -140,6 +160,11 @@ async function onStartNext() {
             <span class="missing-issue">no longer eligible</span>
           </template>
         </div>
+        <WorkflowPicker
+          :state="workflowState(item)"
+          :workflows="workflowEntries"
+          @pick="(name) => onPick(item, name)"
+        />
         <span
           v-if="view.status !== 'queued'"
           class="status-dot"
