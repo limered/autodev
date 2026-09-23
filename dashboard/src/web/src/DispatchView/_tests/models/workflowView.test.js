@@ -1,9 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { workflowRowState } from "../../models/workflowView.js";
 
-// Pure row-state for the queue-row workflow picker: one call maps the
-// factory catalog, the row's claim, and the local pick onto the picker's
-// render kind, so the template never branches on runId or catalog shape.
 const catalog = {
   defaultWorkflow: "full",
   workflows: [

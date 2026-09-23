@@ -1,9 +1,6 @@
 import { describe, it, expect, vi } from "vitest";
 import { useFactoryWorkflows } from "../../services/useFactoryWorkflows.js";
 
-// The factory-catalog read seam: one GET /workflows load onto refs, with the
-// load exposed so SSR-style callers (and these tests) drive it explicitly
-// instead of relying on mount.
 const catalog = {
   defaultWorkflow: "full",
   workflows: [

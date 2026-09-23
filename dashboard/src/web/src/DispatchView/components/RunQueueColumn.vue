@@ -66,9 +66,6 @@ const {
   onDrop,
 } = useQueueFeedShadow({ feed: () => props.queue, isSaving, onReorder: reorder });
 
-// Per-row workflow picks stay local to the column: freely changeable until
-// the row is claimed, frozen into plain text after. The claim-freeze pass
-// persists the pick; this shell only carries the choice in memory.
 const { activePick, setPick } = useWorkflowPicks();
 
 const workflowEntries = computed(() => props.catalog?.workflows ?? []);
