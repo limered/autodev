@@ -84,6 +84,7 @@ app.MapIssuesEndpoints();
 app.MapQueueEndpoints();
 app.MapHostEndpoints();
 app.MapTargetCatalogEndpoints();
+app.MapFactoryCatalogEndpoints();
 
 // Serve the built Vue SPA (wwwroot) with SPA fallback to index.html.
 app.UseDefaultFiles();
