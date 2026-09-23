@@ -16,6 +16,16 @@ public sealed class FakeQueueStore : IQueueStore
     public IIssueResolver? Resolver { get; set; }
 
     /// <summary>
+    /// The catalog seam the real store revalidates through. Unwired, claim and start
+    /// skip revalidation and report the factory fallback — same as a repo that was
+    /// never synced.
+    /// </summary>
+    public Catalogs.ITargetCatalogService? Catalogs { get; set; }
+
+    /// <summary>The issues rows the catalog revalidation resolves repos through.</summary>
+    public FakeIssuesStore? Issues { get; set; }
+
+    /// <summary>
     /// The boundary projection: QueueRules sees only the queue row fields, so the
     /// enrichments the raw joined row carries from the LEFT JOIN are dropped here.
     /// </summary>
@@ -74,24 +84,33 @@ public sealed class FakeQueueStore : IQueueStore
         return Task.FromResult<QueueRow?>(item);
     }
 
-    public Task<QueueRow?> StartNext(long id)
+    public async Task<QueueRow?> StartNext(long id)
     {
         var item = _items.FirstOrDefault(i => i.Id == id);
         if (item is null)
         {
-            return Task.FromResult<QueueRow?>(null);
+            return null;
+        }
+
+        if (Catalogs is not null && Issues is not null)
+        {
+            var issue = (await Issues.All()).FirstOrDefault(i => i.GitHubId == item.IssueId);
+            if (issue is not null)
+            {
+                await Catalogs.RevalidateAsync(issue.Repo);
+            }
         }
 
         // QueueRules.ShouldRequestStart, shared with the real SQL store's
         // WHERE start_requested_at IS NULL: a repeat call keeps the first timestamp.
         if (!QueueRules.ShouldRequestStart(RuleItems().Single(i => i.Id == id)))
         {
-            return Task.FromResult<QueueRow?>(item);
+            return item;
         }
 
         var idx = _items.IndexOf(item);
         _items[idx] = item with { StartRequestedAt = DateTimeOffset.UtcNow };
-        return Task.FromResult<QueueRow?>(_items[idx]);
+        return _items[idx];
     }
 
     public Task<QueueRow?> Restart(long id)
@@ -129,11 +148,27 @@ public sealed class FakeQueueStore : IQueueStore
             return null;
         }
 
+        Catalogs.TargetCatalog? catalog = null;
+        if (Catalogs is not null && Issues is not null)
+        {
+            var issue = (await Issues.All()).FirstOrDefault(i => i.GitHubId == next.IssueId);
+            if (issue is not null)
+            {
+                catalog = await Catalogs.RevalidateAsync(issue.Repo);
+            }
+        }
+
         var runId = Guid.NewGuid();
         var item = _items.Single(i => i.Id == next.Id);
         var idx = _items.IndexOf(item);
         _items[idx] = item with { RunId = runId };
-        return new ClaimedQueueItem(runId, payload.RepoUrl, payload.Spec);
+        return new ClaimedQueueItem(
+            runId,
+            payload.RepoUrl,
+            payload.Spec,
+            catalog?.Sha,
+            catalog?.Source ?? Api.Catalogs.CatalogRules.SourceFactoryFallback,
+            catalog?.Content);
     }
 
     public Task Reorder(IReadOnlyList<long> ids)

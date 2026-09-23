@@ -39,8 +39,14 @@
   Guest backend: 'multipass' (Windows VM, default) or 'container'
   (ephemeral podman/docker container on a Linux host).
 
-.PARAMETER Image
-  Container image for -Isolator container.
+.PARAMETER CatalogJson
+  Claimed target-repo catalog content (agents.json text). When present it fully
+  replaces the factory agents.json for seeding and for the guest copy; when
+  absent the factory catalog is the fallback. An unreadable value fails fast
+  instead of silently running the factory pipeline.
+
+.PARAMETER CatalogSha
+  Claimed target-repo catalog sha for observability on run-started.
 #>
 [CmdletBinding()]
 param(
@@ -53,6 +59,8 @@ param(
     [string]$RunId = [guid]::NewGuid().ToString(),
     [ValidateSet('multipass', 'container')][string]$Isolator = $(if ($env:OS -eq 'Windows_NT') { 'multipass' } else { 'container' }),
     [string]$Image = 'slop-factory-runner:latest',
+    [string]$CatalogJson = '',
+    [string]$CatalogSha = '',
     [switch]$KeepVmOnFailure
 )
 
@@ -77,6 +85,15 @@ if (-not $Model) {
 }
 
 $seedConfig = Read-AgentsConfig -Path (Join-Path $RepoRoot "agents.json")
+$agentsJson = Join-Path $RepoRoot "agents.json"
+$catalogSource = 'factory-fallback'
+if (-not [string]::IsNullOrWhiteSpace($CatalogJson)) {
+    $catalogTmp = Join-Path (Get-HostTempDir) "target-agents-$VmName.json"
+    Set-Content -LiteralPath $catalogTmp -Value $CatalogJson -Encoding UTF8 -NoNewline
+    $seedConfig = Read-AgentsConfig -Path $catalogTmp
+    $agentsJson = $catalogTmp
+    $catalogSource = 'target'
+}
 $agentModels = Get-AgentModelMap -Config $seedConfig -RepoRoot $RepoRoot
 $categoryLookup = { param($agent, $iteration) Get-StepCategory -Agent "$agent" -Iteration ([int]$iteration) -Config $seedConfig }
 $stages = @(ConvertTo-SeededStages -Config $seedConfig -ModelMap $agentModels)
@@ -88,16 +105,17 @@ $stages = @(ConvertTo-SeededStages -Config $seedConfig -ModelMap $agentModels)
 . (Join-Path $RepoRoot "factory-report.ps1")
 Initialize-FactoryReport -RepoRoot $RepoRoot
 Send-FactoryEvent -RunId $RunId -Type "run-started" -Fields @{
-    repo   = $Repo
-    branch = $Branch
-    spec   = $Spec
-    model  = $Model
-    stages = $stages
+    repo          = $Repo
+    branch        = $Branch
+    spec          = $Spec
+    model         = $Model
+    stages        = $stages
+    catalogSource = $catalogSource
+    catalogSha    = $CatalogSha
 }
 
 $cloudInit = Join-Path $RepoRoot "infrastructure/multipass/cloud-init.yaml"
 $testScript = Join-Path $RepoRoot "infrastructure/multipass/test-feature-builder.sh"
-$agentsJson = Join-Path $RepoRoot "agents.json"
 $secretsDir = Join-Path $RepoRoot ".secrets"
 $patFile = Join-Path $secretsDir "github-pat.txt"
 $apiKeyFile = Join-Path $secretsDir "opencode-api-key.txt"

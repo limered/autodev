@@ -1,3 +1,5 @@
+using Api.Catalogs;
+
 namespace Api.Queue;
 
 public static class QueueEndpoints
@@ -17,8 +19,32 @@ public static class QueueEndpoints
 
         app.MapPost("/queue/{id:long}/start-next", async (long id, IQueueStore store) =>
         {
-            var row = await store.StartNext(id);
-            return row is null ? Results.NotFound() : Results.Json(row);
+            try
+            {
+                var row = await store.StartNext(id);
+                return row is null ? Results.NotFound() : Results.Json(row);
+            }
+            catch (CatalogChangedException ex)
+            {
+                return Results.Problem(
+                    ex.Message,
+                    statusCode: StatusCodes.Status409Conflict,
+                    title: "Target catalog changed");
+            }
+            catch (CatalogAuthException ex)
+            {
+                return Results.Problem(
+                    ex.Message,
+                    statusCode: StatusCodes.Status502BadGateway,
+                    title: "Target catalog credential failed");
+            }
+            catch (CatalogTooLargeException ex)
+            {
+                return Results.Problem(
+                    ex.Message,
+                    statusCode: StatusCodes.Status400BadRequest,
+                    title: "Target catalog too large");
+            }
         });
 
         app.MapPost("/queue/{id:long}/restart", async (long id, IQueueStore store) =>
@@ -29,8 +55,32 @@ public static class QueueEndpoints
 
         app.MapPost("/queue/claim-next", async (IQueueStore store) =>
         {
-            var claim = await store.ClaimNext();
-            return claim is null ? Results.NoContent() : Results.Json(claim);
+            try
+            {
+                var claim = await store.ClaimNext();
+                return claim is null ? Results.NoContent() : Results.Json(claim);
+            }
+            catch (CatalogChangedException ex)
+            {
+                return Results.Problem(
+                    ex.Message,
+                    statusCode: StatusCodes.Status409Conflict,
+                    title: "Target catalog changed");
+            }
+            catch (CatalogAuthException ex)
+            {
+                return Results.Problem(
+                    ex.Message,
+                    statusCode: StatusCodes.Status502BadGateway,
+                    title: "Target catalog credential failed");
+            }
+            catch (CatalogTooLargeException ex)
+            {
+                return Results.Problem(
+                    ex.Message,
+                    statusCode: StatusCodes.Status400BadRequest,
+                    title: "Target catalog too large");
+            }
         }).AddEndpointFilter<RequireFactoryToken>();
 
         app.MapPatch("/queue/order", async (ReorderRequest req, IQueueStore store) =>
