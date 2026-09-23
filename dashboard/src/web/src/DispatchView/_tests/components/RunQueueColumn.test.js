@@ -49,7 +49,7 @@ describe("RunQueueColumn", () => {
     expect(html).toContain("#1");
     expect(html).toContain("#2");
     expect(html).not.toContain("status-queued");
-    expect(html).not.toContain("status-dot\" title=\"queued\"");
+    expect(html).not.toContain('status-dot" title="queued"');
     expect(html).toContain("status-running");
   });
 
