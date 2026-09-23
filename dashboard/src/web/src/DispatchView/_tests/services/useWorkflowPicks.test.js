@@ -1,9 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { useWorkflowPicks } from "../../services/useWorkflowPicks.js";
 
-// Local per-row picks for the picker shell: the active pick defaults to the
-// catalog default and is freely changeable until the row is claimed. No
-// backend write in this shell — the claim-freeze pass persists the pick.
 describe("useWorkflowPicks", () => {
   it("resolves to the catalog default with no local pick", () => {
     const picks = useWorkflowPicks();

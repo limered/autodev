@@ -44,7 +44,6 @@ onUnmounted(() => document.removeEventListener("click", onDocumentClick));
       @keyup.escape="close"
     >
       {{ state.name }} <span class="muted">· {{ state.stageCount }}</span>
-      <span class="chev">▾</span>
     </button>
     <ul v-if="open" class="workflow-menu" role="listbox">
       <li v-for="w in workflows" :key="w.name" role="option" :aria-selected="w.name === state.name">
@@ -61,8 +60,7 @@ onUnmounted(() => document.removeEventListener("click", onDocumentClick));
     </ul>
   </div>
   <span v-else-if="state.kind === 'frozen'" class="workflow-frozen"
-    >{{ state.name }} <span class="muted">· {{ state.stageCount }}</span>
-    <span class="frozen-note">(frozen)</span></span
+    >{{ state.name }} <span class="muted">· {{ state.stageCount }}</span></span
   >
   <span v-else class="workflow-missing">{{ state.name }} (no catalog)</span>
 </template>
@@ -91,11 +89,6 @@ onUnmounted(() => document.removeEventListener("click", onDocumentClick));
 .muted {
   color: var(--text-muted);
   font-size: 0.8rem;
-}
-
-.chev {
-  color: var(--text-muted);
-  font-size: 0.75em;
 }
 
 .workflow-menu {
@@ -155,11 +148,6 @@ onUnmounted(() => document.removeEventListener("click", onDocumentClick));
   font-size: 0.85rem;
   color: var(--text);
   white-space: nowrap;
-}
-
-.frozen-note {
-  color: var(--text-muted);
-  font-size: 0.8rem;
 }
 
 .workflow-missing {

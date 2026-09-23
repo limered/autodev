@@ -6,12 +6,6 @@ import { createSSRApp, createApp, h, nextTick } from "vue";
 import { renderToString } from "vue/server-renderer";
 import WorkflowPicker from "../../components/WorkflowPicker.vue";
 
-// Markup contract via SSR: the trigger shows name plus stage count with no
-// prefix and no stage names; the menu is one row per workflow with a
-// checkmark on the active pick, name left and muted count right; claimed rows
-// render plain frozen text with no picker; a missing catalog renders the
-// muted default notice. Interaction (open, pick, dismiss) is mounted in
-// happy-dom below.
 const workflows = [
   { name: "full", stageCount: 5 },
   { name: "quick", stageCount: 2 },

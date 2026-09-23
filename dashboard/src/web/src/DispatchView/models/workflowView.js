@@ -1,5 +1,5 @@
 export function workflowRowState(catalog, item, pickedName) {
-  const claimed = item?.runId !== null && item?.runId !== undefined;
+  const claimed = Boolean(item?.runId);
   const entries = catalog?.workflows;
   const usable = Array.isArray(entries) && entries.length > 0;
   if (!usable) {
