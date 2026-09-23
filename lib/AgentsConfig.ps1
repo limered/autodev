@@ -25,16 +25,49 @@
   frontmatter; an injected file reader keeps that read Pester-pure.
 #>
 
-function ConvertFrom-AgentsConfigJson {
+function ConvertFrom-AgentsJsonText {
     param([Parameter(Mandatory = $true)][string]$Json)
-    $parsed = $null
     try {
-        $parsed = $Json | ConvertFrom-Json -ErrorAction Stop
+        return $Json | ConvertFrom-Json -ErrorAction Stop
     }
     catch {
         throw "Agents config is not valid JSON: $_"
     }
-    if ($null -eq $parsed -or $null -eq $parsed.stages) {
+}
+
+function Get-StageIds {
+    param($Config)
+    return @(@($Config) | ForEach-Object { "$($_.Id)" })
+}
+
+function Read-AgentsJsonFile {
+    param([Parameter(Mandatory = $true)][string]$Path)
+    if (-not (Test-Path -LiteralPath $Path)) {
+        throw "Agents config not found: $Path"
+    }
+    return Get-Content -LiteralPath $Path -Raw
+}
+
+# True when the raw document declares the workflow value as an array.
+# Windows PowerShell 5.1 unwraps single-element arrays to a scalar, so a
+# scalar stage id is ambiguous without this check against the raw text.
+function Test-WorkflowValueIsArray {
+    param([Parameter(Mandatory = $true)][string]$Json, [Parameter(Mandatory = $true)][string]$Name)
+    $idx = $Json.IndexOf('"workflows"')
+    if ($idx -lt 0) { return $false }
+    return [regex]::IsMatch($Json.Substring($idx), '"' + [regex]::Escape($Name) + '"\s*:\s*\[')
+}
+
+function ConvertFrom-AgentsConfigJson {
+    param([Parameter(Mandatory = $true)][string]$Json)
+    return ConvertFrom-AgentsConfigObject -Parsed (ConvertFrom-AgentsJsonText -Json $Json)
+}
+
+# Stages-only parse of an already-parsed document. Workflow rules live in
+# ConvertFrom-AgentsWorkflowsObject so this stays a pure stages reader.
+function ConvertFrom-AgentsConfigObject {
+    param($Parsed)
+    if ($null -eq $Parsed -or $null -eq $Parsed.stages) {
         throw "Agents config must declare a 'stages' map"
     }
     $entries = @()
@@ -89,7 +122,6 @@ function ConvertFrom-AgentsConfigJson {
     if ($entries.Count -eq 0) {
         throw "Agents config must declare at least one stage"
     }
-    $null = ConvertFrom-AgentsWorkflowsJson -Json $Json -Config $entries
     return $entries
 }
 
@@ -129,14 +161,16 @@ function Assert-WorkflowStageIds {
 # file order plus the default workflow name. Pure: takes strings or objects.
 function ConvertFrom-AgentsWorkflowsJson {
     param([Parameter(Mandatory = $true)][string]$Json, $Config)
-    $parsed = $null
-    try {
-        $parsed = $Json | ConvertFrom-Json -ErrorAction Stop
-    }
-    catch {
-        throw "Agents config is not valid JSON: $_"
-    }
-    $knownIds = @(@($Config) | ForEach-Object { "$($_.Id)" })
+    $parsed = ConvertFrom-AgentsJsonText -Json $Json
+    return ConvertFrom-AgentsWorkflowsObject -Parsed $parsed -Config $Config -RawJson $Json
+}
+
+# Workflow validation against an already-parsed document. -RawJson carries
+# the source text so single-element arrays unwrapped to a scalar by older
+# parsers still read as a valid single-stage workflow.
+function ConvertFrom-AgentsWorkflowsObject {
+    param($Parsed, $Config, [string]$RawJson)
+    $knownIds = Get-StageIds -Config $Config
     $hasWorkflows = ($null -ne $parsed) -and ($null -ne $parsed.PSObject.Properties['workflows'])
     $hasDefault = ($null -ne $parsed) -and ($null -ne $parsed.PSObject.Properties['defaultWorkflow'])
     if (-not $hasWorkflows) {
@@ -161,8 +195,13 @@ function ConvertFrom-AgentsWorkflowsJson {
             throw "Agents config workflow name 'default' is reserved for the legacy stages-only workflow"
         }
         $list = $prop.Value
-        if ($null -eq $list -or $list -isnot [array]) {
-            throw "Agents config workflow '$name' must be an ordered list of stage ids"
+        if ($list -isnot [array]) {
+            if ($null -ne $list -and $list -is [string] -and -not [string]::IsNullOrEmpty($RawJson) -and (Test-WorkflowValueIsArray -Json $RawJson -Name $name)) {
+                $list = @($list)
+            }
+            else {
+                throw "Agents config workflow '$name' must be an ordered list of stage ids"
+            }
         }
         $workflows[$name] = @(Assert-WorkflowStageIds -Workflow $name -StageIds $list -KnownIds $knownIds)
     }
@@ -182,7 +221,7 @@ function ConvertFrom-AgentsWorkflowsJson {
 function Select-WorkflowStages {
     param($Config, $StageIds, [string]$Workflow)
     $entries = @($Config)
-    $knownIds = @($entries | ForEach-Object { "$($_.Id)" })
+    $knownIds = Get-StageIds -Config $entries
     $ids = @(Assert-WorkflowStageIds -Workflow $Workflow -StageIds $StageIds -KnownIds $knownIds)
     $filtered = @()
     foreach ($id in $ids) {
@@ -194,12 +233,10 @@ function Select-WorkflowStages {
 
 function Read-AgentsWorkflowCatalog {
     param([Parameter(Mandatory = $true)][string]$Path)
-    if (-not (Test-Path -LiteralPath $Path)) {
-        throw "Agents config not found: $Path"
-    }
-    $raw = Get-Content -LiteralPath $Path -Raw
-    $stages = ConvertFrom-AgentsConfigJson -Json $raw
-    $flows = ConvertFrom-AgentsWorkflowsJson -Json $raw -Config $stages
+    $raw = Read-AgentsJsonFile -Path $Path
+    $parsed = ConvertFrom-AgentsJsonText -Json $raw
+    $stages = ConvertFrom-AgentsConfigObject -Parsed $parsed
+    $flows = ConvertFrom-AgentsWorkflowsObject -Parsed $parsed -Config $stages -RawJson $raw
     return [PSCustomObject]@{
         Stages          = $stages
         Workflows       = $flows.Workflows
@@ -209,11 +246,7 @@ function Read-AgentsWorkflowCatalog {
 
 function Read-AgentsConfig {
     param([Parameter(Mandatory = $true)][string]$Path)
-    if (-not (Test-Path -LiteralPath $Path)) {
-        throw "Agents config not found: $Path"
-    }
-    $raw = Get-Content -LiteralPath $Path -Raw
-    return ConvertFrom-AgentsConfigJson -Json $raw
+    return ConvertFrom-AgentsConfigJson -Json (Read-AgentsJsonFile -Path $Path)
 }
 
 function Get-AgentModelErrorMessage {

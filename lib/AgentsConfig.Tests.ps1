@@ -373,14 +373,37 @@ Describe 'ConvertFrom-AgentsWorkflowsJson' {
         $config = ConvertFrom-AgentsConfigJson -Json '{"stages":{"a":{"type":"sequential","agents":["builder"]}}}'
         { ConvertFrom-AgentsWorkflowsJson -Json $json -Config $config } | Should -Throw "*must be an ordered list of stage ids*"
     }
+    It 'accepts a valid single-stage workflow' {
+        $json = '{"stages":{"a":{"type":"sequential","agents":["builder"]}},"workflows":{"only":["a"]},"defaultWorkflow":"only"}'
+        $config = ConvertFrom-AgentsConfigJson -Json '{"stages":{"a":{"type":"sequential","agents":["builder"]}}}'
+        $catalog = ConvertFrom-AgentsWorkflowsJson -Json $json -Config $config
+        $catalog.Workflows['only'] -join ',' | Should -Be 'a'
+        $catalog.DefaultWorkflow | Should -Be 'only'
+    }
+    It 'recovers a single-stage workflow unwrapped to a scalar by older parsers' {
+        $json = '{"stages":{"a":{"type":"sequential","agents":["builder"]}},"workflows":{"only":["a"]},"defaultWorkflow":"only"}'
+        $config = ConvertFrom-AgentsConfigJson -Json '{"stages":{"a":{"type":"sequential","agents":["builder"]}}}'
+        $parsed = ConvertFrom-AgentsJsonText -Json $json
+        $parsed.workflows.only = 'a'
+        $catalog = ConvertFrom-AgentsWorkflowsObject -Parsed $parsed -Config $config -RawJson $json
+        $catalog.Workflows['only'] -join ',' | Should -Be 'a'
+    }
     It 'rejects a workflow with a blank stage id' {
         $json = '{"stages":{"a":{"type":"sequential","agents":["builder"]}},"workflows":{"odd":["a"," "]},"defaultWorkflow":"odd"}'
         $config = ConvertFrom-AgentsConfigJson -Json '{"stages":{"a":{"type":"sequential","agents":["builder"]}}}'
         { ConvertFrom-AgentsWorkflowsJson -Json $json -Config $config } | Should -Throw "*lists an empty stage id*"
     }
-    It 'fails the stages parse fast on an invalid catalog instead of reading stages alone' {
+    It 'leaves workflow validation to the catalog reader instead of the stages parse' {
         $json = '{"stages":{"a":{"type":"sequential","agents":["builder"]}},"workflows":{"bad":["a","ghost"]},"defaultWorkflow":"bad"}'
-        { ConvertFrom-AgentsConfigJson -Json $json } | Should -Throw "*references unknown stage id 'ghost'*"
+        $stages = ConvertFrom-AgentsConfigJson -Json $json
+        ($stages | ForEach-Object { $_.Id }) -join ',' | Should -Be 'a'
+        { ConvertFrom-AgentsWorkflowsJson -Json $json -Config $stages } | Should -Throw "*references unknown stage id 'ghost'*"
+    }
+    It 'fails the catalog read fast on an invalid catalog' {
+        $json = '{"stages":{"a":{"type":"sequential","agents":["builder"]}},"workflows":{"bad":["a","ghost"]},"defaultWorkflow":"bad"}'
+        $path = Join-Path $TestDrive 'agents.json'
+        Set-Content -LiteralPath $path -Value $json
+        { Read-AgentsWorkflowCatalog -Path $path } | Should -Throw "*references unknown stage id 'ghost'*"
     }
 }
 
