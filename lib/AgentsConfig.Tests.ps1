@@ -275,3 +275,149 @@ Describe 'Read-AgentsConfig' {
         { Read-AgentsConfig -Path (Join-Path $PSScriptRoot 'no-such-agents.json') } | Should -Throw
     }
 }
+
+Describe 'ConvertFrom-AgentsWorkflowsJson' {
+    BeforeAll {
+        $script:CatalogJson = @'
+{
+  "stages": {
+    "implementation": { "type": "sequential", "agents": ["feature-builder", "test-runner"] },
+    "quality-loop": { "type": "loop", "agents": ["static-analysis", "feature-builder"], "iterations": 3 },
+    "test-rerun": { "type": "sequential", "agents": ["test-runner"] },
+    "agentic-review": { "type": "sequential", "agents": ["agentic-review"] },
+    "pr-author": { "type": "sequential", "agents": ["pr-author"] }
+  },
+  "workflows": {
+    "full": ["implementation", "quality-loop", "test-rerun", "agentic-review", "pr-author"],
+    "quick": ["implementation", "pr-author"]
+  },
+  "defaultWorkflow": "full"
+}
+'@
+        $script:CatalogConfig = ConvertFrom-AgentsConfigJson -Json $script:CatalogJson
+    }
+    It 'reads named workflows with the default marker' {
+        $catalog = ConvertFrom-AgentsWorkflowsJson -Json $script:CatalogJson -Config $script:CatalogConfig
+        @($catalog.Workflows.Keys) -join ',' | Should -Be 'full,quick'
+        $catalog.Workflows['full'] -join ',' | Should -Be 'implementation,quality-loop,test-rerun,agentic-review,pr-author'
+        $catalog.Workflows['quick'] -join ',' | Should -Be 'implementation,pr-author'
+        $catalog.DefaultWorkflow | Should -Be 'full'
+    }
+    It 'reads a stages-only file as the default workflow in catalog order' {
+        $config = ConvertFrom-AgentsConfigJson -Json $script:V1Json
+        $catalog = ConvertFrom-AgentsWorkflowsJson -Json $script:V1Json -Config $config
+        @($catalog.Workflows.Keys) -join ',' | Should -Be 'default'
+        $catalog.Workflows['default'] -join ',' | Should -Be 'implementation,quality-loop,test-rerun,agentic-review,pr-author'
+        $catalog.DefaultWorkflow | Should -Be 'default'
+    }
+    It 'leaves stages parsing unchanged when workflows are present' {
+        ($script:CatalogConfig | ForEach-Object { $_.Id }) -join ',' | Should -Be 'implementation,quality-loop,test-rerun,agentic-review,pr-author'
+        $script:CatalogConfig[1].Iterations | Should -Be 3
+    }
+    It 'rejects an empty workflows map' {
+        $json = '{"stages":{"a":{"type":"sequential","agents":["builder"]}},"workflows":{},"defaultWorkflow":"x"}'
+        $config = ConvertFrom-AgentsConfigJson -Json '{"stages":{"a":{"type":"sequential","agents":["builder"]}}}'
+        { ConvertFrom-AgentsWorkflowsJson -Json $json -Config $config } | Should -Throw '*at least one workflow*'
+    }
+    It 'rejects an empty workflow' {
+        $json = '{"stages":{"a":{"type":"sequential","agents":["builder"]}},"workflows":{"empty":[]},"defaultWorkflow":"empty"}'
+        $config = ConvertFrom-AgentsConfigJson -Json '{"stages":{"a":{"type":"sequential","agents":["builder"]}}}'
+        { ConvertFrom-AgentsWorkflowsJson -Json $json -Config $config } | Should -Throw "*workflow 'empty' must list at least one stage id*"
+    }
+    It 'rejects a workflow referencing an unknown stage id' {
+        $json = '{"stages":{"a":{"type":"sequential","agents":["builder"]}},"workflows":{"bad":["a","ghost"]},"defaultWorkflow":"bad"}'
+        $config = ConvertFrom-AgentsConfigJson -Json '{"stages":{"a":{"type":"sequential","agents":["builder"]}}}'
+        { ConvertFrom-AgentsWorkflowsJson -Json $json -Config $config } | Should -Throw "*references unknown stage id 'ghost'*"
+    }
+    It 'rejects a workflow listing a stage id twice' {
+        $json = '{"stages":{"a":{"type":"sequential","agents":["builder"]}},"workflows":{"dup":["a","a"]},"defaultWorkflow":"dup"}'
+        $config = ConvertFrom-AgentsConfigJson -Json '{"stages":{"a":{"type":"sequential","agents":["builder"]}}}'
+        { ConvertFrom-AgentsWorkflowsJson -Json $json -Config $config } | Should -Throw "*lists stage id 'a' more than once*"
+    }
+    It 'rejects the reserved workflow name default' {
+        $json = '{"stages":{"a":{"type":"sequential","agents":["builder"]}},"workflows":{"default":["a"]},"defaultWorkflow":"default"}'
+        $config = ConvertFrom-AgentsConfigJson -Json '{"stages":{"a":{"type":"sequential","agents":["builder"]}}}'
+        { ConvertFrom-AgentsWorkflowsJson -Json $json -Config $config } | Should -Throw "*reserved*"
+    }
+    It 'rejects workflows with no default marker instead of silently picking first' {
+        $json = '{"stages":{"a":{"type":"sequential","agents":["builder"]}},"workflows":{"only":["a"]}}'
+        $config = ConvertFrom-AgentsConfigJson -Json '{"stages":{"a":{"type":"sequential","agents":["builder"]}}}'
+        { ConvertFrom-AgentsWorkflowsJson -Json $json -Config $config } | Should -Throw '*no default workflow marker*'
+    }
+    It 'rejects a default marker naming no known workflow' {
+        $json = '{"stages":{"a":{"type":"sequential","agents":["builder"]}},"workflows":{"only":["a"]},"defaultWorkflow":"ghost"}'
+        $config = ConvertFrom-AgentsConfigJson -Json '{"stages":{"a":{"type":"sequential","agents":["builder"]}}}'
+        { ConvertFrom-AgentsWorkflowsJson -Json $json -Config $config } | Should -Throw "*names no known workflow*"
+    }
+    It 'rejects a default marker with no workflows map' {
+        $json = '{"stages":{"a":{"type":"sequential","agents":["builder"]}},"defaultWorkflow":"full"}'
+        $config = ConvertFrom-AgentsConfigJson -Json '{"stages":{"a":{"type":"sequential","agents":["builder"]}}}'
+        { ConvertFrom-AgentsWorkflowsJson -Json $json -Config $config } | Should -Throw '*no workflows map*'
+    }
+    It 'rejects a workflow that is not an ordered list' {
+        $json = '{"stages":{"a":{"type":"sequential","agents":["builder"]}},"workflows":{"odd":"a"},"defaultWorkflow":"odd"}'
+        $config = ConvertFrom-AgentsConfigJson -Json '{"stages":{"a":{"type":"sequential","agents":["builder"]}}}'
+        { ConvertFrom-AgentsWorkflowsJson -Json $json -Config $config } | Should -Throw "*must be an ordered list of stage ids*"
+    }
+    It 'rejects a workflow with a blank stage id' {
+        $json = '{"stages":{"a":{"type":"sequential","agents":["builder"]}},"workflows":{"odd":["a"," "]},"defaultWorkflow":"odd"}'
+        $config = ConvertFrom-AgentsConfigJson -Json '{"stages":{"a":{"type":"sequential","agents":["builder"]}}}'
+        { ConvertFrom-AgentsWorkflowsJson -Json $json -Config $config } | Should -Throw "*lists an empty stage id*"
+    }
+    It 'fails the stages parse fast on an invalid catalog instead of reading stages alone' {
+        $json = '{"stages":{"a":{"type":"sequential","agents":["builder"]}},"workflows":{"bad":["a","ghost"]},"defaultWorkflow":"bad"}'
+        { ConvertFrom-AgentsConfigJson -Json $json } | Should -Throw "*references unknown stage id 'ghost'*"
+    }
+}
+
+Describe 'Select-WorkflowStages' {
+    BeforeAll {
+        $script:FilterConfig = ConvertFrom-AgentsConfigJson -Json $script:V1Json
+    }
+    It 'filters to the picked workflow preserving workflow order, not catalog order' {
+        $filtered = Select-WorkflowStages -Config $script:FilterConfig -StageIds @('pr-author', 'implementation')
+        ($filtered | ForEach-Object { $_.Id }) -join ',' | Should -Be 'pr-author,implementation'
+        ($filtered | ForEach-Object { $_.Type }) -join ',' | Should -Be 'sequential,sequential'
+        $filtered[1].Agents -join ',' | Should -Be 'feature-builder,test-runner'
+    }
+    It 'keeps loop iteration counts on the filtered stages' {
+        $filtered = Select-WorkflowStages -Config $script:FilterConfig -StageIds @('quality-loop')
+        $filtered.Count | Should -Be 1
+        $filtered[0].Iterations | Should -Be 3
+    }
+    It 'seeds only the picked workflow stages in workflow order' {
+        $catalog = ConvertFrom-AgentsWorkflowsJson -Json $script:V1Json -Config $script:FilterConfig
+        $filtered = Select-WorkflowStages -Config $script:FilterConfig -StageIds @('test-rerun', 'implementation')
+        $stages = @(ConvertTo-SeededStages -Config $filtered -ModelLookup { param($a) return "model-$a" })
+        ($stages | ForEach-Object { $_['category'] }) -join ',' | Should -Be 'test-rerun,implementation'
+        $stages[0]['model'] | Should -Be 'model-test-runner'
+        $stages[1]['model'] | Should -Be 'model-feature-builder'
+        $catalog.DefaultWorkflow | Should -Be 'default'
+    }
+    It 'fails fast on an unknown stage id, naming the workflow when given' {
+        { Select-WorkflowStages -Config $script:FilterConfig -StageIds @('ghost') -Workflow 'quick' } | Should -Throw "*workflow 'quick' references unknown stage id 'ghost'*"
+        { Select-WorkflowStages -Config $script:FilterConfig -StageIds @('ghost') } | Should -Throw "*unknown stage id 'ghost'*"
+    }
+    It 'fails fast on an empty selection instead of seeding nothing' {
+        { Select-WorkflowStages -Config $script:FilterConfig -StageIds @() -Workflow 'quick' } | Should -Throw "*workflow 'quick' must list at least one stage id*"
+    }
+    It 'fails fast on a duplicated stage id' {
+        { Select-WorkflowStages -Config $script:FilterConfig -StageIds @('implementation', 'implementation') } | Should -Throw "*more than once*"
+    }
+}
+
+Describe 'Read-AgentsWorkflowCatalog' {
+    BeforeAll {
+        $script:repoRoot = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
+    }
+    It 'reads the repo-root stages-only file as the default workflow' {
+        $catalog = Read-AgentsWorkflowCatalog -Path (Join-Path $script:repoRoot 'agents.json')
+        ($catalog.Stages | ForEach-Object { $_.Id }) -join ',' | Should -Be 'implementation,quality-loop,test-rerun,agentic-review,pr-author'
+        @($catalog.Workflows.Keys) -join ',' | Should -Be 'default'
+        $catalog.Workflows['default'] -join ',' | Should -Be 'implementation,quality-loop,test-rerun,agentic-review,pr-author'
+        $catalog.DefaultWorkflow | Should -Be 'default'
+    }
+    It 'throws for a missing file' {
+        { Read-AgentsWorkflowCatalog -Path (Join-Path $PSScriptRoot 'no-such-agents.json') } | Should -Throw
+    }
+}

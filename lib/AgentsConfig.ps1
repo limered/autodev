@@ -12,6 +12,14 @@
   count. Seeding emits one stage per category in map order with the model of
   its first member. The map keys are the category set, so ids are unique by
   construction while the same worker may appear in several categories.
+  The same file may declare a workflows map: each workflow name maps to an
+  ordered list of stage ids executed in listed order, plus a top-level
+  defaultWorkflow marker naming the default. A stages-only file reads as the
+  default workflow (all stages, catalog order). References are strict: empty
+  maps, empty workflows, unknown or duplicated ids, the reserved name
+  default, and a missing or dangling marker all fail fast.
+  Select-WorkflowStages filters parsed entries to one workflow in workflow
+  order so seeding, candidates, and slots follow the pick unchanged.
   Pure converters take strings or objects so Pester drives them without files.
   The agent model map resolves each member model once from its definition
   frontmatter; an injected file reader keeps that read Pester-pure.
@@ -81,7 +89,122 @@ function ConvertFrom-AgentsConfigJson {
     if ($entries.Count -eq 0) {
         throw "Agents config must declare at least one stage"
     }
+    $null = ConvertFrom-AgentsWorkflowsJson -Json $Json -Config $entries
     return $entries
+}
+
+# Shared strict check for one workflow's ordered stage id list: non-empty,
+# known ids only, no duplicates. -Workflow only sharpens error messages.
+function Assert-WorkflowStageIds {
+    param([string]$Workflow, $StageIds, [string[]]$KnownIds)
+    $subject = 'selection'
+    if (-not [string]::IsNullOrWhiteSpace("$Workflow")) { $subject = "'$Workflow'" }
+    $raw = @($StageIds)
+    if ($raw.Count -eq 0) {
+        throw "Agents config workflow $subject must list at least one stage id"
+    }
+    $ids = @()
+    foreach ($entry in $raw) {
+        $id = "$entry"
+        if ([string]::IsNullOrWhiteSpace($id)) {
+            throw "Agents config workflow $subject lists an empty stage id"
+        }
+        if (@($KnownIds) -cnotcontains $id) {
+            throw "Agents config workflow $subject references unknown stage id '$id' (known: $($KnownIds -join ', '))"
+        }
+        if ($ids -ccontains $id) {
+            throw "Agents config workflow $subject lists stage id '$id' more than once"
+        }
+        $ids += $id
+    }
+    return $ids
+}
+
+# Parses the named workflows map of an agents.json file against its stage
+# catalog. A file with only a stages map reads as the default workflow (all
+# stage ids, catalog order) with unchanged behavior; a file with a workflows
+# map must also name its default via the top-level defaultWorkflow marker.
+# Each workflow is an ordered list of known stage ids with no duplicates; the
+# name default is reserved for the legacy synthesis. Returns the workflows in
+# file order plus the default workflow name. Pure: takes strings or objects.
+function ConvertFrom-AgentsWorkflowsJson {
+    param([Parameter(Mandatory = $true)][string]$Json, $Config)
+    $parsed = $null
+    try {
+        $parsed = $Json | ConvertFrom-Json -ErrorAction Stop
+    }
+    catch {
+        throw "Agents config is not valid JSON: $_"
+    }
+    $knownIds = @(@($Config) | ForEach-Object { "$($_.Id)" })
+    $hasWorkflows = ($null -ne $parsed) -and ($null -ne $parsed.PSObject.Properties['workflows'])
+    $hasDefault = ($null -ne $parsed) -and ($null -ne $parsed.PSObject.Properties['defaultWorkflow'])
+    if (-not $hasWorkflows) {
+        if ($hasDefault) {
+            throw "Agents config declares a default workflow ('$($parsed.defaultWorkflow)') but no workflows map"
+        }
+        $legacy = [ordered]@{}
+        $legacy['default'] = @($knownIds)
+        return [PSCustomObject]@{ Workflows = $legacy; DefaultWorkflow = 'default' }
+    }
+    $node = $parsed.workflows
+    if ($null -eq $node -or $null -eq $node.PSObject.Properties -or @($node.PSObject.Properties).Count -eq 0) {
+        throw "Agents config workflows map must declare at least one workflow"
+    }
+    $workflows = [ordered]@{}
+    foreach ($prop in $node.PSObject.Properties) {
+        $name = "$($prop.Name)"
+        if ([string]::IsNullOrWhiteSpace($name)) {
+            throw "Agents config workflow name must be a non-empty string"
+        }
+        if ($name -eq 'default') {
+            throw "Agents config workflow name 'default' is reserved for the legacy stages-only workflow"
+        }
+        $list = $prop.Value
+        if ($null -eq $list -or $list -isnot [array]) {
+            throw "Agents config workflow '$name' must be an ordered list of stage ids"
+        }
+        $workflows[$name] = @(Assert-WorkflowStageIds -Workflow $name -StageIds $list -KnownIds $knownIds)
+    }
+    if (-not $hasDefault -or [string]::IsNullOrWhiteSpace("$($parsed.defaultWorkflow)")) {
+        throw "Agents config declares workflows but no default workflow marker ('defaultWorkflow')"
+    }
+    $default = "$($parsed.defaultWorkflow)"
+    if (@($workflows.Keys) -cnotcontains $default) {
+        throw "Agents config default workflow '$default' names no known workflow (known: $($workflows.Keys -join ', '))"
+    }
+    return [PSCustomObject]@{ Workflows = $workflows; DefaultWorkflow = $default }
+}
+
+# Filters parsed stage entries to the picked workflow in workflow order.
+# Fails fast on an empty, unknown, or duplicated stage id so a stale pick
+# never silently seeds the wrong stages. -Workflow only sharpens errors.
+function Select-WorkflowStages {
+    param($Config, $StageIds, [string]$Workflow)
+    $entries = @($Config)
+    $knownIds = @($entries | ForEach-Object { "$($_.Id)" })
+    $ids = @(Assert-WorkflowStageIds -Workflow $Workflow -StageIds $StageIds -KnownIds $knownIds)
+    $filtered = @()
+    foreach ($id in $ids) {
+        $match = @($entries | Where-Object { "$($_.Id)" -ceq $id }) | Select-Object -First 1
+        $filtered += $match
+    }
+    return $filtered
+}
+
+function Read-AgentsWorkflowCatalog {
+    param([Parameter(Mandatory = $true)][string]$Path)
+    if (-not (Test-Path -LiteralPath $Path)) {
+        throw "Agents config not found: $Path"
+    }
+    $raw = Get-Content -LiteralPath $Path -Raw
+    $stages = ConvertFrom-AgentsConfigJson -Json $raw
+    $flows = ConvertFrom-AgentsWorkflowsJson -Json $raw -Config $stages
+    return [PSCustomObject]@{
+        Stages          = $stages
+        Workflows       = $flows.Workflows
+        DefaultWorkflow = $flows.DefaultWorkflow
+    }
 }
 
 function Read-AgentsConfig {
