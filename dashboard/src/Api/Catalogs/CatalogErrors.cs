@@ -1,11 +1,5 @@
 namespace Api.Catalogs;
 
-/// <summary>
-/// Catalog failure modes with distinct surfaces: oversize fails fast with a clear
-/// reason, a dead backend credential surfaces instead of masquerading as a missing
-/// catalog, and a mid-flight catalog change fails the operation for retry instead
-/// of silently substituting.
-/// </summary>
 public sealed class CatalogTooLargeException(string repo, long size, long limit)
     : InvalidOperationException(
         $"Target catalog for '{repo}' is {size} bytes, exceeding the {limit}-byte limit.")

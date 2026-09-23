@@ -5,14 +5,6 @@ using System.Text.Json;
 
 namespace Api.Catalogs;
 
-/// <summary>
-/// GitHub contents-API fetch of <c>agents.json</c> at the repo root with the backend
-/// PAT already on the shared <see cref="HttpClient"/>. Absent (404) or no-access
-/// (403) answers null for the factory fallback; a dead credential (401) throws so
-/// it surfaces instead of masquerading as missing. The GitHub <c>size</c> field
-/// guards oversize catalogs before the base64 body is decoded, and the decoded
-/// bytes are guarded again so a lying size still fails fast.
-/// </summary>
 public sealed class GitHubTargetCatalogFetcher(HttpClient httpClient) : ITargetCatalogFetcher
 {
     public async Task<FetchedCatalog?> FetchAsync(string repo, string? etag, CancellationToken cancellationToken = default)
