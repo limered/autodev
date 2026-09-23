@@ -2,6 +2,7 @@
 import { computed } from "vue";
 import { usePollingFeed } from "../../_shared/services/usePollingFeed.js";
 import { hostView } from "../models/hostView.js";
+import { useFactoryWorkflows } from "../services/useFactoryWorkflows.js";
 import EligibleIssuesColumn from "./EligibleIssuesColumn.vue";
 import RunQueueColumn from "./RunQueueColumn.vue";
 
@@ -15,6 +16,7 @@ import RunQueueColumn from "./RunQueueColumn.vue";
 const issuesFeed = usePollingFeed(() => fetch("/issues"));
 const queueFeed = usePollingFeed(() => fetch("/queue"));
 const hostFeed = usePollingFeed(() => fetch("/host"));
+const workflowsFeed = useFactoryWorkflows(() => fetch("/workflows"));
 
 const { items: issues } = issuesFeed;
 const { items: queue } = queueFeed;
@@ -62,6 +64,8 @@ const hostBadge = computed(() => hostView(host.value, Date.now()));
         :sync-error="queueFeed.error.value"
         :reload-issues="issuesFeed.load"
         :reload-queue="queueFeed.load"
+        :catalog="workflowsFeed.catalog.value"
+        :catalog-error="workflowsFeed.error.value"
       />
     </div>
   </section>
