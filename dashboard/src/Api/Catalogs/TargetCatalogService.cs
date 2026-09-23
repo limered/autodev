@@ -1,14 +1,5 @@
 namespace Api.Catalogs;
 
-/// <summary>
-/// Orchestrates the per-repo catalog cache. Sync fetches unconditionally and swaps
-/// the cached copy: a target file replaces the factory fallback, while absent or
-/// no-access maps back to the fallback without failing the sync. Auth and oversize
-/// failures propagate so the sync surfaces them. Claim/start revalidate cheaply
-/// with the cached etag: not-modified keeps the copy, a new body swaps it and then
-/// fails the operation with <see cref="CatalogChangedException"/> for retry, so the
-/// run never silently substitutes a stale catalog.
-/// </summary>
 public sealed class TargetCatalogService(
     ITargetCatalogFetcher fetcher,
     ITargetCatalogStore store,

@@ -15,14 +15,8 @@ public sealed class FakeQueueStore : IQueueStore
     /// </summary>
     public IIssueResolver? Resolver { get; set; }
 
-    /// <summary>
-    /// The catalog seam the real store revalidates through. Unwired, claim and start
-    /// skip revalidation and report the factory fallback — same as a repo that was
-    /// never synced.
-    /// </summary>
     public Catalogs.ITargetCatalogService? Catalogs { get; set; }
 
-    /// <summary>The issues rows the catalog revalidation resolves repos through.</summary>
     public FakeIssuesStore? Issues { get; set; }
 
     /// <summary>
