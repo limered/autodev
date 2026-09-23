@@ -8,7 +8,7 @@ disable-model-invocation: true
 
 Turn the pile of open `agentic-review` issues into a small set of **work batches**. Each batch is a cluster of deduped findings the user can then grill (via `/grill-me` or `/grilling`) into real `ready-for-agent` issues.
 
-Agentic-review issues are advisory dumps: one issue per factory job, each containing several **finding cards** (`Candidate N —` from `improve-codebase-architecture`, or findings from `code-review`). The same problem recurs across jobs, and related problems scatter across issues. This skill collapses that noise.
+Agentic-review issues are advisory dumps: one issue per factory job, each containing several **finding cards** (`Candidate N —` from `improve-codebase-architecture`). (Standards + Spec code-review findings no longer land here — they loop through the `code-review` agent's fix passes in-run, and only their HITL remainder is filed as a `code-review roll-up` issue.) The same problem recurs across jobs, and related problems scatter across issues. This skill collapses that noise.
 
 ## Process
 
@@ -18,7 +18,7 @@ Agentic-review issues are advisory dumps: one issue per factory job, each contai
 gh issue list --repo limered/autodev --label agentic-review --state open --limit 200 --json number,title,body,url
 ```
 
-Each card is a unit. Split every issue body into its finding cards (cards are separated by `---` and headed `**Candidate N —` or a bold finding title). Track for each card: source issue number, title, files touched, problem, proposed solution, recommendation strength.
+Each card is a unit. Split every issue body into its finding cards (cards are separated by `---` and headed `**Candidate N —`). Track for each card: source issue number, title, files touched, problem, proposed solution, recommendation strength.
 
 ### 2. Dedupe
 

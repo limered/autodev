@@ -39,14 +39,14 @@ Follow these steps exactly and in order:
      https://api.github.com/repos/<REPO>/issues/<ISSUE>
    ```
    Read the JSON `title` and `body`. If the response has no `body` (e.g. the issue does not exist or a `"message"` error), print the response and exit with a non-zero status code (fail fast). The issue body IS the spec — read it and explore the repository structure.
-2. **Implement**: Implement the work described by the issue. Use `/tdd` where possible, at pre-agreed seams. Run typechecking regularly and single test files regularly as you work. Do not run the full test suite and do not review the work — a separate test-runner phase runs the tests, and a separate agentic-review phase reviews, after you exit.
+2. **Implement**: Implement the work described by the issue. Use `/tdd` where possible, at pre-agreed seams. Run typechecking regularly and single test files regularly as you work. Do not run the full test suite and do not review the work — a separate test-runner phase runs the tests, a separate code-review loop reviews the implementation, and a separate agentic-review phase reviews the architecture, after you exit.
 3. **Commit**: Use the `/atomic-commit` skill to stage the changes and commit.
 4. **Push**: Push the commit to the BRANCH specified. Create the branch if it does not exist (`git checkout -b BRANCH`). Do not create, open, or POST a pull request — that is the pr-author phase's job, run after you exit.
 5. **Finish**: Print a one-line summary of what was implemented. Then exit immediately. Do not wait for user input, do not ask questions, and do not continue the session.
 
 ## Fix-findings mode
 
-`MODE: fix-findings` selects the fix pass that the orchestrator's quality loop runs after a static-analysis pass. The `FINDINGS:` pointer names the findings file — normally `.factory/findings.json`; if the pointer is absent, use `.factory/findings.json`.
+`MODE: fix-findings` selects the fix pass that the orchestrator's review loop or quality loop runs after a code-review or static-analysis pass. The `FINDINGS:` pointer names the findings file — normally `.factory/code-review-findings.json` for the review loop or `.factory/findings.json` for the quality loop; if the pointer is absent, use `.factory/findings.json`.
 
 The findings file is **appended JSON-lines**: one JSON object per line, each line one iteration block, like:
 
@@ -58,7 +58,7 @@ The findings file is **appended JSON-lines**: one JSON object per line, each lin
       "fix": { "kind": "tool-autofix", "instruction": "..." } } ] }
 ```
 
-Routing was already decided by the static-analysis phase: every `route: afk` finding carries an imperative `fix.instruction` (a command for lint findings, a refactor directive for complexity findings). `route: hitl` findings belong to the human, not to you.
+Routing was already decided by the scanning phase: every `route: afk` finding carries an imperative `fix.instruction` (a command for lint findings, a refactor directive for complexity findings, a concrete change for code-review findings). `route: hitl` findings belong to the human, not to you.
 
 Follow these steps exactly and in order:
 

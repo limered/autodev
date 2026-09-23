@@ -14,5 +14,5 @@ Alongside the triage states, provenance labels record which factory step
 filed an issue:
 
 - `agentic-review` — findings filed by the `agentic-review` agent (one
-  `ready-for-human` issue per review skill, per run). Advisory: these
+  `ready-for-human` architecture issue per run). Advisory: these
   findings never block a PR.
