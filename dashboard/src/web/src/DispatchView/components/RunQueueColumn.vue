@@ -62,7 +62,7 @@ const {
 const nextQueueItem = computed(() => localQueue.value[0] ?? null);
 
 // Single status-inference path for the gate and the rows below: every
-// runId/runStatus branch funnels through queueRowView here, so the badge rows
+// runId/runStatus branch funnels through queueRowView here, so the dots
 // and the start-next gate can never drift apart. The gate still reads the
 // feed (props.queue — server truth, since the shadow can lag mid-drag) while
 // the rows render the shadow (localQueue).
@@ -70,7 +70,7 @@ const inferRowView = (item) => queueRowView(item);
 const hasRunningItem = computed(() => props.queue.some((item) => inferRowView(item).isRunning));
 
 // One row view-model per queue row (Block A): a single queueRowView call
-// drives the status badge text and the Restart gating, instead of the
+// drives the status dot and the Restart gating, instead of the
 // template consulting 3-4 separate helpers per row. The status-* class is
 // mapped inline in the template (`status-${view.status}`), not in the model.
 const rows = computed(() => localQueue.value.map((item) => ({ item, view: inferRowView(item) })));
@@ -140,10 +140,14 @@ async function onStartNext() {
             <span class="missing-issue">no longer eligible</span>
           </template>
         </div>
-        <span class="status-badge" :class="`status-${view.status}`">
-          <span class="status-indicator"></span>
-          {{ view.status }}
-        </span>
+        <span
+          v-if="view.status !== 'queued'"
+          class="status-dot"
+          :class="`status-${view.status}`"
+          :title="view.status"
+          role="img"
+          :aria-label="view.status"
+        ></span>
         <button
           v-if="view.isFailed"
           class="restart-button"
@@ -215,6 +219,7 @@ h2 {
 }
 
 .queue-row {
+  position: relative;
   display: flex;
   align-items: center;
   min-width: 0;
@@ -261,48 +266,30 @@ h2 {
   text-decoration: line-through;
 }
 
-.status-badge {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.4rem;
-  flex-shrink: 0;
-  padding: 0.35rem 0.7rem;
-  border-radius: 999px;
-  font-size: 0.8rem;
-  font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-  background: var(--surface);
-  border: 1px solid currentColor;
-}
-
-.status-indicator {
-  width: 0.5rem;
-  height: 0.5rem;
+.status-dot {
+  position: absolute;
+  top: 0.5rem;
+  right: 0.5rem;
+  width: 0.55rem;
+  height: 0.55rem;
   border-radius: 50%;
-  background: currentColor;
+  background: var(--text-dim);
+  flex-shrink: 0;
 }
 
-.status-queued {
-  color: var(--text-muted);
-}
 .status-starting {
-  color: var(--cyan);
-}
-.status-starting .status-indicator {
+  background: var(--cyan);
   animation: blink 1.4s infinite;
 }
 .status-running {
-  color: var(--green);
-}
-.status-running .status-indicator {
+  background: var(--green);
   animation: blink 1.4s infinite;
 }
 .status-done {
-  color: var(--blue);
+  background: var(--blue);
 }
 .status-failed {
-  color: var(--red);
+  background: var(--red);
 }
 
 .start-next-button {

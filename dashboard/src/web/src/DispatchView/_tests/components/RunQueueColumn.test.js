@@ -6,7 +6,7 @@ import { useQueueFeedShadow } from "../../services/useQueueFeedShadow.js";
 import { useQueueHandlers } from "../../services/useQueueHandlers.js";
 
 // Rendered via SSR (mirroring ErrorBanner's test) so the column's markup
-// contract can be asserted without a DOM: row order, status badges, the
+// contract can be asserted without a DOM: row order, status dots, the
 // restart/remove controls, Start-next gating, banners, and the empty state.
 // The drag-reorder math is covered at the useDragReorder seam; the write
 // actions and their busy/error state live inside the column now (issue #75),
@@ -37,7 +37,7 @@ const queued = (id, rank, title, overrides = {}) => ({
 const startNextButton = (html) => html.match(/<button[^>]*start-next-button[^>]*>/)?.[0] ?? "";
 
 describe("RunQueueColumn", () => {
-  it("renders the queue in order with rank, issue, and status badge per row", async () => {
+  it("renders the queue in order with rank, issue, and a status dot only for non-queued rows", async () => {
     const html = await renderColumn({
       queue: [
         queued("q1", 1, "First task"),
@@ -48,7 +48,8 @@ describe("RunQueueColumn", () => {
     expect(html.indexOf("First task")).toBeLessThan(html.indexOf("Second task"));
     expect(html).toContain("#1");
     expect(html).toContain("#2");
-    expect(html).toContain("status-queued");
+    expect(html).not.toContain("status-queued");
+    expect(html).not.toContain("status-dot\" title=\"queued\"");
     expect(html).toContain("status-running");
   });
 

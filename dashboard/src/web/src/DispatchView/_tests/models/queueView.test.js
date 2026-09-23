@@ -2,7 +2,7 @@ import { describe, it, expect } from "vitest";
 import { queueRowView } from "../../models/queueView.js";
 
 // Row view-model for one queue item: a single queueRowView call derives the
-// badge status text and the running/failed gating the RunQueueColumn template
+// status dot and the running/failed gating the RunQueueColumn template
 // needs per row, so the runId/runStatus branching is table-tested once
 // through this seam instead of through four helpers. The status-* class lives
 // in the template (`status-${status}`), not in this model.
