@@ -45,8 +45,6 @@ builder.Services.AddHttpClient<IGitHubIssuesClient, GitHubIssuesClient>(client =
     }
 });
 
-// The target-catalog fetch reuses the backend PAT over the same GitHub API so
-// sync and claim stay server-side; the per-repo cache keeps them cheap.
 builder.Services.AddHttpClient<ITargetCatalogFetcher, GitHubTargetCatalogFetcher>(client =>
 {
     client.BaseAddress = new Uri("https://api.github.com/");
