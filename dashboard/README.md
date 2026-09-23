@@ -13,7 +13,7 @@ dashboard/
     web/              Vue 3 + Vite SPA
 ```
 
-`render.yaml` lives at the **repo root** (build context rooted at `dashboard/`).
+`render.yaml` lived at the **repo root** when the Blueprint existed (since removed; the service is configured **manually in the Render UI** with Root Directory empty/repo root and Dockerfile Path `dashboard/Dockerfile`, so the repo-root `agents.json` factory catalog ships into the image).
 
 ## What this ticket delivers (scaffolding only)
 

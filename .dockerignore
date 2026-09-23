@@ -1,0 +1,10 @@
+.git/
+node_modules/
+dashboard/src/web/node_modules/
+dashboard/src/web/dist/
+dashboard/src/Api/bin/
+dashboard/src/Api/obj/
+dashboard/src/Api.Tests/bin/
+dashboard/src/Api.Tests/obj/
+.scratch/
+.secrets/
