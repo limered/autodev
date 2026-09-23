@@ -1,3 +1,4 @@
+using Api.Catalogs;
 using Api.Host;
 using Api.Issues;
 using Api.Queue;
@@ -123,6 +124,7 @@ public sealed class PostgresFixture : IAsyncLifetime
         await IssuesSchema.EnsureAsync(_dataSource);
         await QueueSchema.EnsureAsync(_dataSource);
         await HostSchema.EnsureAsync(_dataSource);
+        await TargetCatalogSchema.EnsureAsync(_dataSource);
 
         _hostStore = new HostStore(_dataSource);
     }
@@ -149,7 +151,7 @@ public sealed class PostgresFixture : IAsyncLifetime
     {
         await using var conn = await _dataSource.OpenConnectionAsync();
         await using var cmd = new NpgsqlCommand(
-            "TRUNCATE TABLE queue, issues, runs RESTART IDENTITY CASCADE;", conn);
+            "TRUNCATE TABLE queue, issues, runs, repo_catalogs RESTART IDENTITY CASCADE;", conn);
         await cmd.ExecuteNonQueryAsync();
     }
 

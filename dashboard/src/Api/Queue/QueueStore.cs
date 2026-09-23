@@ -1,3 +1,4 @@
+using Api.Catalogs;
 using Api.Host;
 using Api.Issues;
 using Npgsql;
@@ -15,19 +16,32 @@ public interface IQueueStore
     Task<bool> Delete(long id);
 }
 
-public record ClaimedQueueItem(Guid RunId, string RepoUrl, string Spec);
+/// <summary>
+/// The claim result: where to clone, what to do, and which catalog the run must
+/// use. A null <see cref="CatalogContent"/> with the factory-fallback source means
+/// "no target file": the runner uses the factory catalog.
+/// </summary>
+public record ClaimedQueueItem(
+    Guid RunId,
+    string RepoUrl,
+    string Spec,
+    string? CatalogSha = null,
+    string CatalogSource = CatalogRules.SourceFactoryFallback,
+    string? CatalogContent = null);
 
 public sealed class QueueStore : IQueueStore
 {
     private readonly NpgsqlDataSource _dataSource;
     private readonly IHostStore _hostStore;
     private readonly IIssueResolver _resolver;
+    private readonly ITargetCatalogService? _catalogs;
 
-    public QueueStore(NpgsqlDataSource dataSource, IHostStore hostStore, IIssueResolver resolver)
+    public QueueStore(NpgsqlDataSource dataSource, IHostStore hostStore, IIssueResolver resolver, ITargetCatalogService? catalogs = null)
     {
         _dataSource = dataSource;
         _hostStore = hostStore;
         _resolver = resolver;
+        _catalogs = catalogs;
     }
 
     public async Task<IReadOnlyList<QueueRow>> All()
@@ -76,6 +90,12 @@ public sealed class QueueStore : IQueueStore
     {
         await using var conn = await _dataSource.OpenConnectionAsync();
         await using var tx = await conn.BeginTransactionAsync();
+
+        var rowRepo = await GetRepoForQueueIdAsync(id, conn, tx);
+        if (rowRepo is not null && _catalogs is not null)
+        {
+            await _catalogs.RevalidateAsync(rowRepo);
+        }
 
         // QueueRules.ShouldRequestStart pushed to SQL: the timestamp is set only when
         // none was requested before, so a repeat call keeps the first timestamp.
@@ -157,11 +177,23 @@ public sealed class QueueStore : IQueueStore
 
         if (claimed is not null && payload is not null)
         {
+            var catalog = await ResolveCatalogForIssueAsync(claimed.IssueId, conn, tx);
             await using var updateCmd = new NpgsqlCommand(
                 "UPDATE queue SET run_id = @runId WHERE id = @id;", conn, tx);
             updateCmd.Parameters.AddWithValue("runId", runId);
             updateCmd.Parameters.AddWithValue("id", claimed.Id);
             await updateCmd.ExecuteNonQueryAsync();
+
+            await tx.CommitAsync();
+            await _hostStore.StampLastSeen();
+
+            return new ClaimedQueueItem(
+                runId,
+                payload.RepoUrl,
+                payload.Spec,
+                catalog?.Sha,
+                catalog?.Source ?? CatalogRules.SourceFactoryFallback,
+                catalog?.Content);
         }
 
         await tx.CommitAsync();
@@ -173,6 +205,45 @@ public sealed class QueueStore : IQueueStore
         }
 
         return new ClaimedQueueItem(runId, payload.RepoUrl, payload.Spec);
+    }
+
+    private async Task<TargetCatalog?> ResolveCatalogForIssueAsync(long issueId, NpgsqlConnection conn, NpgsqlTransaction tx)
+    {
+        var repo = await GetRepoForIssueIdAsync(issueId, conn, tx);
+        if (repo is null)
+        {
+            return null;
+        }
+
+        if (_catalogs is null)
+        {
+            return null;
+        }
+
+        return await _catalogs.RevalidateAsync(repo);
+    }
+
+    private static async Task<string?> GetRepoForIssueIdAsync(long issueId, NpgsqlConnection conn, NpgsqlTransaction tx)
+    {
+        await using var cmd = new NpgsqlCommand(
+            "SELECT i.repo FROM issues i WHERE i.github_id = @issueId;", conn, tx);
+        cmd.Parameters.AddWithValue("issueId", issueId);
+        var value = await cmd.ExecuteScalarAsync();
+        return value as string;
+    }
+
+    private static async Task<string?> GetRepoForQueueIdAsync(long queueId, NpgsqlConnection conn, NpgsqlTransaction tx)
+    {
+        await using var cmd = new NpgsqlCommand(
+            """
+            SELECT i.repo
+            FROM queue q
+            LEFT JOIN issues i ON i.github_id = q.issue_id
+            WHERE q.id = @id;
+            """, conn, tx);
+        cmd.Parameters.AddWithValue("id", queueId);
+        var value = await cmd.ExecuteScalarAsync();
+        return value as string;
     }
 
     private static async Task<QueueRuleItem?> TryLockClaimable(long id, NpgsqlConnection conn, NpgsqlTransaction tx)

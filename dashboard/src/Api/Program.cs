@@ -1,5 +1,6 @@
 using System.Net.Http.Headers;
 using System.Text.Json;
+using Api.Catalogs;
 using Api.Host;
 using Api.Issues;
 using Api.Queue;
@@ -29,12 +30,26 @@ builder.Services.AddSingleton<IIssuesStore, IssuesStore>();
 builder.Services.AddSingleton<IQueueStore, QueueStore>();
 builder.Services.AddSingleton<IHostStore, HostStore>();
 builder.Services.AddSingleton<IIssueResolver, IssueResolver>();
+builder.Services.AddSingleton<ITargetCatalogStore, TargetCatalogStore>();
+builder.Services.AddSingleton<ITargetCatalogService, TargetCatalogService>();
 
 var githubPat = ReadGitHubPat(builder.Environment.ContentRootPath);
 builder.Services.AddHttpClient<IGitHubIssuesClient, GitHubIssuesClient>(client =>
 {
     client.BaseAddress = new Uri("https://api.github.com/");
     client.DefaultRequestHeaders.Add("Accept", "application/vnd.github.v3+json");
+    client.DefaultRequestHeaders.Add("User-Agent", "slop-factory-api");
+    if (!string.IsNullOrWhiteSpace(githubPat))
+    {
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", githubPat);
+    }
+});
+
+// The target-catalog fetch reuses the backend PAT over the same GitHub API so
+// sync and claim stay server-side; the per-repo cache keeps them cheap.
+builder.Services.AddHttpClient<ITargetCatalogFetcher, GitHubTargetCatalogFetcher>(client =>
+{
+    client.BaseAddress = new Uri("https://api.github.com/");
     client.DefaultRequestHeaders.Add("User-Agent", "slop-factory-api");
     if (!string.IsNullOrWhiteSpace(githubPat))
     {
@@ -57,6 +72,7 @@ try
     await IssuesSchema.EnsureAsync(dataSource);
     await QueueSchema.EnsureAsync(dataSource);
     await HostSchema.EnsureAsync(dataSource);
+    await TargetCatalogSchema.EnsureAsync(dataSource);
     app.Logger.LogInformation("Postgres connection opened and schema ensured.");
 }
 catch (Exception ex)
@@ -69,6 +85,7 @@ app.MapRunsEndpoints();
 app.MapIssuesEndpoints();
 app.MapQueueEndpoints();
 app.MapHostEndpoints();
+app.MapTargetCatalogEndpoints();
 
 // Serve the built Vue SPA (wwwroot) with SPA fallback to index.html.
 app.UseDefaultFiles();
