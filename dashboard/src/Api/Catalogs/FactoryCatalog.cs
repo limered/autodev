@@ -74,7 +74,7 @@ public static class FactoryCatalog
                 [new WorkflowEntry(ReservedDefaultName, stageIds.Count)]);
         }
 
-        if (workflows.ValueKind != JsonValueKind.Object || workflows.EnumerateObject().Count() == 0)
+        if (workflows.ValueKind != JsonValueKind.Object || !workflows.EnumerateObject().Any())
         {
             throw new FactoryCatalogException(
                 $"Factory catalog invalid at '{path}': 'workflows' map must declare at least one workflow.");
@@ -117,7 +117,7 @@ public static class FactoryCatalog
         return new FactoryWorkflows(defaultName, entries);
     }
 
-    private static IReadOnlyList<string> AssertStageIds(
+    private static List<string> AssertStageIds(
         string path, string workflow, JsonElement value, IReadOnlyList<string> knownIds)
     {
         if (value.ValueKind != JsonValueKind.Array)
