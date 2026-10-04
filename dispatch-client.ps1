@@ -99,7 +99,10 @@ function Invoke-ClaimNext {
         return $response
     }
     catch {
-        # A 204 NoContent (or any error) means nothing to claim.
+        # A 204 (nothing to claim) does not throw; this catch is a real
+        # backend error, so warn instead of failing silently every cadence.
+        $detail = if ($_.ErrorDetails.Message) { $_.ErrorDetails.Message } else { "$_" }
+        Write-Warning "Claim failed: $detail"
         return $null
     }
 }
