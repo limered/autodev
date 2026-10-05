@@ -9,11 +9,11 @@
     . (Join-Path $RepoRoot "lib/Heartbeat.ps1")
   One poll is one VM read: Get-HeartbeatPoll runs a single `bash -c` probe
   inside the guest that prints the VM clock, the /tmp/heartbeat mtime, the
-  current-phase/category markers, and the /tmp/factory-done exit code as
-  key=value lines, then returns the sample, the stall verdict, and completion
-  together. VM reads hide behind an injectable -Executor Seam so Pester
-  drives scripted poll outputs without a live VM. Prod callers omit
-  -Executor.
+  current-phase/category markers, the /tmp/factory-done exit code, and the
+  opencode stream-error count/message as key=value lines, then returns the
+  sample, the stall verdict, and completion together. VM reads hide behind
+  an injectable -Executor Seam so Pester drives scripted poll outputs
+  without a live VM. Prod callers omit -Executor.
 
   Output-progress semantics (ADR 002): the marker is touched only when the
   agent emits a new output line, so a silent agent lets it go stale. A long
@@ -25,16 +25,27 @@
 . (Join-Path $PSScriptRoot "RuntimeEnvironment.ps1")
 . (Join-Path $PSScriptRoot "JobIntake.ps1")
 
-# Single probe run inside the guest. One exec, five key=value lines:
+# Single probe run inside the guest. One exec, seven key=value lines:
 # now=<epoch> hb=<epoch|MISSING> phase=<name|MISSING>
 # category=<name|MISSING> done=<exit|MISSING>
+# err=<stream-error count, 0 when no log> errmsg=<last stream-error line|MISSING>
+# err/errmsg come from the newest opencode log (same discovery as the
+# freeze snapshot) and feed the stream-error retry verdict: a dead model
+# stream fails in minutes instead of riding the full stall threshold,
+# while a hiccup the agent recovers from never fires.
 function Get-HeartbeatPollScript {
     return 'now=$(date +%s); ' +
         'if hb=$(stat -c %Y /tmp/heartbeat 2>/dev/null); then :; else hb=MISSING; fi; ' +
         'if ph=$(cat /tmp/current-phase 2>/dev/null); then :; else ph=MISSING; fi; ' +
         'if cg=$(cat /tmp/current-category 2>/dev/null); then :; else cg=MISSING; fi; ' +
         'if dn=$(cat /tmp/factory-done 2>/dev/null); then :; else dn=MISSING; fi; ' +
-        'printf ''now=%s\nhb=%s\nphase=%s\ncategory=%s\ndone=%s\n'' "$now" "$hb" "$ph" "$cg" "$dn"'
+        'err=0; em=MISSING; ' +
+        'elog=$(ls -t ~/.local/share/opencode/log/*.log 2>/dev/null | head -1); ' +
+        'if [ -n "$elog" ]; then c=$(grep -c "stream error" "$elog" 2>/dev/null); ' +
+        'case "$c" in ""|*[!0-9]*) ;; *) err="$c";; esac; ' +
+        'm=$(grep "stream error" "$elog" 2>/dev/null | tail -n 1 | cut -c1-240); ' +
+        'if [ -n "$m" ]; then em="$m"; fi; fi; ' +
+        'printf ''now=%s\nhb=%s\nphase=%s\ncategory=%s\ndone=%s\nerr=%s\nerrmsg=%s\n'' "$now" "$hb" "$ph" "$cg" "$dn" "$err" "$em"'
 }
 
 # Parses one poll output into a sample. First occurrence per key wins so a
@@ -73,12 +84,25 @@ function ConvertFrom-HeartbeatPollOutput {
         $code = 0
         if ([int]::TryParse($map['done'], [ref]$code)) { $doneExit = $code }
     }
+    # err=/errmsg= are absent on probes predating the stream-error lines:
+    # unknown stays null and the retry verdict skips the poll.
+    $streamErrorCount = $null
+    if ($map.ContainsKey('err') -and $map['err'] -ne 'MISSING' -and $map['err'] -ne '') {
+        $ec = 0
+        if ([long]::TryParse($map['err'], [ref]$ec)) { $streamErrorCount = $ec }
+    }
+    $streamErrorMessage = $null
+    if ($map.ContainsKey('errmsg') -and $map['errmsg'] -ne 'MISSING' -and $map['errmsg'] -ne '') {
+        $streamErrorMessage = $map['errmsg']
+    }
     return [PSCustomObject]@{
-        VmNow           = $vmNow
-        HeartbeatEpoch  = $heartbeatEpoch
-        CurrentPhase    = $currentPhase
-        CurrentCategory = $currentCategory
-        DoneExit        = $doneExit
+        VmNow            = $vmNow
+        HeartbeatEpoch   = $heartbeatEpoch
+        CurrentPhase     = $currentPhase
+        CurrentCategory  = $currentCategory
+        DoneExit         = $doneExit
+        StreamErrorCount = $streamErrorCount
+        StreamErrorMessage = $streamErrorMessage
     }
 }
 
@@ -90,15 +114,17 @@ function Get-HeartbeatPoll {
     $sample = ConvertFrom-HeartbeatPollOutput -Content $output
     $verdict = Test-HeartbeatStall -VmNow $sample.VmNow -HeartbeatEpoch $sample.HeartbeatEpoch -VmStartEpoch $VmStartEpoch -StallThresholdSeconds $StallThresholdSeconds
     return [PSCustomObject]@{
-        VmNow           = $sample.VmNow
-        HeartbeatEpoch  = $sample.HeartbeatEpoch
-        CurrentPhase    = $sample.CurrentPhase
-        CurrentCategory = $sample.CurrentCategory
-        DoneExit        = $sample.DoneExit
-        StaleSeconds    = $verdict.StaleSeconds
-        IsStalled       = $verdict.IsStalled
-        ReferenceEpoch  = $verdict.ReferenceEpoch
-        VmStartEpoch    = $verdict.VmStartEpoch
+        VmNow            = $sample.VmNow
+        HeartbeatEpoch   = $sample.HeartbeatEpoch
+        CurrentPhase     = $sample.CurrentPhase
+        CurrentCategory  = $sample.CurrentCategory
+        DoneExit         = $sample.DoneExit
+        StreamErrorCount = $sample.StreamErrorCount
+        StreamErrorMessage = $sample.StreamErrorMessage
+        StaleSeconds     = $verdict.StaleSeconds
+        IsStalled        = $verdict.IsStalled
+        ReferenceEpoch   = $verdict.ReferenceEpoch
+        VmStartEpoch     = $verdict.VmStartEpoch
     }
 }
 
@@ -114,5 +140,44 @@ function Test-HeartbeatStall {
         IsStalled = ($staleSeconds -gt $StallThresholdSeconds)
         ReferenceEpoch = $referenceEpoch
         VmStartEpoch = $VmStartEpoch
+    }
+}
+
+# Pure retry verdict for opencode stream errors. Any heartbeat advance
+# since the last poll means the agent recovered: re-baseline and never
+# fire, so a transient hiccup (reconnect, blip) is invisible. Errors with
+# no output since get GraceSeconds to recover before the run fails, so a
+# dead stream dies in minutes, not at the full stall threshold. A dropped
+# error count (log rotation) re-baselines instead of firing; a null count
+# (probe predates err=) keeps state and has no opinion.
+function Test-StreamErrorStall {
+    param([long]$VmNow, $ErrorCount, [long]$ErrorBaseline = 0, $ErrorFirstSeenEpoch = $null, [bool]$HeartbeatAdvanced = $false, [int]$GraceSeconds = 180)
+    $baseline = $ErrorBaseline
+    $firstSeen = $ErrorFirstSeenEpoch
+    if ($ErrorCount -eq $null) {
+        # Unknown count: keep state, never fire.
+    }
+    elseif ($HeartbeatAdvanced -or $ErrorCount -le $baseline) {
+        $baseline = $ErrorCount
+        $firstSeen = $null
+    }
+    else {
+        if ($firstSeen -eq $null) { $firstSeen = $VmNow }
+        $waited = $VmNow - $firstSeen
+        if ($waited -ge $GraceSeconds) {
+            $delta = $ErrorCount - $baseline
+            return [PSCustomObject]@{
+                ErrorBaseline = $baseline
+                ErrorFirstSeenEpoch = $firstSeen
+                IsStalled = $true
+                StallReason = "opencode stream error unrecovered for ${waited}s (grace ${GraceSeconds}s; ${delta} error(s) since last agent output)"
+            }
+        }
+    }
+    return [PSCustomObject]@{
+        ErrorBaseline = $baseline
+        ErrorFirstSeenEpoch = $firstSeen
+        IsStalled = $false
+        StallReason = $null
     }
 }

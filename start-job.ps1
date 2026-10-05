@@ -249,7 +249,9 @@ try {
     # 10 min, not the 5 min default: a long silent model completion (no interim
     # output line -> no heartbeat touch) was false-killing legit mid-work agents.
     # A dead model never recovers, so the extra 5 min only costs a rare real stall.
-    & $watchScript -VmName $VmName -Job $vmJob -RunId $RunId -RepoRoot $RepoRoot -StallThresholdSeconds 600 -Executor $watchExec
+    # Stream-error grace 3 min: hiccups the agent recovers from never fire, but
+    # a dead model stream (quota, hung provider call) fails in ~3 min, not 10.
+    & $watchScript -VmName $VmName -Job $vmJob -RunId $RunId -RepoRoot $RepoRoot -StallThresholdSeconds 600 -StreamErrorGraceSeconds 180 -Executor $watchExec
 
     # V1 per-step pull (not streaming): the guest is still up and no terminal
     # event has been sent, so every phase-finished lands before run-finished.

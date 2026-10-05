@@ -256,7 +256,21 @@ function New-ContainerFileExecutor {
                 $first = ("$raw" -split "`r?`n")[0].Trim()
                 if ($first -ne '') { $dn = $first }
             }
-            return ("now=$now`nhb=$hb`nphase=$ph`ncategory=$cg`ndone=$dn`n")
+            $er = 'MISSING'
+            $erPath = Join-Path $dir 'stream-errors'
+            if (Test-Path -LiteralPath $erPath) {
+                $raw = (Get-Content -LiteralPath $erPath -Raw)
+                $first = ("$raw" -split "`r?`n")[0].Trim()
+                if ($first -ne '') { $er = $first }
+            }
+            $em = 'MISSING'
+            $emPath = Join-Path $dir 'stream-error-last'
+            if (Test-Path -LiteralPath $emPath) {
+                $raw = (Get-Content -LiteralPath $emPath -Raw)
+                $first = ("$raw" -split "`r?`n")[0].Trim()
+                if ($first -ne '') { $em = $first }
+            }
+            return ("now=$now`nhb=$hb`nphase=$ph`ncategory=$cg`ndone=$dn`nerr=$er`nerrmsg=$em`n")
         }
         if ($tail[0] -eq 'date') {
             return [DateTimeOffset]::UtcNow.ToUnixTimeSeconds().ToString()

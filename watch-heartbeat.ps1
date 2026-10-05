@@ -14,6 +14,13 @@
   job finishes before the threshold, its output is returned and the script
   exits cleanly.
 
+  The same poll carries the opencode stream-error count from the newest
+  guest log. Errors the agent recovers from (any heartbeat advance)
+  re-baseline silently; errors with no output since get StreamErrorGraceSeconds
+  to recover before this script throws, so a dead model stream fails in
+  minutes instead of riding the full stall threshold, while a transient
+  hiccup never fires.
+
   Before the first heartbeat is written, the staleness clock starts from the
   first VM clock sample taken while watching, so the job is not failed
   immediately.
@@ -32,6 +39,11 @@
 .PARAMETER StallThresholdSeconds
   Heartbeat staleness threshold in seconds. Defaults to 600 (10 minutes).
 
+.PARAMETER StreamErrorGraceSeconds
+  Recovery window in seconds for opencode stream errors. Defaults to 180
+  (3 minutes): long enough for model retries and reconnects, short enough
+  that a dead stream fails well before the staleness threshold.
+
 .PARAMETER PollIntervalSeconds
   Seconds between polls. Defaults to 10.
 #>
@@ -40,6 +52,7 @@ param(
     [Parameter(Mandatory = $true)][string]$VmName,
     [Parameter(Mandatory = $true)][System.Management.Automation.Job]$Job,
     [int]$StallThresholdSeconds = 600,
+    [int]$StreamErrorGraceSeconds = 180,
     [int]$PollIntervalSeconds = 10,
     [string]$RunId,
     [string]$RepoRoot,
@@ -60,6 +73,8 @@ if ($RunId -and $RepoRoot) {
 try {
     $vmStartEpoch = $null
     $lastReportedHeartbeat = $null
+    $errBaseline = 0
+    $errFirstSeenEpoch = $null
 
     while ($Job.State -eq "Running") {
         # One VM read per poll: sample, verdict, and completion together.
@@ -67,12 +82,17 @@ try {
         $vmStartEpoch = $poll.VmStartEpoch
         $heartbeatEpoch = $poll.HeartbeatEpoch
 
+        $hbAdvanced = ($heartbeatEpoch -ne $null -and $heartbeatEpoch -ne $lastReportedHeartbeat)
+        $errVerdict = Test-StreamErrorStall -VmNow $poll.VmNow -ErrorCount $poll.StreamErrorCount -ErrorBaseline $errBaseline -ErrorFirstSeenEpoch $errFirstSeenEpoch -HeartbeatAdvanced $hbAdvanced -GraceSeconds $StreamErrorGraceSeconds
+        $errBaseline = $errVerdict.ErrorBaseline
+        $errFirstSeenEpoch = $errVerdict.ErrorFirstSeenEpoch
+
         # Report a heartbeat only when the marker mtime actually advanced since
         # last reported — an idle agent simply stops reporting. The current-phase
         # and current-category markers are read alongside it and attached so the
         # worker name and the category slot advance through the event stream as
         # the run progresses.
-        if ($RunId -and $heartbeatEpoch -ne $null -and $heartbeatEpoch -ne $lastReportedHeartbeat) {
+        if ($RunId -and $hbAdvanced) {
             $lastReportedHeartbeat = $heartbeatEpoch
             $at = [DateTimeOffset]::FromUnixTimeSeconds($heartbeatEpoch).UtcDateTime.ToString("o")
             $fields = @{ at = $at }
@@ -95,6 +115,14 @@ try {
         }
 
         $staleSeconds = $poll.StaleSeconds
+        if ($errVerdict.IsStalled) {
+            $streamReason = "$($errVerdict.StallReason); job appears stalled"
+            if ($poll.StreamErrorMessage) { $streamReason += "; last error: $($poll.StreamErrorMessage)" }
+            if ($RunId) {
+                Send-FactoryEvent -RunId $RunId -Type "stall-detected" -Fields @{ failureReason = $streamReason }
+            }
+            throw $streamReason
+        }
         if ($poll.IsStalled) {
             $stallReason = "Heartbeat stale for ${staleSeconds}s (threshold ${StallThresholdSeconds}s); job appears stalled"
             if ($RunId) {

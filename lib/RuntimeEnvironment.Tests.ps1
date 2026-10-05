@@ -236,6 +236,8 @@ Describe 'New-ContainerFileExecutor' {
         'static-analysis' | Set-Content (Join-Path $pollDir 'current-phase') -NoNewline
         'quality-loop' | Set-Content (Join-Path $pollDir 'current-category') -NoNewline
         'x' | Set-Content (Join-Path $pollDir 'heartbeat') -NoNewline
+        '2' | Set-Content (Join-Path $pollDir 'stream-errors') -NoNewline
+        'level=ERROR message="stream error"' | Set-Content (Join-Path $pollDir 'stream-error-last') -NoNewline
         $exec = New-ContainerFileExecutor -SignalDir $pollDir
         $out = & $exec @('exec', 'c1', '--', 'bash', '-c', 'now=$(date +%s); echo probe')
         $out | Should -Match 'now=\d+'
@@ -243,6 +245,8 @@ Describe 'New-ContainerFileExecutor' {
         $out | Should -Match 'phase=static-analysis'
         $out | Should -Match 'category=quality-loop'
         $out | Should -Match 'done=MISSING'
+        $out | Should -Match 'err=2'
+        $out | Should -Match 'errmsg=level=ERROR message="stream error"'
         Remove-Item -Recurse -Force $pollDir -ErrorAction SilentlyContinue
     }
     It 'maps a missing poll marker to MISSING' {

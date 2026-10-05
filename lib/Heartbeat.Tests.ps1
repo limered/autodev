@@ -64,6 +64,34 @@ Describe 'Get-HeartbeatPoll' {
         $fake = { param($a) return "hb=990`nphase=x`ncategory=y`ndone=MISSING`n" }
         { Get-HeartbeatPoll -Name 'v' -Executor $fake } | Should -Throw
     }
+    It 'passes the stream error count and message through' {
+        $fake = { param($a) return "now=1000`nhb=990`nphase=x`ncategory=y`ndone=MISSING`nerr=2`nerrmsg=level=ERROR message=""stream error""`n" }
+        $p = Get-HeartbeatPoll -Name 'v' -Executor $fake -StallThresholdSeconds 300
+        $p.StreamErrorCount | Should -Be 2
+        $p.StreamErrorMessage | Should -Match 'stream error'
+    }
+    It 'maps a missing err probe to unknown, never stalled-by-error' {
+        $fake = { param($a) return "now=1000`nhb=990`nphase=x`ncategory=y`ndone=MISSING`n" }
+        $p = Get-HeartbeatPoll -Name 'v' -Executor $fake -StallThresholdSeconds 300
+        $p.StreamErrorCount | Should -Be $null
+        $p.StreamErrorMessage | Should -Be $null
+    }
+    It 'maps a non-numeric err count to unknown' {
+        $fake = { param($a) return "now=1000`nhb=990`nphase=x`ncategory=y`ndone=MISSING`nerr=oops`nerrmsg=MISSING`n" }
+        $p = Get-HeartbeatPoll -Name 'v' -Executor $fake -StallThresholdSeconds 300
+        $p.StreamErrorCount | Should -Be $null
+        $p.StreamErrorMessage | Should -Be $null
+    }
+}
+
+Describe 'Get-HeartbeatPollScript' {
+    It 'probes the opencode log for stream errors in the same exec' {
+        $script = Get-HeartbeatPollScript
+        $script | Should -Match 'stream error'
+        $script | Should -Match 'err=%s'
+        $script | Should -Match 'errmsg=%s'
+        $script | Should -Match '\.local/share/opencode/log/'
+    }
 }
 
 Describe 'Test-HeartbeatStall' {
@@ -81,5 +109,46 @@ Describe 'Test-HeartbeatStall' {
         $r1.IsStalled | Should -Be $false
         $r2 = Test-HeartbeatStall -VmNow 1400 -HeartbeatEpoch $null -VmStartEpoch $r1.VmStartEpoch -StallThresholdSeconds 300
         $r2.IsStalled | Should -Be $true
+    }
+}
+
+Describe 'Test-StreamErrorStall' {
+    It 'has no opinion when the probe predates err=' {
+        $r = Test-StreamErrorStall -VmNow 1000 -ErrorCount $null -ErrorBaseline 0 -HeartbeatAdvanced $false -GraceSeconds 180
+        $r.IsStalled | Should -Be $false
+        $r.ErrorBaseline | Should -Be 0
+        $r.ErrorFirstSeenEpoch | Should -Be $null
+    }
+    It 're-baselines a hiccup the agent recovers from' {
+        $r = Test-StreamErrorStall -VmNow 1000 -ErrorCount 3 -ErrorBaseline 0 -HeartbeatAdvanced $true -GraceSeconds 180
+        $r.IsStalled | Should -Be $false
+        $r.ErrorBaseline | Should -Be 3
+        $r.ErrorFirstSeenEpoch | Should -Be $null
+    }
+    It 'starts the grace window on the first unrecovered error' {
+        $r = Test-StreamErrorStall -VmNow 1000 -ErrorCount 1 -ErrorBaseline 0 -HeartbeatAdvanced $false -GraceSeconds 180
+        $r.IsStalled | Should -Be $false
+        $r.ErrorFirstSeenEpoch | Should -Be 1000
+    }
+    It 'stays quiet inside the grace window' {
+        $r = Test-StreamErrorStall -VmNow 1100 -ErrorCount 2 -ErrorBaseline 0 -ErrorFirstSeenEpoch 1000 -HeartbeatAdvanced $false -GraceSeconds 180
+        $r.IsStalled | Should -Be $false
+        $r.ErrorFirstSeenEpoch | Should -Be 1000
+    }
+    It 'fails past the grace window with the error delta in the reason' {
+        $r = Test-StreamErrorStall -VmNow 1180 -ErrorCount 2 -ErrorBaseline 0 -ErrorFirstSeenEpoch 1000 -HeartbeatAdvanced $false -GraceSeconds 180
+        $r.IsStalled | Should -Be $true
+        $r.StallReason | Should -Match 'unrecovered for 180s'
+        $r.StallReason | Should -Match '2 error\(s\)'
+    }
+    It 're-baselines on log rotation instead of firing' {
+        $r = Test-StreamErrorStall -VmNow 2000 -ErrorCount 1 -ErrorBaseline 5 -ErrorFirstSeenEpoch 1000 -HeartbeatAdvanced $false -GraceSeconds 180
+        $r.IsStalled | Should -Be $false
+        $r.ErrorBaseline | Should -Be 1
+        $r.ErrorFirstSeenEpoch | Should -Be $null
+    }
+    It 'never fires when the count matches the baseline' {
+        $r = Test-StreamErrorStall -VmNow 9999 -ErrorCount 0 -ErrorBaseline 0 -HeartbeatAdvanced $false -GraceSeconds 180
+        $r.IsStalled | Should -Be $false
     }
 }
