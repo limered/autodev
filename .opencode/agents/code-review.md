@@ -1,7 +1,7 @@
 ---
 description: Runs one review-loop iteration - /code-review on the BASE...HEAD diff against the issue, classifies residual findings AFK/HITL, and emits findings plus the loop sentinel. Writes the HITL subset to the tracker as one ready-for-human roll-up issue via the GitHub PAT. Never reasons about refactors beyond an imperative fix instruction and does not create PRs.
 mode: primary
-model: opencode-go/glm-5.3
+model: opencode-go/muse-spark-1.3-contributor
 permission:
   bash: allow
   edit: allow

@@ -1,7 +1,7 @@
 ---
 description: Runs the pre-PR architecture review skill headless - improve-codebase-architecture explore-only - and files its candidates as one ready-for-human tracker issue via the GitHub PAT. Read-only on the repo; never fixes, never loops, never blocks the PR.
 mode: primary
-model: opencode-go/glm-5.3
+model: opencode-go/muse-spark-1.3-contributor
 permission:
   bash: allow
 ---
