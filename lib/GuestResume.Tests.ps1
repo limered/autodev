@@ -2,20 +2,33 @@
 BeforeAll {
     $script:GuestScript = Join-Path $PSScriptRoot '..' 'infrastructure' 'multipass' 'test-feature-builder.sh'
     $script:GuestText = Get-Content -LiteralPath $script:GuestScript -Raw
-    $script:StageIds = @((Get-Content -LiteralPath (Join-Path $PSScriptRoot '..' 'agents.json') -Raw | ConvertFrom-Json).stages.PSObject.Properties | ForEach-Object { $_.Name })
 }
 
-Describe 'Guest resume contract' {
+Describe 'Guest frozen workflow contract' {
     It 'is syntactically valid bash' {
         $out = & bash -n $script:GuestScript 2>&1
         $LASTEXITCODE | Should -Be 0
+    }
+    It 'audits its frozen stage list from the host launcher' {
+        $script:GuestText | Should -Match 'WORKFLOW_STAGES_B64'
+        $script:GuestText | Should -Match 'FROZEN_STAGES='
+        $script:GuestText | Should -Match 'for _idx in "\$\{!FROZEN_STAGES\[@\]\}"'
+        $script:GuestText | Should -Not -Match 'phase [0-9]/7'
+    }
+    It 'fails fast on a missing or empty frozen list instead of falling back' {
+        ($script:GuestText | Select-String -Pattern 'stale-workflow' -AllMatches).Count | Should -BeGreaterThan 0
+        $script:GuestText | Should -Match 'refusing to fall back to any default pipeline'
+        $script:GuestText | Should -Match 'empty stage id'
+    }
+    It 'fails fast on a stage id it has no runner for' {
+        $script:GuestText | Should -Match "unknown stage id at start"
     }
     It 'takes the resume branch and stage as guest environment inputs' {
         $script:GuestText | Should -Match 'RESUME_BRANCH='
         $script:GuestText | Should -Match 'RESUME_STAGE='
     }
     It 'skips implement on a present branch instead of rebuilding it' {
-        $script:GuestText | Should -Match 'Skipping phase 1/7 \(implement\)'
+        $script:GuestText | Should -Match 'Skipping implement: resumed branch already holds the implementation'
     }
     It 'falls back to the full pipeline when the branch is absent or not ahead' {
         $script:GuestText | Should -Match 'absent on remote; falling back to full pipeline'
@@ -25,62 +38,51 @@ Describe 'Guest resume contract' {
         $script:GuestText | Should -Match 'checked out existing branch'
         $script:GuestText | Should -Match 'rev-parse HEAD'
     }
-    It 'gates every post-implement phase behind the resume entry point' {
-        foreach ($phase in @('phase 2/7', 'phase 3/7', 'phase 4/7', 'phase 5/7', 'phase 6/7', 'phase 7/7')) {
-            $script:GuestText | Should -Match ([regex]::Escape($phase))
-        }
-        $script:GuestText | Should -Match 'resume_runs_phase 1'
-        $script:GuestText | Should -Match 'resume_runs_phase 2'
-        $script:GuestText | Should -Match 'resume_runs_phase 3'
-        $script:GuestText | Should -Match 'resume_runs_phase 4'
-        $script:GuestText | Should -Match 'resume_runs_phase 5'
-        $script:GuestText | Should -Match 'resume_runs_phase 6'
+    It 'gates every pre-resume stage behind the resume entry point' {
+        $script:GuestText | Should -Match 'stage_no.*-lt.*RESUME_IDX'
+        $script:GuestText | Should -Match 'resume starts at ..RESUME_STAGE.'
     }
-    It 'derives the resume entry point from the catalog order instead of a hardcoded stage list' {
-        $script:GuestText | Should -Match 'STAGE_IDS='
+    It 'derives the resume entry point from the frozen workflow order instead of a hardcoded stage list' {
         $script:GuestText | Should -Match 'resolve_resume_stage\(\)'
         $script:GuestText | Should -Match 'stage_index\(\)'
         $script:GuestText | Should -Match 'RESUME_IDX=\$\(\(RESUME_POS \+ 1\)\)'
         $script:GuestText | Should -Not -Match 'case "\$RESUME_STAGE" in'
     }
-    It 'keeps pre-rename labels as catalog-conditional aliases' {
+    It 'keeps pre-rename labels as frozen-list-conditional aliases' {
         $script:GuestText | Should -Match 'quality-loop\) _alias="static-loop"'
         $script:GuestText | Should -Match 'agentic-review\) _alias="architecture-review"'
     }
 }
 
-Describe 'Guest resume stage resolution' {
+Describe 'Guest frozen stage resolution' {
     BeforeAll {
         $script:GuestScript = Join-Path $PSScriptRoot '..' 'infrastructure' 'multipass' 'test-feature-builder.sh'
-        $script:GuestFuncs = (& bash -c "sed -n '/^load_category_specs() {/,/^}/p;/^stage_index() {/,/^}/p;/^resolve_resume_stage() {/,/^}/p' '$script:GuestScript'") -join "`n"
+        $script:GuestFuncs = (& bash -c "sed -n '/^stage_index() {/,/^}/p;/^resolve_resume_stage() {/,/^}/p' '$script:GuestScript'") -join "`n"
         function script:Invoke-ResumeHarness {
-            param([string]$CatalogJson)
-            $catalog = Join-Path $TestDrive 'agents.json'
-            Set-Content -LiteralPath $catalog -Value $CatalogJson -NoNewline
+            param([string]$FrozenStages)
+            # The extraction above stays file-free; FROZEN_STAGES is seeded
+            # into the harness shell from the frozen list text.
+            $frozen = Join-Path $TestDrive 'frozen.txt'
+            Set-Content -LiteralPath $frozen -Value $FrozenStages -NoNewline
             $harness = Join-Path $TestDrive 'resolve.sh'
-        $body = @(
-            $script:GuestFuncs
-            "AGENTS_JSON='$catalog'"
-            'load_category_specs'
-            'STAGE_IDS=()'
-            'for _resume_spec in "${CATEGORY_SPECS[@]}"; do'
-            '  STAGE_IDS+=("${_resume_spec%%|*}")'
-            'done'
-            'echo "order=${STAGE_IDS[*]}"'
-            'for s in alpha beta gamma; do'
-            '  echo "resolve:$s=$(resolve_resume_stage "$s" 2>/dev/null || echo UNRESOLVED)"'
-            '  echo "index:$s=$(stage_index "$s" 2>/dev/null || echo UNRESOLVED)"'
-            'done'
-            'echo "alias-quality=$(resolve_resume_stage quality-loop 2>/dev/null || echo UNRESOLVED)"'
-            'echo "alias-agentic=$(resolve_resume_stage agentic-review 2>/dev/null || echo UNRESOLVED)"'
-            'echo "unknown=$(resolve_resume_stage ghost 2>/dev/null || echo UNRESOLVED)"'
-        ) -join "`n"
-        Set-Content -LiteralPath $harness -Value $body -NoNewline
-        return (& bash $harness)
+            $resolveLine = 'echo "resolve:$s=$(resolve_resume_stage "$s" 2>/dev/null || echo UNRESOLVED)"'
+            $indexLine = 'echo "index:$s=$(stage_index "$s" 2>/dev/null || echo UNRESOLVED)"'
+            $harnessBody = $script:GuestFuncs + "`n" +
+                "IFS=',' read -r -a FROZEN_STAGES <<< ``cat '$frozen'```n" +
+                'echo "order=${FROZEN_STAGES[*]}"' + "`n" +
+                'for s in alpha beta gamma; do' + "`n" +
+                "$resolveLine`n" +
+                "$indexLine`n" +
+                'done' + "`n" +
+                'echo "alias-quality=$(resolve_resume_stage quality-loop 2>/dev/null || echo UNRESOLVED)"' + "`n" +
+                'echo "alias-agentic=$(resolve_resume_stage agentic-review 2>/dev/null || echo UNRESOLVED)"' + "`n" +
+                'echo "unknown=$(resolve_resume_stage ghost 2>/dev/null || echo UNRESOLVED)"'
+            Set-Content -LiteralPath $harness -Value $harnessBody -NoNewline
+            return (& bash $harness)
         }
     }
-    It 'resolves a custom catalog in file order with unknowns falling back' {
-        $out = Invoke-ResumeHarness '{"stages":{"alpha":{"type":"sequential","agents":["a"]},"beta":{"type":"loop","agents":["b"],"iterations":2},"gamma":{"type":"sequential","agents":["c"]}}}'
+    It 'resolves a picked list in workflow order with unknowns unresolved' {
+        $out = Invoke-ResumeHarness 'alpha,beta,gamma'
         $out | Should -Contain 'order=alpha beta gamma'
         $out | Should -Contain 'resolve:alpha=alpha'
         $out | Should -Contain 'index:alpha=0'
@@ -92,13 +94,14 @@ Describe 'Guest resume stage resolution' {
         $out | Should -Contain 'alias-agentic=UNRESOLVED'
         $out | Should -Contain 'unknown=UNRESOLVED'
     }
-    It 'resolves legacy labels only when the catalog holds the renamed stage' {
-        $out = Invoke-ResumeHarness '{"stages":{"alpha":{"type":"sequential","agents":["a"]},"static-loop":{"type":"loop","agents":["b"],"iterations":2},"architecture-review":{"type":"sequential","agents":["c"]}}}'
+    It 'resolves legacy labels only when the frozen list holds the renamed stage' {
+        $out = Invoke-ResumeHarness 'alpha,static-loop,architecture-review'
+        $out | Should -Contain 'order=alpha static-loop architecture-review'
         $out | Should -Contain 'alias-quality=static-loop'
         $out | Should -Contain 'alias-agentic=architecture-review'
     }
-    It 'prefers the exact catalog match over the alias' {
-        $out = Invoke-ResumeHarness '{"stages":{"quality-loop":{"type":"loop","agents":["b"],"iterations":2},"static-loop":{"type":"loop","agents":["c"],"iterations":2},"alpha":{"type":"sequential","agents":["a"]}}}'
+    It 'prefers the exact frozen match over the alias' {
+        $out = Invoke-ResumeHarness 'quality-loop,static-loop,alpha'
         $out | Should -Contain 'alias-quality=quality-loop'
     }
 }
@@ -112,8 +115,10 @@ Describe 'Guest seeded category names' {
         $script:GuestText | Should -Match 'run_agent_phase static-analysis "\$QUALITY_SPEC" "\$i" "static-loop"'
         $script:GuestText | Should -Match 'run_agent_phase feature-builder "\$FIX_SPEC" "\$\(\(i\+3\)\)" "static-loop"'
     }
-    It 'labels the quality loop phase with the seeded static-loop slot' {
-        $script:GuestText | Should -Match 'Running phase 4/7 \(static-loop\)'
-        $script:GuestText | Should -Match 'Skipping phase 4/7 \(static-loop\)'
+    It 'dispatches the loops from their stage arms below the slot naming' {
+        $script:GuestText | Should -Match 'review-loop\)'
+        $script:GuestText | Should -Match 'static-loop\)'
+        $script:GuestText | Should -Match 'run_review_loop'
+        $script:GuestText | Should -Match 'run_quality_loop'
     }
 }
