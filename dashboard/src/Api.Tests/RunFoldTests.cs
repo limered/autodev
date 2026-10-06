@@ -340,8 +340,7 @@ public class RunFoldTests
     [Fact]
     public void Heartbeat_ForForeignCategory_WithoutSeededStages_StillApplies()
     {
-        // Runs seeded before the stage list travelled on run-started carry
-        // none, so nothing can be attributed to a workflow there.
+        // A run whose run-started carried no stage list has nothing to attribute reports against.
         var current = State("running", updatedAt: T0, lastHeartbeatAt: T0);
 
         var next = RunFold.Apply(current, new HeartbeatEvent("code-review", "quality-loop") { At = T1, RunId = RunId });
@@ -830,8 +829,7 @@ public class RunFoldTests
     [Fact]
     public void PhaseFinished_WithoutCategory_WithSeededStages_Stores()
     {
-        // Unattributable reports (steps sent before categories, or unmapped
-        // workers) are not stage reports and never read as foreign.
+        // Unattributable steps carry no category, cannot name a stage, and never read as foreign.
         var current = State("running", updatedAt: T0, stages: ClaimedWorkflowStages);
 
         var next = RunFold.Apply(current, new PhaseFinishedEvent(

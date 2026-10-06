@@ -21,8 +21,7 @@ public static class RunFold
         // - run-started: creation, applies only when there is no run yet.
         // - heartbeat: freshness orders on LastHeartbeatAt (it never bumps UpdatedAt,
         //   so IsStale does not apply); exempt from the terminal rule like freeze/pr.
-        //   A heartbeat naming a stage the claimed workflow does not seed is
-        //   ignored - a dropped report must not twist the seeded lights.
+        //   A heartbeat for an unseeded stage is ignored.
         // - freeze-captured, pr-verified: IsStale only, exempt from the terminal rule
         //   (post-terminal bookkeeping must still land).
         // - phase-finished: a step naming an unseeded stage is dropped.
@@ -69,12 +68,7 @@ public static class RunFold
         current is null || (current.LastHeartbeatAt.HasValue && at <= current.LastHeartbeatAt.Value);
 
     /// <summary>
-    /// True when a report names a stage the claimed workflow does not seed: the
-    /// run carries a seeded stage list (run-started stores the pick's stages as
-    /// given), the report names one by its category, and no seeded stage lights
-    /// under that category. Stages without a seeded category land in the
-    /// uncategorized bucket and match nothing, and runs whose run-started
-    /// carried no stage list filter nothing.
+    /// True when a report names a stage the claimed workflow does not seed.
     /// </summary>
     private static bool NamesForeignStage(RunState current, string? category) =>
         current.Stages is { Count: > 0 } &&
