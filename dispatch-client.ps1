@@ -118,8 +118,8 @@ function Start-ClaimedJob {
         throw "start-job.ps1 not found at $startJob"
     }
 
-    & $startJob -RunId $Claim.runId -RepoUrl $Claim.repoUrl -Spec $Claim.spec -RepoRoot $RepoRoot -Isolator $Isolator `
-        -CatalogJson "$($Claim.catalogContent)" -CatalogSha "$($Claim.catalogSha)"
+    $jobArgs = Get-ClaimedJobArgs -Claim $Claim -RepoRoot $RepoRoot -Isolator $Isolator
+    & $startJob @jobArgs
     if ($LASTEXITCODE -ne 0) {
         throw "start-job.ps1 failed with exit code $LASTEXITCODE"
     }

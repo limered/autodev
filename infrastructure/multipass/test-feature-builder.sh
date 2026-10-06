@@ -96,6 +96,59 @@ REPO_HTTPS="https://x-access-token:${PAT}@github.com/${REPO}.git"
 git clone --depth 1 "$REPO_HTTPS" "$WORK_DIR"
 pass "Shallow-cloned https://github.com/${REPO}.git"
 
+# Same-branch resume: RESUME_BRANCH + RESUME_STAGE arrive as guest
+# environment from the Runner passthrough. When both name a remote branch that
+# exists and is ahead of base, check it out, log the cloned commit for
+# auditability (a fixup pushed too late is obvious), and skip implement —
+# phases below jump to the start of the enclosing loop. When the branch is
+# absent or not ahead, fall back to the normal full pipeline so implement
+# crashes stay restartable through the same button.
+RESUME_BRANCH="${RESUME_BRANCH:-}"
+RESUME_STAGE="${RESUME_STAGE:-}"
+RESUME_ACTIVE=0
+RESUME_IDX=0
+if [[ -n "$RESUME_BRANCH" && -n "$RESUME_STAGE" ]]; then
+  case "$RESUME_STAGE" in
+    implementation) RESUME_IDX=1 ;;
+    review-loop) RESUME_IDX=2 ;;
+    static-loop|quality-loop) RESUME_IDX=3 ;;
+    test-rerun) RESUME_IDX=4 ;;
+    architecture-review|agentic-review) RESUME_IDX=5 ;;
+    pr-author) RESUME_IDX=6 ;;
+    *) RESUME_IDX=0 ;;
+  esac
+  if [[ "$RESUME_IDX" -eq 0 ]]; then
+    echo "resume: unknown resume stage '$RESUME_STAGE'; falling back to full pipeline"
+  elif git ls-remote --heads "$REPO_HTTPS" "$RESUME_BRANCH" | grep -q "$RESUME_BRANCH"; then
+    git -C "$WORK_DIR" fetch origin "$RESUME_BRANCH:$RESUME_BRANCH"
+    git -C "$WORK_DIR" checkout "$RESUME_BRANCH"
+    RESUME_COMMIT="$(git -C "$WORK_DIR" rev-parse HEAD)"
+    echo "resume: checked out existing branch $RESUME_BRANCH at $RESUME_COMMIT (resume from $RESUME_STAGE)"
+    RESUME_BASE="${BASE:-main}"
+    if ! RESUME_AHEAD="$(git -C "$WORK_DIR" rev-list --count "origin/$RESUME_BASE..HEAD" 2>/dev/null)"; then
+      echo "resume: cannot count commits ahead of origin/$RESUME_BASE; falling back to full pipeline"
+      RESUME_ACTIVE=0
+    elif [[ "$RESUME_AHEAD" -eq 0 ]]; then
+      echo "resume: branch $RESUME_BRANCH is not ahead of origin/$RESUME_BASE; falling back to full pipeline"
+      RESUME_ACTIVE=0
+    else
+      echo "resume: HEAD is $RESUME_AHEAD commit(s) ahead of origin/$RESUME_BASE; skipping implement"
+      RESUME_ACTIVE=1
+    fi
+  else
+    echo "resume: branch $RESUME_BRANCH absent on remote; falling back to full pipeline"
+  fi
+fi
+
+# Reports whether the numbered phase runs under the active resume.
+# Phase numbers: 0 implement, 1 test, 2 review-loop, 3 quality-loop,
+# 4 test-rerun, 5 agentic-review, 6 pr-author. Full pipeline runs all.
+resume_runs_phase() {
+  local phase="$1"
+  if [[ "$RESUME_ACTIVE" -ne 1 ]]; then return 0; fi
+  [[ "$RESUME_IDX" -le "$phase" ]]
+}
+
 # 7. Copy the .opencode configuration into the cloned project repo.
 [[ -d "$OPENCODE_DIR" ]] || fail ".opencode directory not found at $OPENCODE_DIR"
 cp -r "$OPENCODE_DIR" "$WORK_DIR/"
@@ -313,18 +366,26 @@ run_quality_loop() {
   return 0
 }
 
+if resume_runs_phase 0; then
 echo "Running phase 1/7 (implement): OPENCODE_API_KEY=*** $OPENCODE_BIN run --agent feature-builder --auto --format json \"...\""
 if ! run_agent_phase feature-builder "$IMPL_SPEC" 0; then
   fail "implement phase failed: opencode run exited non-zero (see log above)"
 fi
 pass "implement phase completed (feature-builder exited 0)"
+else
+  echo "Skipping phase 1/7 (implement): resumed branch already holds the implementation"
+fi
 
 # 10. Gate between phases: the PR phase runs only if the implement agent exited
 #     cleanly AND the branch has commits ahead of base. A clean-but-empty
 #     implement (exit 0, nothing committed) stops here, before the PR phase,
 #     and is recorded as a failed run - fail() exits 1, which fails the
 #     multipass exec on the host, which marks the run failed (run-failed
-#     event, freeze snapshot, VM teardown).
+#     event, freeze snapshot, VM teardown). A resumed run already verified
+#     ahead-of-base at checkout, so it skips this gate.
+if [[ "$RESUME_ACTIVE" -eq 1 ]]; then
+  pass "gate skipped: resume already verified HEAD ahead of base"
+else
 if ! AHEAD_COUNT=$(git rev-list --count "$BASE_REF..HEAD" 2>/dev/null); then
   fail "gate: cannot count commits ahead of $BASE_REF - is the base ref present in the clone?"
 fi
@@ -332,6 +393,7 @@ if [[ "$AHEAD_COUNT" -eq 0 ]]; then
   fail "clean-but-empty implement: HEAD has no commits ahead of $BASE_REF; stopping before the PR phase"
 fi
 pass "gate passed: HEAD is $AHEAD_COUNT commit(s) ahead of $BASE_REF"
+fi
 
 # 11. -----------------------------------------------------------------------
 #     Phase 2 - test: run the test-runner agent in the same clone.
@@ -348,10 +410,14 @@ BASE: $BASE
 REPO: $REPO"
 
 echo "Running phase 2/7 (test): OPENCODE_API_KEY=*** $OPENCODE_BIN run --agent test-runner --auto --format json \"...\""
+if resume_runs_phase 1; then
 if ! run_agent_phase test-runner "$TEST_SPEC" 0; then
   fail "test phase failed: a declared harness is red or no harness was declared (see log above)"
 fi
 pass "test phase completed (test-runner exited 0, every harness green)"
+else
+  echo "Skipping phase 2/7 (test): resume starts after implementation"
+fi
 
 # 12. -----------------------------------------------------------------------
 #     Phase 3 - review loop: up to 3 iterations of code-review ->
@@ -385,8 +451,12 @@ BASE: $BASE
 REPO: $REPO"
 
 echo "Running phase 3/7 (review-loop): OPENCODE_API_KEY=*** $OPENCODE_BIN run --agent code-review --auto --format json \"...\" (then --agent feature-builder in fix-findings mode while status is fixed)"
+if resume_runs_phase 2; then
 run_review_loop
 pass "review loop completed (status clean/hitl-only, or 3-iteration cap exhausted - never a red gate)"
+else
+  echo "Skipping phase 3/7 (review-loop): resume starts after the review loop"
+fi
 
 # 13. -----------------------------------------------------------------------
 #     Phase 4 - quality loop: up to 3 iterations of static-analysis ->
@@ -417,8 +487,12 @@ BASE: $BASE
 REPO: $REPO"
 
 echo "Running phase 4/7 (quality-loop): OPENCODE_API_KEY=*** $OPENCODE_BIN run --agent static-analysis --auto --format json \"...\" (then --agent feature-builder in fix-findings mode while status is fixed)"
+if resume_runs_phase 3; then
 run_quality_loop
 pass "quality loop completed (status clean/hitl-only, or 3-iteration cap exhausted - never a red gate)"
+else
+  echo "Skipping phase 4/7 (quality-loop): resume starts after the quality loop"
+fi
 
 # 14. -----------------------------------------------------------------------
 #     Phase 5 - test (re-run): run the test-runner agent again in the same
@@ -430,10 +504,14 @@ pass "quality loop completed (status clean/hitl-only, or 3-iteration cap exhaust
 #     re-run lands as its own row instead of overwriting the phase-2 step.
 #     -----------------------------------------------------------------------
 echo "Running phase 5/7 (test re-run): OPENCODE_API_KEY=*** $OPENCODE_BIN run --agent test-runner --auto --format json \"...\""
+if resume_runs_phase 4; then
 if ! run_agent_phase test-runner "$TEST_SPEC" 1; then
   fail "test re-run phase failed: a declared harness is red after the review/quality loops (see log above)"
 fi
 pass "test re-run phase completed (test-runner exited 0, every harness still green)"
+else
+  echo "Skipping phase 5/7 (test re-run): resume starts after the test re-run"
+fi
 
 # 15. Phase 6 - agentic-review: run the agentic-review agent in the same clone,
 #     after the review and quality loops (and the test re-run) and before the
@@ -449,10 +527,14 @@ BASE: $BASE
 REPO: $REPO"
 
 echo "Running phase 6/7 (agentic-review): OPENCODE_API_KEY=*** $OPENCODE_BIN run --agent agentic-review --auto --format json \"...\""
+if resume_runs_phase 5; then
 if ! run_agent_phase agentic-review "$AR_SPEC" 0; then
   fail "agentic-review phase failed: opencode run exited non-zero (operational failure, see log above)"
 fi
 pass "agentic-review phase completed (agentic-review exited 0)"
+else
+  echo "Skipping phase 6/7 (agentic-review): resume starts after the agentic review"
+fi
 
 # 16. Phase 7 - PR: run the pr-author agent as a distinct opencode run in the
 #     same clone. It authors the PR title and body from the branch diff and
@@ -462,7 +544,11 @@ BASE: $BASE
 REPO: $REPO"
 
 echo "Running phase 7/7 (PR): OPENCODE_API_KEY=*** $OPENCODE_BIN run --agent pr-author --auto --format json \"...\""
+if resume_runs_phase 6; then
 if ! run_agent_phase pr-author "$PR_SPEC" 0; then
   fail "pr phase failed: opencode run exited non-zero (see log above)"
 fi
 pass "pr phase completed (pr-author exited 0, PR created)"
+else
+  echo "Skipping phase 7/7 (PR): resume starts after the PR phase"
+fi

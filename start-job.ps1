@@ -47,6 +47,19 @@
 
 .PARAMETER CatalogSha
   Claimed target-repo catalog sha for observability on run-started.
+
+.PARAMETER ResumeBranch
+  Existing branch to resume on (same-branch restart). When set with
+  ResumeStage, the guest fetches and checks out this branch instead of
+  running implement, and run-started links the run to ParentRunId.
+
+.PARAMETER ResumeStage
+  Pipeline stage name to resume from (start of the enclosing loop where the
+  failure happened). Forwarded to the guest as RESUME_STAGE.
+
+.PARAMETER ParentRunId
+  Failed run this job retries. Sent on run-started so History links the
+  new run to the old one; the failed run itself is never mutated.
 #>
 [CmdletBinding()]
 param(
@@ -61,6 +74,9 @@ param(
     [string]$Image = 'slop-factory-runner:latest',
     [string]$CatalogJson = '',
     [string]$CatalogSha = '',
+    [string]$ResumeBranch = '',
+    [string]$ResumeStage = '',
+    [string]$ParentRunId = '',
     [switch]$KeepVmOnFailure
 )
 
@@ -104,7 +120,7 @@ $stages = @(ConvertTo-SeededStages -Config $seedConfig -ModelMap $agentModels)
 # Fire-and-forget dashboard reporting (no-op if .secrets/ config is absent).
 . (Join-Path $RepoRoot "factory-report.ps1")
 Initialize-FactoryReport -RepoRoot $RepoRoot
-Send-FactoryEvent -RunId $RunId -Type "run-started" -Fields @{
+$runStartedFields = @{
     repo          = $Repo
     branch        = $Branch
     spec          = $Spec
@@ -113,6 +129,9 @@ Send-FactoryEvent -RunId $RunId -Type "run-started" -Fields @{
     catalogSource = $catalogSource
     catalogSha    = $CatalogSha
 }
+if (-not [string]::IsNullOrWhiteSpace($ParentRunId)) { $runStartedFields['parentRunId'] = $ParentRunId }
+if (-not [string]::IsNullOrWhiteSpace($ResumeStage)) { $runStartedFields['resumeStage'] = $ResumeStage }
+Send-FactoryEvent -RunId $RunId -Type "run-started" -Fields $runStartedFields
 
 $cloudInit = Join-Path $RepoRoot "infrastructure/multipass/cloud-init.yaml"
 $testScript = Join-Path $RepoRoot "infrastructure/multipass/test-feature-builder.sh"
@@ -177,17 +196,18 @@ try {
         $branchCopy = $Branch
         $specCopy = $Spec
         $repoCopy = $Repo
+        $resumeEnvCopy = @(Get-ResumeGuestEnv -ResumeBranch $ResumeBranch -ResumeStage $ResumeStage)
         $StartGuestJob = {
             $jobScript = {
-                param($Cli, $InnerName, $InnerModel, $InnerBranch, $InnerSpec, $InnerRepo)
+                param($Cli, $InnerName, $InnerModel, $InnerBranch, $InnerSpec, $InnerRepo, $InnerResumeEnv)
                 $ErrorActionPreference = "Continue"
                 $specB64 = [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($InnerSpec))
-                & $Cli exec $InnerName env "MODEL=$InnerModel" "ISSUE_B64=$specB64" bash /tmp/test-feature-builder.sh "$InnerBranch" "$InnerRepo" 2>&1 | ForEach-Object { "$_" }
+                & $Cli exec $InnerName env "MODEL=$InnerModel" "ISSUE_B64=$specB64" @InnerResumeEnv bash /tmp/test-feature-builder.sh "$InnerBranch" "$InnerRepo" 2>&1 | ForEach-Object { "$_" }
                 if ($LASTEXITCODE -ne 0) {
                     throw "container exec failed with exit code ${LASTEXITCODE}"
                 }
             }
-            return (Start-Job -ScriptBlock $jobScript -ArgumentList $cliCopy, $nameCopy, $modelCopy, $branchCopy, $specCopy, $repoCopy)
+            return (Start-Job -ScriptBlock $jobScript -ArgumentList $cliCopy, $nameCopy, $modelCopy, $branchCopy, $specCopy, $repoCopy, $resumeEnvCopy)
         }.GetNewClosure()
     }
     else {
@@ -214,17 +234,18 @@ try {
         $branchCopy = $Branch
         $specCopy = $Spec
         $repoCopy = $Repo
+        $resumeEnvCopy = @(Get-ResumeGuestEnv -ResumeBranch $ResumeBranch -ResumeStage $ResumeStage)
         $StartGuestJob = {
             $jobScript = {
-                param($InnerName, $InnerModel, $InnerBranch, $InnerSpec, $InnerRepo)
+                param($InnerName, $InnerModel, $InnerBranch, $InnerSpec, $InnerRepo, $InnerResumeEnv)
                 $ErrorActionPreference = "Continue"
                 $specB64 = [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($InnerSpec))
-                & multipass exec $InnerName '--' env "MODEL=$InnerModel" "ISSUE_B64=$specB64" bash /tmp/test-feature-builder.sh "$InnerBranch" "$InnerRepo" 2>&1 | ForEach-Object { "$_" }
+                & multipass exec $InnerName '--' env "MODEL=$InnerModel" "ISSUE_B64=$specB64" @InnerResumeEnv bash /tmp/test-feature-builder.sh "$InnerBranch" "$InnerRepo" 2>&1 | ForEach-Object { "$_" }
                 if ($LASTEXITCODE -ne 0) {
                     throw "multipass exec failed with exit code ${LASTEXITCODE}"
                 }
             }
-            return (Start-Job -ScriptBlock $jobScript -ArgumentList $nameCopy, $modelCopy, $branchCopy, $specCopy, $repoCopy)
+            return (Start-Job -ScriptBlock $jobScript -ArgumentList $nameCopy, $modelCopy, $branchCopy, $specCopy, $repoCopy, $resumeEnvCopy)
         }.GetNewClosure()
     }
     $vmCreated = $true

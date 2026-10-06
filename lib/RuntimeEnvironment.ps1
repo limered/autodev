@@ -41,6 +41,18 @@ function Get-ContainerSocketMount {
     return $null
 }
 
+# Guest environment assignments carrying a same-branch resume into the guest
+# pipeline script (RESUME_BRANCH + RESUME_STAGE). Empty when either input is
+# blank, so ordinary jobs invoke the guest with no resume variables at all and
+# the guest runs its normal full pipeline.
+function Get-ResumeGuestEnv {
+    param([string]$ResumeBranch, [string]$ResumeStage)
+    if ([string]::IsNullOrWhiteSpace($ResumeBranch) -or [string]::IsNullOrWhiteSpace($ResumeStage)) {
+        return @()
+    }
+    return @("RESUME_BRANCH=$ResumeBranch", "RESUME_STAGE=$ResumeStage")
+}
+
 function Invoke-RuntimeVm {
     param(
         [Parameter(ValueFromRemainingArguments = $true, Position = 0)]

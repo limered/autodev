@@ -65,3 +65,31 @@ function New-IssueBranchName {
     if (-not $RandomSuffix) { $RandomSuffix = Get-Random -Maximum 9999 }
     return "factory/issue-$IssueNumber-$Timestamp-$RandomSuffix"
 }
+
+# Maps a dispatch claim to the single-Job launcher arguments. Resume fields
+# ride the claim only when the queue row carries them (a same-branch restart
+# prepared via PrepareResume); ordinary claims omit them so the launcher
+# defaults (fresh branch, full pipeline) stay untouched.
+function Get-ClaimedJobArgs {
+    param([object]$Claim, [string]$RepoRoot, [string]$Isolator = 'multipass')
+    $jobArgs = [ordered]@{
+        RunId       = $Claim.runId
+        RepoUrl     = $Claim.repoUrl
+        Spec        = $Claim.spec
+        RepoRoot    = $RepoRoot
+        Isolator    = $Isolator
+        CatalogJson = "$($Claim.catalogContent)"
+        CatalogSha  = "$($Claim.catalogSha)"
+    }
+    if (-not [string]::IsNullOrWhiteSpace("$($Claim.branch)")) {
+        $jobArgs['Branch'] = "$($Claim.branch)"
+    }
+    if (-not [string]::IsNullOrWhiteSpace("$($Claim.resumeStage)")) {
+        $jobArgs['ResumeStage'] = "$($Claim.resumeStage)"
+        $jobArgs['ResumeBranch'] = "$($Claim.branch)"
+    }
+    if (-not [string]::IsNullOrWhiteSpace("$($Claim.parentRunId)")) {
+        $jobArgs['ParentRunId'] = "$($Claim.parentRunId)"
+    }
+    return $jobArgs
+}

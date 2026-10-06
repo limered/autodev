@@ -68,3 +68,32 @@ Describe 'Wait-ForPullRequest' {
         { Wait-ForPullRequest -Repo 'o/r' -Owner 'o' -Branch 'b' -Poll $poll -MaxAttempts 2 -SleepSeconds 0 } | Should -Throw
     }
 }
+
+Describe 'Get-ClaimedJobArgs' {
+    It 'passes an ordinary claim through with no resume keys' {
+        $claim = [PSCustomObject]@{
+            runId = 'run-1'; repoUrl = 'https://github.com/o/r.git'; spec = 's'
+            catalogContent = 'c'; catalogSha = 'sha'
+        }
+        $args = Get-ClaimedJobArgs -Claim $claim -RepoRoot '/repo' -Isolator 'container'
+        $args['RunId'] | Should -Be 'run-1'
+        $args['RepoUrl'] | Should -Be 'https://github.com/o/r.git'
+        $args['Isolator'] | Should -Be 'container'
+        $args.Contains('ResumeBranch') | Should -Be $false
+        $args.Contains('ResumeStage') | Should -Be $false
+        $args.Contains('ParentRunId') | Should -Be $false
+        $args.Contains('Branch') | Should -Be $false
+    }
+    It 'carries the same branch plus resume stage and parent link for a resume claim' {
+        $claim = [PSCustomObject]@{
+            runId = 'run-2'; repoUrl = 'https://github.com/o/r.git'; spec = 's'
+            catalogContent = 'c'; catalogSha = 'sha'
+            branch = 'factory/issue-1-abc'; resumeStage = 'review-loop'; parentRunId = 'run-1'
+        }
+        $args = Get-ClaimedJobArgs -Claim $claim -RepoRoot '/repo' -Isolator 'multipass'
+        $args['Branch'] | Should -Be 'factory/issue-1-abc'
+        $args['ResumeBranch'] | Should -Be 'factory/issue-1-abc'
+        $args['ResumeStage'] | Should -Be 'review-loop'
+        $args['ParentRunId'] | Should -Be 'run-1'
+    }
+}

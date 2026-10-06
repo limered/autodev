@@ -398,3 +398,42 @@ function Get-StepCategory {
     if ($any) { return $any.Id }
     return 'uncategorized'
 }
+
+# Resume-point derivation for same-branch restarts: maps the failed run's
+# completed steps and current phase to the first incomplete stage name.
+# Reuses the stage catalog order plus the slot rule (Get-StepCategory) — no
+# parallel hardcoded loop list — so stage renames flow through one owner.
+# -CompletedSteps are objects with Agent + Iteration (e.g. relayed RunSteps).
+# -CurrentCategory is the last heartbeat category (may be empty on early crash).
+# The current category names the enclosing loop where the failure happened, so
+# a known category resumes exactly there; otherwise the first stage with no
+# completed step wins. An early crash with no steps and no category points at
+# the earliest loop since the guest always skips implement on a present branch.
+function Get-ResumeStage {
+    param($Config, $CompletedSteps, [string]$CurrentCategory)
+    $entries = @($Config)
+    if ($entries.Count -eq 0) { return $null }
+    if (-not [string]::IsNullOrWhiteSpace($CurrentCategory)) {
+        $match = @($entries | Where-Object { "$($_.Id)" -ceq "$CurrentCategory" }) | Select-Object -First 1
+        if ($match) { return "$($match.Id)" }
+    }
+    $doneCategories = @{}
+    foreach ($s in @($CompletedSteps)) {
+        if ($null -eq $s) { continue }
+        $agent = "$($s.Agent)"
+        $iter = 0
+        try { $iter = [int]$s.Iteration } catch { $iter = 0 }
+        $cat = Get-StepCategory -Agent $agent -Iteration $iter -Config $entries
+        if (-not [string]::IsNullOrWhiteSpace($cat)) { $doneCategories["$cat"] = $true }
+    }
+    foreach ($e in $entries) {
+        if (-not $doneCategories.ContainsKey("$($e.Id)")) {
+            if ($doneCategories.Count -eq 0 -and [string]::IsNullOrWhiteSpace($CurrentCategory)) {
+                $loop = @($entries | Where-Object { "$($_.Type)".Trim().ToLowerInvariant() -eq 'loop' }) | Select-Object -First 1
+                if ($loop) { return "$($loop.Id)" }
+            }
+            return "$($e.Id)"
+        }
+    }
+    return "$($entries[-1].Id)"
+}

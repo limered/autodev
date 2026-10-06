@@ -459,3 +459,28 @@ Describe 'Read-AgentsWorkflowCatalog' {
         { Read-AgentsWorkflowCatalog -Path (Join-Path $PSScriptRoot 'no-such-agents.json') } | Should -Throw
     }
 }
+
+Describe 'Get-ResumeStage' {
+    BeforeAll {
+        $script:resumeConfig = ConvertFrom-AgentsConfigJson -Json $script:V1Json
+    }
+    It 'resumes at the enclosing loop where the failure happened' {
+        Get-ResumeStage -Config $script:resumeConfig -CompletedSteps @() -CurrentCategory 'review-loop' | Should -Be 'review-loop'
+        Get-ResumeStage -Config $script:resumeConfig -CompletedSteps @() -CurrentCategory 'quality-loop' | Should -Be 'quality-loop'
+        Get-ResumeStage -Config $script:resumeConfig -CompletedSteps @() -CurrentCategory 'pr-author' | Should -Be 'pr-author'
+    }
+    It 'maps an implement crash with no steps and no category to the earliest loop' {
+        Get-ResumeStage -Config $script:resumeConfig -CompletedSteps @() -CurrentCategory '' | Should -Be 'review-loop'
+        Get-ResumeStage -Config $script:resumeConfig -CompletedSteps @($null) -CurrentCategory $null | Should -Be 'review-loop'
+    }
+    It 'maps completed steps to the first incomplete stage' {
+        $steps = @(
+            [PSCustomObject]@{ Agent = 'feature-builder'; Iteration = 0 },
+            [PSCustomObject]@{ Agent = 'test-runner'; Iteration = 0 }
+        )
+        Get-ResumeStage -Config $script:resumeConfig -CompletedSteps $steps -CurrentCategory '' | Should -Be 'review-loop'
+    }
+    It 'returns null for an empty stage catalog' {
+        Get-ResumeStage -Config @() -CompletedSteps @() -CurrentCategory 'review-loop' | Should -Be $null
+    }
+}

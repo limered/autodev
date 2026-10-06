@@ -299,3 +299,16 @@ Describe 'Nested-scope closure resolution' {
         "$result" | Should -Not -Match 'not recognized'
     }
 }
+
+Describe 'Get-ResumeGuestEnv' {
+    It 'forwards the resume branch and stage as guest environment' {
+        $env = @(Get-ResumeGuestEnv -ResumeBranch 'factory/issue-1-abc' -ResumeStage 'review-loop')
+        $env | Should -Contain 'RESUME_BRANCH=factory/issue-1-abc'
+        $env | Should -Contain 'RESUME_STAGE=review-loop'
+    }
+    It 'stays absent when either resume input is missing' {
+        @(Get-ResumeGuestEnv -ResumeBranch '' -ResumeStage '').Count | Should -Be 0
+        @(Get-ResumeGuestEnv -ResumeBranch 'factory/issue-1-abc' -ResumeStage '').Count | Should -Be 0
+        @(Get-ResumeGuestEnv -ResumeBranch '' -ResumeStage 'review-loop').Count | Should -Be 0
+    }
+}
