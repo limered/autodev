@@ -4,7 +4,7 @@
 // falls back to the factory feed's workflows — and with no factory read either,
 // to a muted unresolved-default state. Pure functions; callers hand in the
 // fetched shapes and picks and render whatever states come back.
-export function rowCatalog(rowEntry, factoryCatalog) {
+export function rowCatalogSummary(rowEntry, factoryCatalog) {
   if (rowEntry?.source === "target" && rowEntry.content != null) {
     let doc;
     try {
