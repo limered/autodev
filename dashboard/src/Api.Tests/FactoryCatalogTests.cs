@@ -81,6 +81,31 @@ public class FactoryCatalogTests
     }
 
     [Fact]
+    public void ParseContent_NamedWorkflows_ReadsNamesAndCounts()
+    {
+        var catalog = FactoryCatalog.ParseContent(
+            """{"stages":{"a":{},"b":{}},"workflows":{"full":["a","b"]},"defaultWorkflow":"full"}""");
+
+        Assert.Equal("full", catalog.DefaultWorkflow);
+        Assert.Equal(new[] { ("full", 2) }, catalog.Workflows.Select(w => (w.Name, w.StageCount)));
+    }
+
+    [Fact]
+    public void ParseContent_LegacyStagesOnly_ReadsAsDefaultWorkflow()
+    {
+        var catalog = FactoryCatalog.ParseContent("""{"stages":{"a":{}}}""");
+
+        Assert.Equal("default", catalog.DefaultWorkflow);
+        Assert.Equal(1, Assert.Single(catalog.Workflows).StageCount);
+    }
+
+    [Fact]
+    public void ParseContent_MalformedJson_ThrowsWithReason()
+    {
+        Assert.Throws<FactoryCatalogException>(() => FactoryCatalog.ParseContent("{not json"));
+    }
+
+    [Fact]
     public void Locate_FindsAgentsJsonAboveContentRoot()
     {
         var root = Path.Combine(Path.GetTempPath(), $"factory-root-{Guid.NewGuid():N}");

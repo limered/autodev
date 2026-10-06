@@ -43,4 +43,32 @@ public static class CatalogRules
     {
         return !string.Equals(cachedSha, freshSha, StringComparison.Ordinal);
     }
+
+    /// <summary>
+    /// The workflow names a claimed catalog effectively runs under: a real target
+    /// file's names parsed from its content; the factory catalog's names on fallback.
+    /// Content that cannot be parsed, or no factory read available, answers no names —
+    /// the claim caller then skips picks it cannot verify.
+    /// </summary>
+    public static (string? DefaultWorkflow, IReadOnlyList<string> Names) WorkflowNames(
+        TargetCatalog? effective, IFactoryWorkflows? factory)
+    {
+        if (!string.IsNullOrWhiteSpace(effective?.Content))
+        {
+            try
+            {
+                var parsed = FactoryCatalog.ParseContent(effective.Content);
+                return (parsed.DefaultWorkflow, parsed.Workflows.Select(w => w.Name).ToList());
+            }
+            catch (FactoryCatalogException)
+            {
+                return (null, Array.Empty<string>());
+            }
+        }
+
+        var flows = factory?.TryRead();
+        return flows is null
+            ? (null, Array.Empty<string>())
+            : (flows.DefaultWorkflow, flows.Workflows.Select(w => w.Name).ToList());
+    }
 }

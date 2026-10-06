@@ -32,6 +32,8 @@ builder.Services.AddSingleton<IHostStore, HostStore>();
 builder.Services.AddSingleton<IIssueResolver, IssueResolver>();
 builder.Services.AddSingleton<ITargetCatalogStore, TargetCatalogStore>();
 builder.Services.AddSingleton<ITargetCatalogService, TargetCatalogService>();
+builder.Services.AddSingleton<IFactoryWorkflows>(
+    new FactoryWorkflowsProvider(builder.Environment.ContentRootPath));
 
 var githubPat = ReadGitHubPat(builder.Environment.ContentRootPath);
 builder.Services.AddHttpClient<IGitHubIssuesClient, GitHubIssuesClient>(client =>

@@ -43,7 +43,8 @@ public sealed class PostgresFixture : IAsyncLifetime
     /// the SQL <see cref="IssueResolver"/> answering its claim payload. Only valid to
     /// call when <see cref="IsDockerAvailable"/> is <see langword="true"/>.
     /// </summary>
-    public QueueStore CreateStore() => new(_dataSource, _hostStore, new IssueResolver());
+    public QueueStore CreateStore(ITargetCatalogService? catalogs = null, IFactoryWorkflows? factory = null) =>
+        new(_dataSource, _hostStore, new IssueResolver(), catalogs, factory);
 
     /// <summary>
     /// Constructs a real <see cref="RunStore"/> (queue release + linked-issue resolve

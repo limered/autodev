@@ -12,4 +12,5 @@ public record QueueRuleItem(
     long IssueId,
     int Rank,
     Guid? RunId,
-    DateTimeOffset? StartRequestedAt);
+    DateTimeOffset? StartRequestedAt,
+    string? Workflow = null);

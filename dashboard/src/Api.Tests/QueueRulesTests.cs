@@ -91,4 +91,53 @@ public class QueueRulesTests
         Assert.Equal(2, QueueRules.ExistingForIssue(items, 20)!.Id);
         Assert.Null(QueueRules.ExistingForIssue(items, 99));
     }
+
+    // The claim-time pick verdict: a row with no pick claims (resolved to the
+    // catalog default when one is readable); a pick the catalog verifies claims
+    // as itself; a pick the catalog cannot verify skips the row — never a silent
+    // fallback to the default.
+    [Fact]
+    public void DecidePick_NoPickWithNames_ResolvesCatalogDefault()
+    {
+        var decision = QueueRules.DecidePick(null, "full", new[] { "full", "quick" });
+
+        Assert.False(decision.Skip);
+        Assert.Equal("full", decision.Resolved);
+    }
+
+    [Fact]
+    public void DecidePick_NoPickWithoutNames_ClaimsNoExplicitWorkflow()
+    {
+        var decision = QueueRules.DecidePick(null, null, Array.Empty<string>());
+
+        Assert.False(decision.Skip);
+        Assert.Null(decision.Resolved);
+    }
+
+    [Fact]
+    public void DecidePick_VerifiedPick_ResolvesToThePick()
+    {
+        var decision = QueueRules.DecidePick("quick", "full", new[] { "full", "quick" });
+
+        Assert.False(decision.Skip);
+        Assert.Equal("quick", decision.Resolved);
+    }
+
+    [Fact]
+    public void DecidePick_StalePick_SkipsWithoutSubstitute()
+    {
+        var decision = QueueRules.DecidePick("retired-flow", "full", new[] { "full", "quick" });
+
+        Assert.True(decision.Skip);
+        Assert.Null(decision.Resolved);
+    }
+
+    [Fact]
+    public void DecidePick_PickWithNoNames_SkipsInsteadOfSubstitutingDefault()
+    {
+        var decision = QueueRules.DecidePick("quick", "full", Array.Empty<string>());
+
+        Assert.True(decision.Skip);
+        Assert.Null(decision.Resolved);
+    }
 }

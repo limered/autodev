@@ -17,6 +17,9 @@ public sealed class FakeQueueStore : IQueueStore
 
     public Catalogs.ITargetCatalogService? Catalogs { get; set; }
 
+    /// <summary>The factory catalog the fake verifies fallback picks against; unwired answers no names.</summary>
+    public Catalogs.IFactoryWorkflows? Factory { get; set; }
+
     public FakeIssuesStore? Issues { get; set; }
 
     /// <summary>
@@ -24,7 +27,7 @@ public sealed class FakeQueueStore : IQueueStore
     /// enrichments the raw joined row carries from the LEFT JOIN are dropped here.
     /// </summary>
     private IEnumerable<QueueRuleItem> RuleItems() =>
-        _items.Select(i => new QueueRuleItem(i.Id, i.IssueId, i.Rank, i.RunId, i.StartRequestedAt));
+        _items.Select(i => new QueueRuleItem(i.Id, i.IssueId, i.Rank, i.RunId, i.StartRequestedAt, i.Workflow));
 
     /// <summary>The queue row attached to a run, or none — the run's slot.</summary>
     public QueueRow? FindByRunId(Guid runId) => _items.FirstOrDefault(i => i.RunId == runId);
@@ -48,7 +51,7 @@ public sealed class FakeQueueStore : IQueueStore
         return Task.FromResult<IReadOnlyList<QueueRow>>(ordered);
     }
 
-    public Task<QueueRow?> Enqueue(long issueId)
+    public Task<QueueRow?> Enqueue(long issueId, string? workflow = null)
     {
         // Rank/dedup derivation is QueueRules', shared with the real SQL store; only
         // the storage here is fake.
@@ -72,10 +75,29 @@ public sealed class FakeQueueStore : IQueueStore
             null,
             null,
             null,
-            false);
+            false,
+            Workflow: workflow);
 
         _items.Add(item);
         return Task.FromResult<QueueRow?>(item);
+    }
+
+    /// <summary>
+    /// Sets the row's workflow pick while it is unclaimed (mirror of the SQL store's
+    /// guarded update): a claimed row answers unchanged so the caller re-syncs and
+    /// sees the frozen pick.
+    /// </summary>
+    public Task<QueueRow?> SetWorkflow(long id, string? workflow)
+    {
+        var item = _items.FirstOrDefault(i => i.Id == id);
+        if (item is null || item.RunId is not null)
+        {
+            return Task.FromResult(item);
+        }
+
+        var idx = _items.IndexOf(item);
+        _items[idx] = item with { Workflow = workflow };
+        return Task.FromResult<QueueRow?>(_items[idx]);
     }
 
     public async Task<QueueRow?> StartNext(long id)
@@ -172,6 +194,15 @@ public sealed class FakeQueueStore : IQueueStore
             }
         }
 
+        var (defaultName, names) = Api.Catalogs.CatalogRules.WorkflowNames(catalog, Factory);
+        var decision = QueueRules.DecidePick(next.Workflow, defaultName, names);
+        if (decision.Skip)
+        {
+            // Stale pick: skip the row — unclaimed with no run, retryable after the
+            // catalog resyncs; shared with the real store's claim path.
+            return null;
+        }
+
         var runId = Guid.NewGuid();
         var item = _items.Single(i => i.Id == next.Id);
         var idx = _items.IndexOf(item);
@@ -189,7 +220,8 @@ public sealed class FakeQueueStore : IQueueStore
             branch,
             resumeStage,
             parentRunId,
-            next.Id);
+            next.Id,
+            decision.Resolved);
     }
 
     public Task Reorder(IReadOnlyList<long> ids)

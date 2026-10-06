@@ -8,7 +8,8 @@ namespace Api.Queue;
 public interface IQueueStore
 {
     Task<IReadOnlyList<QueueRow>> All();
-    Task<QueueRow?> Enqueue(long issueId);
+    Task<QueueRow?> Enqueue(long issueId, string? workflow = null);
+    Task<QueueRow?> SetWorkflow(long id, string? workflow);
     Task<QueueRow?> StartNext(long id);
     Task<QueueRow?> Restart(long id);
     Task<ClaimedQueueItem?> ClaimNext();
@@ -27,7 +28,8 @@ public record ClaimedQueueItem(
     string? Branch = null,
     string? ResumeStage = null,
     Guid? ParentRunId = null,
-    long? QueueId = null);
+    long? QueueId = null,
+    string? Workflow = null);
 
 public sealed class QueueStore : IQueueStore
 {
@@ -35,13 +37,20 @@ public sealed class QueueStore : IQueueStore
     private readonly IHostStore _hostStore;
     private readonly IIssueResolver _resolver;
     private readonly ITargetCatalogService? _catalogs;
+    private readonly IFactoryWorkflows? _factory;
 
-    public QueueStore(NpgsqlDataSource dataSource, IHostStore hostStore, IIssueResolver resolver, ITargetCatalogService? catalogs = null)
+    public QueueStore(
+        NpgsqlDataSource dataSource,
+        IHostStore hostStore,
+        IIssueResolver resolver,
+        ITargetCatalogService? catalogs = null,
+        IFactoryWorkflows? factory = null)
     {
         _dataSource = dataSource;
         _hostStore = hostStore;
         _resolver = resolver;
         _catalogs = catalogs;
+        _factory = factory;
     }
 
     public async Task<IReadOnlyList<QueueRow>> All()
@@ -51,7 +60,7 @@ public sealed class QueueStore : IQueueStore
         return items;
     }
 
-    public async Task<QueueRow?> Enqueue(long issueId)
+    public async Task<QueueRow?> Enqueue(long issueId, string? workflow = null)
     {
         await using var conn = await _dataSource.OpenConnectionAsync();
         await using var tx = await conn.BeginTransactionAsync();
@@ -73,17 +82,44 @@ public sealed class QueueStore : IQueueStore
 
         await using var insertCmd = new NpgsqlCommand(
             """
-            INSERT INTO queue (issue_id, rank)
-            VALUES (@issueId, @rank)
+            INSERT INTO queue (issue_id, rank, workflow)
+            VALUES (@issueId, @rank, @workflow)
             RETURNING id;
             """, conn, tx);
         insertCmd.Parameters.AddWithValue("issueId", issueId);
         insertCmd.Parameters.AddWithValue("rank", rank);
+        insertCmd.Parameters.AddWithValue("workflow", (object?)workflow ?? DBNull.Value);
         var id = (long)(await insertCmd.ExecuteScalarAsync() ?? 0L);
 
         await tx.CommitAsync();
 
         return await GetById(id);
+    }
+
+    /// <summary>
+    /// Sets the row's workflow pick while it is unclaimed: the pick is changeable
+    /// freely until the claim freezes it. A claimed row (or unknown id) answers the
+    /// row unchanged (or null), so the caller re-syncs and shows the frozen pick.
+    /// </summary>
+    public async Task<QueueRow?> SetWorkflow(long id, string? workflow)
+    {
+        await using var conn = await _dataSource.OpenConnectionAsync();
+        await using var tx = await conn.BeginTransactionAsync();
+
+        await using var cmd = new NpgsqlCommand(
+            """
+            UPDATE queue
+            SET workflow = @workflow
+            WHERE id = @id AND run_id IS NULL
+            RETURNING id;
+            """, conn, tx);
+        cmd.Parameters.AddWithValue("id", id);
+        cmd.Parameters.AddWithValue("workflow", (object?)workflow ?? DBNull.Value);
+
+        var updated = await cmd.ExecuteScalarAsync();
+        await tx.CommitAsync();
+
+        return await GetById(updated is long updatedId ? updatedId : id);
     }
 
     public async Task<QueueRow?> StartNext(long id)
@@ -158,29 +194,49 @@ public sealed class QueueStore : IQueueStore
         var items = await QueryRuleItems(SelectQueueRuleSql, conn, tx);
 
         QueueRuleItem? claimed = null;
+        IssueClaimPayload? payload = null;
+        TargetCatalog? catalog = null;
+        string? workflow = null;
         foreach (var candidate in QueueRules.ClaimableInRankOrder(items))
         {
             claimed = await TryLockClaimable(candidate.Id, conn, tx);
-            if (claimed is not null)
+            if (claimed is null)
+            {
+                continue;
+            }
+
+            // The claim used to be one statement that inner-joined issues: a queue row
+            // whose issue has no issues row matched nothing and claimed nothing. The
+            // resolver seam keeps that — a missing issue row answers null — while the
+            // issues SQL moves behind the issues domain, still on this locked transaction
+            // so the answer is covered by the row lock the claim just took.
+            payload = await _resolver.ResolveClaimPayloadAsync(claimed.IssueId, conn, tx);
+            if (payload is null)
             {
                 break;
             }
-        }
 
-        // The claim used to be one statement that inner-joined issues: a queue row
-        // whose issue has no issues row matched nothing and claimed nothing. The
-        // resolver seam keeps that — a missing issue row answers null — while the
-        // issues SQL moves behind the issues domain, still on this locked transaction
-        // so the answer is covered by the row lock the claim just took.
-        IssueClaimPayload? payload = null;
-        if (claimed is not null)
-        {
-            payload = await _resolver.ResolveClaimPayloadAsync(claimed.IssueId, conn, tx);
+            catalog = await ResolveCatalogForIssueAsync(claimed.IssueId, conn, tx);
+            var (defaultName, names) = CatalogRules.WorkflowNames(catalog, _factory);
+            var decision = QueueRules.DecidePick(claimed.Workflow, defaultName, names);
+            if (decision.Skip)
+            {
+                // Stale pick: the row is released from the claim attempt — it stays
+                // unclaimed with no run, and retries once the next Issue sync
+                // refreshes the catalog or the pick is reset. Never a silent fallback
+                // to the default.
+                claimed = null;
+                payload = null;
+                catalog = null;
+                continue;
+            }
+
+            workflow = decision.Resolved;
+            break;
         }
 
         if (claimed is not null && payload is not null)
         {
-            var catalog = await ResolveCatalogForIssueAsync(claimed.IssueId, conn, tx);
             var resume = await GetResumeForQueueIdAsync(claimed.Id, conn, tx);
             await using var updateCmd = new NpgsqlCommand(
                 "UPDATE queue SET run_id = @runId, resume_branch = NULL, resume_stage = NULL, parent_run_id = NULL WHERE id = @id;", conn, tx);
@@ -201,18 +257,14 @@ public sealed class QueueStore : IQueueStore
                 resume?.Branch,
                 resume?.Stage,
                 resume?.ParentRunId,
-                claimed.Id);
+                claimed.Id,
+                workflow);
         }
 
         await tx.CommitAsync();
         await _hostStore.StampLastSeen();
 
-        if (claimed is null || payload is null)
-        {
-            return null;
-        }
-
-        return new ClaimedQueueItem(runId, payload.RepoUrl, payload.Spec);
+        return null;
     }
 
     private async Task<TargetCatalog?> ResolveCatalogForIssueAsync(long issueId, NpgsqlConnection conn, NpgsqlTransaction tx)
@@ -421,7 +473,8 @@ public sealed class QueueStore : IQueueStore
             (i.github_id IS NOT NULL) AS issue_present,
             q.resume_branch,
             q.resume_stage,
-            q.parent_run_id
+            q.parent_run_id,
+            q.workflow
         FROM queue q
         LEFT JOIN issues i ON i.github_id = q.issue_id
         LEFT JOIN runs r ON r.run_id = q.run_id
@@ -435,7 +488,8 @@ public sealed class QueueStore : IQueueStore
             q.issue_id,
             q.rank,
             q.run_id,
-            q.start_requested_at
+            q.start_requested_at,
+            q.workflow
         FROM queue q
         """;
 
@@ -456,7 +510,8 @@ public sealed class QueueStore : IQueueStore
             r.GetBoolean(r.GetOrdinal("issue_present")),
             GetStringOrNull(r, "resume_branch"),
             GetStringOrNull(r, "resume_stage"),
-            GetGuidOrNull(r, "parent_run_id"));
+            GetGuidOrNull(r, "parent_run_id"),
+            GetStringOrNull(r, "workflow"));
     }
 
     private static QueueRuleItem MapRuleItem(NpgsqlDataReader r) =>
@@ -465,7 +520,8 @@ public sealed class QueueStore : IQueueStore
             r.GetInt64(r.GetOrdinal("issue_id")),
             r.GetInt32(r.GetOrdinal("rank")),
             GetGuidOrNull(r, "run_id"),
-            GetDateTimeOffsetOrNull(r, "start_requested_at"));
+            GetDateTimeOffsetOrNull(r, "start_requested_at"),
+            GetStringOrNull(r, "workflow"));
 
     private static DateTimeOffset? GetDateTimeOffsetOrNull(NpgsqlDataReader r, string column)
     {
