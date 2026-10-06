@@ -27,6 +27,7 @@ export function useQueueActions(fetchFn = fetch) {
   }
 
   const enqueueA = action();
+  const pickWorkflowA = action();
   const reorderA = action();
   const removeA = action();
   const startNextA = action();
@@ -35,6 +36,7 @@ export function useQueueActions(fetchFn = fetch) {
   const isSaving = computed(
     () =>
       enqueueA.isBusy.value ||
+      pickWorkflowA.isBusy.value ||
       reorderA.isBusy.value ||
       removeA.isBusy.value ||
       startNextA.isBusy.value ||
@@ -52,6 +54,16 @@ export function useQueueActions(fetchFn = fetch) {
       ),
     enqueueError: enqueueA.error,
     isEnqueueing: enqueueA.isBusy,
+
+    pickWorkflow: (id, workflow) =>
+      pickWorkflowA.run(() =>
+        fetchFn(`/queue/${id}/workflow`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ workflow }),
+        }),
+      ),
+    pickWorkflowError: pickWorkflowA.error,
 
     reorder: (ids) =>
       reorderA.run(() =>

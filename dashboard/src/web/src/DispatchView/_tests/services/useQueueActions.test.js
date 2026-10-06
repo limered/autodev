@@ -38,6 +38,23 @@ describe("useQueueActions", () => {
     );
   });
 
+  it("pickWorkflow POSTs the workflow to the row's workflow route", async () => {
+    const fetchFn = okFetch();
+    const actions = useQueueActions(fetchFn);
+
+    const ok = await actions.pickWorkflow(7, "quick");
+
+    expect(ok).toBe(true);
+    expect(fetchFn).toHaveBeenCalledWith(
+      "/queue/7/workflow",
+      expect.objectContaining({
+        method: "POST",
+        body: JSON.stringify({ workflow: "quick" }),
+      }),
+    );
+    expect(actions.pickWorkflowError.value).toBeNull();
+  });
+
   it("remove/startNext/restart hit the right routes", async () => {
     const fetchFn = okFetch();
     const actions = useQueueActions(fetchFn);

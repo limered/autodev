@@ -143,6 +143,86 @@ describe("RunQueueColumn", () => {
     expect(html).toContain("default (no catalog)");
     expect(html).not.toContain("workflow-trigger");
   });
+
+  const factoryCatalog = () => ({
+    defaultWorkflow: "full",
+    workflows: [
+      { name: "full", stageCount: 5 },
+      { name: "quick", stageCount: 2 },
+    ],
+  });
+
+  it("shows the red vanished warning with reset link for a stale persisted pick", async () => {
+    const html = await renderColumn({
+      queue: [queued("q1", 1, "First task", { workflow: "retired-flow" })],
+      catalog: factoryCatalog(),
+    });
+
+    expect(html).toContain("workflow-vanished");
+    expect(html).toContain("retired-flow");
+    expect(html).toContain("reset-link");
+    expect(html).not.toContain("workflow-trigger");
+  });
+
+  it("renders the picker against the row's own repo catalog over the factory feed", async () => {
+    const html = await renderColumn({
+      queue: [queued("q1", 1, "First task", { workflow: "second-flow" })],
+      catalog: factoryCatalog(),
+      rowCatalogs: {
+        "owner/repo": {
+          repo: "owner/repo",
+          source: "target",
+          sha: "sha-1",
+          content: JSON.stringify({
+            stages: { a: {}, b: {}, c: {} },
+            workflows: { "second-flow": ["a", "b"] },
+            defaultWorkflow: "second-flow",
+          }),
+          fetchedAt: "2026-01-01T00:00:00Z",
+        },
+      },
+    });
+
+    expect(html).toContain("workflow-trigger");
+    expect(html).toContain("second-flow");
+    // The factory catalog's names are not in this row's menu.
+    expect(html).not.toContain(">full<");
+  });
+
+  it("shows a pick that the row's repo catalog names as ready", async () => {
+    const html = await renderColumn({
+      queue: [queued("q1", 1, "First task", { workflow: "second-flow" })],
+      catalog: factoryCatalog(),
+      rowCatalogs: {
+        "owner/repo": {
+          repo: "owner/repo",
+          source: "target",
+          sha: "sha-1",
+          content: JSON.stringify({
+            stages: { a: {}, b: {} },
+            workflows: { "second-flow": ["a", "b"] },
+            defaultWorkflow: "second-flow",
+          }),
+          fetchedAt: "2026-01-01T00:00:00Z",
+        },
+      },
+    });
+
+    expect(html).toContain("workflow-trigger");
+    expect(html).toContain("second-flow");
+  });
+
+  it("disables the picker with no catalog read available for the row", async () => {
+    const html = await renderColumn({
+      queue: [queued("q1", 1, "First task")],
+      catalog: null,
+      rowCatalogs: { "owner/repo": { source: "target", content: "{not json" } },
+    });
+
+    expect(html).toContain("workflow-missing");
+    expect(html).toContain("default (no catalog)");
+    expect(html).not.toContain("workflow-trigger");
+  });
 });
 
 function makeReloads() {
@@ -251,6 +331,19 @@ describe("RunQueueColumn write-then-resync", () => {
     });
 
     await startNext({ id: "q1" });
+
+    expect(reloads.reloadQueue).toHaveBeenCalledTimes(1);
+    expect(reloads.reloadIssues).not.toHaveBeenCalled();
+  });
+
+  it("reloads only the queue after a successful pick workflow", async () => {
+    const reloads = makeReloads();
+    const { pickWorkflow } = useQueueHandlers({
+      fetchFn: vi.fn(() => Promise.resolve({ ok: true, status: 200 })),
+      ...reloads,
+    });
+
+    await pickWorkflow({ id: "q2" }, "quick");
 
     expect(reloads.reloadQueue).toHaveBeenCalledTimes(1);
     expect(reloads.reloadIssues).not.toHaveBeenCalled();

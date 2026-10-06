@@ -10,7 +10,8 @@ import { useQueueActions } from "./useQueueActions.js";
 // Reload policy, preserved exactly from the columns:
 // - enqueue/remove refresh both feeds — the queue gains/loses a row and the
 //   eligible-issue set moves with it — and only on success.
-// - startNext/restart refresh the queue feed only, and only on success.
+// - startNext/restart/pickWorkflow refresh the queue feed only, and only on
+//   success (the pick freeze shows from the queue feed's row).
 // - reorder refreshes the queue feed unconditionally: a drop persists
 //   optimistically (useDragReorder already moved the rows), so the shadow
 //   copy must reconverge on server truth even when the persist failed.
@@ -40,6 +41,10 @@ export function useQueueHandlers({ reloadIssues, reloadQueue, fetchFn = fetch } 
     if (await actions.restart(item.id)) await reloadQueue();
   }
 
+  async function pickWorkflow(item, name) {
+    if (await actions.pickWorkflow(item.id, name)) await reloadQueue();
+  }
+
   // reorder takes raw ids (sole caller: useDragReorder.onDrop); reload is
   // unconditional so the shadow converges on server truth.
   async function reorder(ids) {
@@ -52,6 +57,7 @@ export function useQueueHandlers({ reloadIssues, reloadQueue, fetchFn = fetch } 
     remove,
     startNext,
     restart,
+    pickWorkflow,
     reorder,
     enqueueError: actions.enqueueError,
     isEnqueueing: actions.isEnqueueing,
@@ -63,6 +69,7 @@ export function useQueueHandlers({ reloadIssues, reloadQueue, fetchFn = fetch } 
     isStartingNext: actions.isStartingNext,
     restartError: actions.restartError,
     isRestarting: actions.isRestarting,
+    pickWorkflowError: actions.pickWorkflowError,
     isSaving: actions.isSaving,
   };
 }

@@ -66,14 +66,48 @@ describe("WorkflowPicker", () => {
     expect(html).toContain("default (no catalog)");
     expect(html).not.toContain("workflow-trigger");
   });
+
+  it("renders the red vanished warning naming the stale pick with a reset link", async () => {
+    const html = await renderPicker({
+      state: { kind: "vanished", stalePick: "retired-flow", name: "full", stageCount: 5 },
+      workflows: [{ name: "full", stageCount: 5 }],
+    });
+
+    expect(html).toContain("workflow-vanished");
+    expect(html).toContain("retired-flow");
+    expect(html).toContain("reset-link");
+    expect(html).toContain("full");
+    expect(html).not.toContain("workflow-trigger");
+  });
+
+  it("emits reset when the vanished warning's reset link is clicked", async () => {
+    const emits = [];
+    const { el, app } = mountPicker(
+      {
+        state: { kind: "vanished", stalePick: "retired-flow", name: "full", stageCount: 5 },
+        workflows: [{ name: "full", stageCount: 5 }],
+      },
+      emits,
+    );
+
+    el.querySelector(".reset-link").click();
+    await nextTick();
+    expect(emits).toEqual([["reset"]]);
+
+    app.unmount();
+    el.remove();
+  });
 });
 
-function mountPicker(props) {
+function mountPicker(props, emits) {
   const calls = [];
   const el = document.createElement("div");
   document.body.appendChild(el);
+  const handlers = emits
+    ? { onPick: (name) => emits.push(["pick", name]), onReset: () => emits.push(["reset"]) }
+    : { onPick: (name) => calls.push(name) };
   const app = createApp({
-    render: () => h(WorkflowPicker, { ...props, onPick: (name) => calls.push(name) }),
+    render: () => h(WorkflowPicker, { ...props, ...handlers }),
   });
   app.mount(el);
   return { el, app, calls };

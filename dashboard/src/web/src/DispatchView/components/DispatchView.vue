@@ -1,8 +1,9 @@
 <script setup>
-import { computed } from "vue";
+import { computed, watch } from "vue";
 import { usePollingFeed } from "../../_shared/services/usePollingFeed.js";
 import { hostView } from "../models/hostView.js";
 import { useFactoryWorkflows } from "../services/useFactoryWorkflows.js";
+import { useRowCatalogs } from "../services/useRowCatalogs.js";
 import EligibleIssuesColumn from "./EligibleIssuesColumn.vue";
 import RunQueueColumn from "./RunQueueColumn.vue";
 
@@ -21,6 +22,13 @@ const workflowsFeed = useFactoryWorkflows(() => fetch("/workflows"));
 const { items: issues } = issuesFeed;
 const { items: queue } = queueFeed;
 const { items: host } = hostFeed;
+
+// The queue rows' own repo catalogs: distinct repo names of the queue feed
+// fetch once each (the cache skips already-fetched repos), so every picker
+// reads the catalog that will govern its row.
+const queueRepos = computed(() => new Set(queue.value.map((q) => q.repo).filter(Boolean)));
+const { byRepo: rowCatalogs, load: loadRowCatalogs } = useRowCatalogs();
+watch(queueRepos, (repos) => void loadRowCatalogs([...repos]), { immediate: true });
 
 // The eligible column's filter input: which synced issues are already queued.
 const queuedIssueIds = computed(() => new Set(queue.value.map((q) => q.issueId)));
@@ -66,6 +74,7 @@ const hostBadge = computed(() => hostView(host.value, Date.now()));
         :reload-queue="queueFeed.load"
         :catalog="workflowsFeed.catalog.value"
         :catalog-error="workflowsFeed.error.value"
+        :row-catalogs="rowCatalogs"
       />
     </div>
   </section>

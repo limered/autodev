@@ -2,7 +2,7 @@
 import { computed } from "vue";
 import ErrorBanner from "../../_shared/components/ErrorBanner.vue";
 import { queueRowView } from "../models/queueView.js";
-import { workflowRowState } from "../models/workflowView.js";
+import { rowCatalog, workflowRowState } from "../models/workflowView.js";
 import { useQueueFeedShadow } from "../services/useQueueFeedShadow.js";
 import { useQueueHandlers } from "../services/useQueueHandlers.js";
 import { useWorkflowPicks } from "../services/useWorkflowPicks.js";
@@ -30,6 +30,9 @@ const props = defineProps({
   catalog: { type: Object, default: null },
   // String error message from the /workflows feed, or null while in sync.
   catalogError: { type: String, default: null },
+  // The queue rows' repo catalogs from /catalogs/{repo}, keyed by repo; a repo
+  // not fetched (or failed) falls back to the factory catalog.
+  rowCatalogs: { type: Object, default: () => ({}) },
 });
 
 // Wired queue handlers: every write re-syncs the feeds that show its effect —
@@ -49,6 +52,8 @@ const {
   restart,
   restartError,
   isRestarting,
+  pickWorkflow,
+  pickWorkflowError,
   isSaving,
 } = useQueueHandlers({
   reloadIssues: props.reloadIssues,
@@ -68,12 +73,31 @@ const {
 
 const { activePick, setPick } = useWorkflowPicks();
 
-const workflowEntries = computed(() => props.catalog?.workflows ?? []);
+// Per-row pick resolution: the row's repo catalog (falling back to the factory
+// feed when the repo ships none) names what the claim will actually verify,
+// and the resolved pick — local preview first, then the row's persisted
+// workflow, then that catalog's default — is what gets frozen at claim time.
+function rowCatalogSummary(item) {
+  return rowCatalog(props.rowCatalogs?.[item.repo] ?? null, props.catalog);
+}
 function workflowState(item) {
-  return workflowRowState(props.catalog, item, activePick(item.id, props.catalog?.defaultWorkflow));
+  const summary = rowCatalogSummary(item);
+  return workflowRowState(
+    summary,
+    item,
+    activePick(item.id, item.workflow ?? summary.defaultWorkflow),
+  );
 }
 function onPick(item, name) {
   setPick(item.id, name);
+  pickWorkflow(item, name);
+}
+// The vanished warning's reset: re-pick the catalog default and persist it, so
+// the next claim assesses a verifiable pick instead of skipping the row.
+function onResetPick(item) {
+  const summary = rowCatalogSummary(item);
+  setPick(item.id, summary.defaultWorkflow);
+  pickWorkflow(item, summary.defaultWorkflow);
 }
 
 const nextQueueItem = computed(() => localQueue.value[0] ?? null);
@@ -123,6 +147,8 @@ async function onStartNext() {
 
     <ErrorBanner v-if="restartError" title="Restart failed" :message="restartError" />
 
+    <ErrorBanner v-if="pickWorkflowError" title="Pick failed" :message="pickWorkflowError" />
+
     <button
       class="start-next-button"
       :disabled="!nextQueueItem || hasRunningItem || isStartingNext"
@@ -159,8 +185,9 @@ async function onStartNext() {
         </div>
         <WorkflowPicker
           :state="workflowState(item)"
-          :workflows="workflowEntries"
+          :workflows="rowCatalogSummary(item).workflows"
           @pick="(name) => onPick(item, name)"
+          @reset="() => onResetPick(item)"
         />
         <span
           v-if="view.status !== 'queued'"
