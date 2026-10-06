@@ -103,20 +103,53 @@ pass "Shallow-cloned https://github.com/${REPO}.git"
 # phases below jump to the start of the enclosing loop. When the branch is
 # absent or not ahead, fall back to the normal full pipeline so implement
 # crashes stay restartable through the same button.
+#
+# The resume entry point is derived from /tmp/agents.json (loaded into
+# CATEGORY_SPECS above in stages-map order): the stage's catalog position
+# sets the phase threshold, so renames and additions flow through without
+# touching this script. Pre-rename labels resolve only when the catalog
+# holds the renamed stage; anything else falls back to the full pipeline.
 RESUME_BRANCH="${RESUME_BRANCH:-}"
 RESUME_STAGE="${RESUME_STAGE:-}"
 RESUME_ACTIVE=0
 RESUME_IDX=0
-if [[ -n "$RESUME_BRANCH" && -n "$RESUME_STAGE" ]]; then
-  case "$RESUME_STAGE" in
-    implementation) RESUME_IDX=1 ;;
-    review-loop) RESUME_IDX=2 ;;
-    static-loop|quality-loop) RESUME_IDX=3 ;;
-    test-rerun) RESUME_IDX=4 ;;
-    architecture-review|agentic-review) RESUME_IDX=5 ;;
-    pr-author) RESUME_IDX=6 ;;
-    *) RESUME_IDX=0 ;;
+STAGE_IDS=()
+for _resume_spec in "${CATEGORY_SPECS[@]}"; do
+  STAGE_IDS+=("${_resume_spec%%|*}")
+done
+# Zero-based position of a stage id in the catalog order; fails when absent.
+stage_index() {
+  local _want="$1" _i
+  for _i in "${!STAGE_IDS[@]}"; do
+    if [[ "${STAGE_IDS[$_i]}" == "$_want" ]]; then printf '%s' "$_i"; return 0; fi
+  done
+  return 1
+}
+# Resolves a resume label to a catalog stage id. Exact matches win; legacy
+# pre-rename labels map to their successor only when the catalog holds it.
+resolve_resume_stage() {
+  local _want="$1" _alias="" _id
+  for _id in "${STAGE_IDS[@]}"; do
+    if [[ "$_id" == "$_want" ]]; then printf '%s' "$_want"; return 0; fi
+  done
+  case "$_want" in
+    quality-loop) _alias="static-loop" ;;
+    agentic-review) _alias="architecture-review" ;;
   esac
+  if [[ -n "$_alias" ]]; then
+    for _id in "${STAGE_IDS[@]}"; do
+      if [[ "$_id" == "$_alias" ]]; then printf '%s' "$_alias"; return 0; fi
+    done
+  fi
+  return 1
+}
+if [[ -n "$RESUME_BRANCH" && -n "$RESUME_STAGE" ]]; then
+  RESOLVED_STAGE=""
+  RESUME_POS=""
+  if RESOLVED_STAGE="$(resolve_resume_stage "$RESUME_STAGE")" && RESUME_POS="$(stage_index "$RESOLVED_STAGE")"; then
+    RESUME_STAGE="$RESOLVED_STAGE"
+    RESUME_IDX=$((RESUME_POS + 1))
+  fi
   if [[ "$RESUME_IDX" -eq 0 ]]; then
     echo "resume: unknown resume stage '$RESUME_STAGE'; falling back to full pipeline"
   elif git ls-remote --heads "$REPO_HTTPS" "$RESUME_BRANCH" | grep -q "$RESUME_BRANCH"; then
@@ -141,8 +174,12 @@ if [[ -n "$RESUME_BRANCH" && -n "$RESUME_STAGE" ]]; then
 fi
 
 # Reports whether the numbered phase runs under the active resume.
-# Phase numbers: 0 implement, 1 test, 2 review-loop, 3 quality-loop,
-# 4 test-rerun, 5 agentic-review, 6 pr-author. Full pipeline runs all.
+# Phase numbers are pipeline positions: 0 implement (runs only unresumed),
+# then one threshold per catalog stage in order (1 implementation, 2
+# review-loop, 3 static-loop, 4 test-rerun, 5 architecture-review, 6
+# pr-author for the current catalog). RESUME_IDX is the resolved stage's
+# catalog position + 1, so only the threshold derivation — not the phase
+# gating below — depends on the stage order. Full pipeline runs all.
 resume_runs_phase() {
   local phase="$1"
   if [[ "$RESUME_ACTIVE" -ne 1 ]]; then return 0; fi
@@ -184,6 +221,10 @@ phase_category() {
   if [[ "${#CATEGORY_SPECS[@]}" -gt 0 ]]; then
     config_phase_category "$agent" "$iteration" && return 0
   fi
+  # Degraded fallback: the catalog was unreadable (no jq or no
+  # /tmp/agents.json), so heartbeat categories fall back to the last known
+  # shape instead of going dark. Loop phases always pass their slot
+  # explicitly, so this only classifies single-run phases here.
   if [[ "$agent" == "code-review" ]]; then
     printf 'review-loop'
   elif [[ "$agent" == "static-analysis" ]]; then
@@ -486,12 +527,12 @@ BRANCH: $BRANCH
 BASE: $BASE
 REPO: $REPO"
 
-echo "Running phase 4/7 (quality-loop): OPENCODE_API_KEY=*** $OPENCODE_BIN run --agent static-analysis --auto --format json \"...\" (then --agent feature-builder in fix-findings mode while status is fixed)"
+echo "Running phase 4/7 (static-loop): OPENCODE_API_KEY=*** $OPENCODE_BIN run --agent static-analysis --auto --format json \"...\" (then --agent feature-builder in fix-findings mode while status is fixed)"
 if resume_runs_phase 3; then
 run_quality_loop
 pass "quality loop completed (status clean/hitl-only, or 3-iteration cap exhausted - never a red gate)"
 else
-  echo "Skipping phase 4/7 (quality-loop): resume starts after the quality loop"
+  echo "Skipping phase 4/7 (static-loop): resume starts after the quality loop"
 fi
 
 # 14. -----------------------------------------------------------------------
