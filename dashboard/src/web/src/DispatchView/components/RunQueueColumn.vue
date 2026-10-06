@@ -2,7 +2,7 @@
 import { computed } from "vue";
 import ErrorBanner from "../../_shared/components/ErrorBanner.vue";
 import { queueRowView } from "../models/queueView.js";
-import { rowCatalog, workflowRowState } from "../models/workflowView.js";
+import { rowCatalogSummary, workflowRowState } from "../models/workflowView.js";
 import { useQueueFeedShadow } from "../services/useQueueFeedShadow.js";
 import { useQueueHandlers } from "../services/useQueueHandlers.js";
 import { useWorkflowPicks } from "../services/useWorkflowPicks.js";
@@ -77,27 +77,29 @@ const { activePick, setPick } = useWorkflowPicks();
 // feed when the repo ships none) names what the claim will actually verify,
 // and the resolved pick — local preview first, then the row's persisted
 // workflow, then that catalog's default — is what gets frozen at claim time.
-function rowCatalogSummary(item) {
-  return rowCatalog(props.rowCatalogs?.[item.repo] ?? null, props.catalog);
+function rowSummary(item) {
+  return rowCatalogSummary(props.rowCatalogs?.[item.repo] ?? null, props.catalog);
 }
 function workflowState(item) {
-  const summary = rowCatalogSummary(item);
+  const summary = rowSummary(item);
   return workflowRowState(
     summary,
     item,
     activePick(item.id, item.workflow ?? summary.defaultWorkflow),
   );
 }
-function onPick(item, name) {
+async function onPick(item, name) {
+  const before = activePick(item.id, item.workflow ?? rowSummary(item).defaultWorkflow);
   setPick(item.id, name);
-  pickWorkflow(item, name);
+  if (!(await pickWorkflow(item, name))) setPick(item.id, before);
 }
 // The vanished warning's reset: re-pick the catalog default and persist it, so
 // the next claim assesses a verifiable pick instead of skipping the row.
-function onResetPick(item) {
-  const summary = rowCatalogSummary(item);
+async function onResetPick(item) {
+  const summary = rowSummary(item);
+  const before = activePick(item.id, item.workflow ?? summary.defaultWorkflow);
   setPick(item.id, summary.defaultWorkflow);
-  pickWorkflow(item, summary.defaultWorkflow);
+  if (!(await pickWorkflow(item, summary.defaultWorkflow))) setPick(item.id, before);
 }
 
 const nextQueueItem = computed(() => localQueue.value[0] ?? null);
@@ -185,7 +187,7 @@ async function onStartNext() {
         </div>
         <WorkflowPicker
           :state="workflowState(item)"
-          :workflows="rowCatalogSummary(item).workflows"
+          :workflows="rowSummary(item).workflows"
           @pick="(name) => onPick(item, name)"
           @reset="() => onResetPick(item)"
         />
