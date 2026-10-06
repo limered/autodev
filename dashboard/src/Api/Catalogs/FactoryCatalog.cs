@@ -40,29 +40,44 @@ public static class FactoryCatalog
             throw new FactoryCatalogException($"Factory catalog unreadable at '{path}': {ex.Message}");
         }
 
+        return ParseContent(json, detail => $"Factory catalog invalid at '{path}': {detail}");
+    }
+
+    /// <summary>
+    /// Parses catalog content received as text (a fetched target-repo agents.json):
+    /// same rules as <see cref="Read"/>, without the file.
+    /// </summary>
+    public static FactoryWorkflows ParseContent(string content)
+    {
+        return ParseContent(content, detail => $"Factory catalog invalid: {detail}");
+    }
+
+    private static FactoryWorkflows ParseContent(string content, Func<string, string> message)
+    {
         JsonDocument doc;
         try
         {
-            doc = JsonDocument.Parse(json);
+            doc = JsonDocument.Parse(content);
         }
         catch (JsonException ex)
         {
-            throw new FactoryCatalogException($"Factory catalog invalid at '{path}': {ex.Message}");
+            throw new FactoryCatalogException(message(ex.Message));
         }
 
         using (doc)
         {
-            return Parse(doc.RootElement, path);
+            return Parse(doc.RootElement, message);
         }
     }
 
-    private static FactoryWorkflows Parse(JsonElement root, string path)
+    private static FactoryWorkflows Parse(JsonElement root, Func<string, string> message)
     {
+        const string path = "catalog content";
         if (root.ValueKind != JsonValueKind.Object
             || !root.TryGetProperty("stages", out var stages)
             || stages.ValueKind != JsonValueKind.Object)
         {
-            throw new FactoryCatalogException($"Factory catalog invalid at '{path}': missing 'stages' map.");
+            throw new FactoryCatalogException(message("missing 'stages' map."));
         }
 
         var stageIds = stages.EnumerateObject().Select(p => p.Name).ToList();
@@ -74,10 +89,10 @@ public static class FactoryCatalog
                 [new WorkflowEntry(ReservedDefaultName, stageIds.Count)]);
         }
 
-        if (workflows.ValueKind != JsonValueKind.Object || workflows.EnumerateObject().Count() == 0)
+        if (workflows.ValueKind != JsonValueKind.Object || !workflows.EnumerateObject().Any())
         {
             throw new FactoryCatalogException(
-                $"Factory catalog invalid at '{path}': 'workflows' map must declare at least one workflow.");
+                message("'workflows' map must declare at least one workflow."));
         }
 
         var entries = new List<WorkflowEntry>();
@@ -87,16 +102,16 @@ public static class FactoryCatalog
             if (string.IsNullOrWhiteSpace(name))
             {
                 throw new FactoryCatalogException(
-                    $"Factory catalog invalid at '{path}': workflow name must be a non-empty string.");
+                    message("workflow name must be a non-empty string."));
             }
 
             if (name == ReservedDefaultName)
             {
                 throw new FactoryCatalogException(
-                    $"Factory catalog invalid at '{path}': workflow name 'default' is reserved for the legacy stages-only workflow.");
+                    message("workflow name 'default' is reserved for the legacy stages-only workflow."));
             }
 
-            entries.Add(new WorkflowEntry(name, AssertStageIds(path, name, property.Value, stageIds).Count));
+            entries.Add(new WorkflowEntry(name, AssertStageIds(path, message, name, property.Value, stageIds).Count));
         }
 
         if (!root.TryGetProperty("defaultWorkflow", out var marker)
@@ -104,26 +119,26 @@ public static class FactoryCatalog
             || string.IsNullOrWhiteSpace(marker.GetString()))
         {
             throw new FactoryCatalogException(
-                $"Factory catalog invalid at '{path}': declares workflows but no default workflow marker ('defaultWorkflow').");
+                message("declares workflows but no default workflow marker ('defaultWorkflow')."));
         }
 
         var defaultName = marker.GetString()!;
         if (!entries.Any(e => e.Name == defaultName))
         {
             throw new FactoryCatalogException(
-                $"Factory catalog invalid at '{path}': default workflow '{defaultName}' names no known workflow (known: {string.Join(", ", entries.Select(e => e.Name))}).");
+                message($"default workflow '{defaultName}' names no known workflow (known: {string.Join(", ", entries.Select(e => e.Name))})."));
         }
 
         return new FactoryWorkflows(defaultName, entries);
     }
 
-    private static IReadOnlyList<string> AssertStageIds(
-        string path, string workflow, JsonElement value, IReadOnlyList<string> knownIds)
+    private static List<string> AssertStageIds(
+        string path, Func<string, string> message, string workflow, JsonElement value, IReadOnlyList<string> knownIds)
     {
         if (value.ValueKind != JsonValueKind.Array)
         {
             throw new FactoryCatalogException(
-                $"Factory catalog invalid at '{path}': workflow '{workflow}' must be an ordered list of stage ids.");
+                message($"workflow '{workflow}' must be an ordered list of stage ids."));
         }
 
         var ids = value.EnumerateArray()
@@ -133,7 +148,7 @@ public static class FactoryCatalog
         if (ids.Count == 0)
         {
             throw new FactoryCatalogException(
-                $"Factory catalog invalid at '{path}': workflow '{workflow}' must list at least one stage id.");
+                message($"workflow '{workflow}' must list at least one stage id."));
         }
 
         var seen = new HashSet<string>();
@@ -142,19 +157,19 @@ public static class FactoryCatalog
             if (string.IsNullOrWhiteSpace(id))
             {
                 throw new FactoryCatalogException(
-                    $"Factory catalog invalid at '{path}': workflow '{workflow}' lists an empty stage id.");
+                    message($"workflow '{workflow}' lists an empty stage id."));
             }
 
             if (!knownIds.Contains(id))
             {
                 throw new FactoryCatalogException(
-                    $"Factory catalog invalid at '{path}': workflow '{workflow}' references unknown stage id '{id}' (known: {string.Join(", ", knownIds)}).");
+                    message($"workflow '{workflow}' references unknown stage id '{id}' (known: {string.Join(", ", knownIds)})."));
             }
 
             if (!seen.Add(id))
             {
                 throw new FactoryCatalogException(
-                    $"Factory catalog invalid at '{path}': workflow '{workflow}' lists stage id '{id}' more than once.");
+                    message($"workflow '{workflow}' lists stage id '{id}' more than once."));
             }
         }
 

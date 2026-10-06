@@ -8,10 +8,16 @@ public static class QueueEndpoints
     {
         app.MapPost("/queue", async (EnqueueRequest req, IQueueStore store) =>
         {
-            var row = await store.Enqueue(req.IssueId);
+            var row = await store.Enqueue(req.IssueId, req.Workflow);
             return row is null
                 ? Results.Problem("Failed to enqueue issue.")
                 : Results.Json(row);
+        });
+
+        app.MapPost("/queue/{id:long}/workflow", async (long id, PickWorkflowRequest req, IQueueStore store) =>
+        {
+            var row = await store.SetWorkflow(id, req.Workflow);
+            return row is null ? Results.NotFound() : Results.Json(row);
         });
 
         app.MapGet("/queue", async (IQueueStore store) =>
@@ -98,6 +104,8 @@ public static class QueueEndpoints
     }
 }
 
-public record EnqueueRequest(long IssueId);
+public record EnqueueRequest(long IssueId, string? Workflow = null);
+
+public record PickWorkflowRequest(string? Workflow);
 
 public record ReorderRequest(long[] Ids);

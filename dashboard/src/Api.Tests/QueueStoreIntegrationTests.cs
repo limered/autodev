@@ -159,4 +159,91 @@ public sealed class QueueStoreIntegrationTests : IClassFixture<PostgresFixture>,
         var all = await _store.All();
         Assert.Null(all.Single(i => i.Id == enqueued.Id).RunId);
     }
+
+    // The claim-time freeze through the SQL store: the pick persists on the queue
+    // row, resolves into the claim payload, and a stale pick skips the row.
+    private const string CatalogJson =
+        """{"stages":{"implementation":{},"ci":{}},"workflows":{"full":["implementation","ci"],"quick":["implementation"]},"defaultWorkflow":"full"}""";
+
+    [SkippableFact]
+    public async Task ClaimNext_VerifiedPick_FreezesResolvedWorkflowIntoPayload()
+    {
+        Skip.IfNot(_fixture.IsDockerAvailable, "Docker is not available; skipping QueueStore integration tests.");
+
+        await _fixture.SeedIssueAsync(1, "owner/repo-a", 1, "First issue", "Do the first thing");
+        var store = _fixture.CreateStore(
+            new Api.Catalogs.TargetCatalogService(
+                FakeTargetCatalogFetcher.Target("sha-1", CatalogJson), new FakeTargetCatalogStore()));
+
+        var enqueued = await store.Enqueue(1);
+        await store.SetWorkflow(enqueued!.Id, "quick");
+        await store.StartNext(enqueued.Id);
+
+        var claim = await store.ClaimNext();
+
+        Assert.NotNull(claim);
+        Assert.Equal("quick", claim!.Workflow);
+        Assert.Equal("quick", (await store.All()).Single().Workflow);
+    }
+
+    [SkippableFact]
+    public async Task ClaimNext_NoPick_ClaimsExplicitDefaultWorkflow()
+    {
+        Skip.IfNot(_fixture.IsDockerAvailable, "Docker is not available; skipping QueueStore integration tests.");
+
+        await _fixture.SeedIssueAsync(1, "owner/repo-a", 1, "First issue", "Do the first thing");
+        var store = _fixture.CreateStore(
+            new Api.Catalogs.TargetCatalogService(
+                FakeTargetCatalogFetcher.Target("sha-1", CatalogJson), new FakeTargetCatalogStore()));
+
+        var enqueued = await store.Enqueue(1);
+        await store.StartNext(enqueued!.Id);
+
+        var claim = await store.ClaimNext();
+
+        Assert.NotNull(claim);
+        Assert.Equal("full", claim!.Workflow);
+    }
+
+    [SkippableFact]
+    public async Task ClaimNext_StalePick_SkipsRowLeftUnclaimed()
+    {
+        Skip.IfNot(_fixture.IsDockerAvailable, "Docker is not available; skipping QueueStore integration tests.");
+
+        await _fixture.SeedIssueAsync(1, "owner/repo-a", 1, "First issue", "Do the first thing");
+        var store = _fixture.CreateStore(
+            new Api.Catalogs.TargetCatalogService(
+                FakeTargetCatalogFetcher.Target("sha-1", CatalogJson), new FakeTargetCatalogStore()));
+
+        var enqueued = await store.Enqueue(1);
+        await store.SetWorkflow(enqueued!.Id, "retired-flow");
+        await store.StartNext(enqueued.Id);
+
+        var claim = await store.ClaimNext();
+
+        Assert.Null(claim);
+        var row = (await store.All()).Single();
+        Assert.Null(row.RunId);
+        Assert.Equal("retired-flow", row.Workflow);
+    }
+
+    [SkippableFact]
+    public async Task SetWorkflow_ClaimedRow_KeepsFrozenPick()
+    {
+        Skip.IfNot(_fixture.IsDockerAvailable, "Docker is not available; skipping QueueStore integration tests.");
+
+        await _fixture.SeedIssueAsync(1, "owner/repo-a", 1, "First issue", "Do the first thing");
+        var store = _fixture.CreateStore(
+            new Api.Catalogs.TargetCatalogService(
+                FakeTargetCatalogFetcher.Target("sha-1", CatalogJson), new FakeTargetCatalogStore()));
+
+        var enqueued = await store.Enqueue(1);
+        await store.SetWorkflow(enqueued!.Id, "quick");
+        await store.StartNext(enqueued.Id);
+        await store.ClaimNext();
+
+        var bumped = await store.SetWorkflow(enqueued.Id, "full");
+
+        Assert.Equal("quick", bumped!.Workflow);
+    }
 }
