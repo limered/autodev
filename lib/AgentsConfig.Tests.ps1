@@ -407,6 +407,38 @@ Describe 'ConvertFrom-AgentsWorkflowsJson' {
     }
 }
 
+Describe 'Resolve-FrozenWorkflowStages' {
+    BeforeAll {
+        $script:flowJson = @'
+{
+  "stages": {
+    "implementation": { "type": "sequential", "agents": ["feature-builder"] },
+    "pr-author": { "type": "sequential", "agents": ["pr-author"] }
+  },
+  "workflows": {
+    "full": ["implementation", "pr-author"],
+    "quick": ["pr-author"]
+  },
+  "defaultWorkflow": "full"
+}
+'@
+        $script:FlowCatalog = ConvertFrom-AgentsWorkflowsJson -Json $script:flowJson -Config (ConvertFrom-AgentsConfigJson -Json $script:flowJson)
+    }
+    It 'resolves a known pick to its ordered stage-id list' {
+        Resolve-FrozenWorkflowStages -Workflow 'quick' -WorkflowCatalog $script:FlowCatalog | Should -Be @('pr-author')
+        Resolve-FrozenWorkflowStages -Workflow 'full' -WorkflowCatalog $script:FlowCatalog | Should -Be @('implementation', 'pr-author')
+    }
+    It 'fails with a stale-workflow reason on a missing pick' {
+        { Resolve-FrozenWorkflowStages -Workflow '' -WorkflowCatalog $script:FlowCatalog } | Should -Throw '*stale-workflow*'
+    }
+    It 'fails with a stale-workflow reason on a pick the start catalog dropped' {
+        { Resolve-FrozenWorkflowStages -Workflow 'ghost' -WorkflowCatalog $script:FlowCatalog } | Should -Throw '*stale-workflow*ghost*known: full, quick*'
+    }
+    It 'fails with a stale-workflow reason when there is no catalog' {
+        { Resolve-FrozenWorkflowStages -Workflow 'full' -WorkflowCatalog $null } | Should -Throw '*stale-workflow*'
+    }
+}
+
 Describe 'Select-WorkflowStages' {
     BeforeAll {
         $script:FilterConfig = ConvertFrom-AgentsConfigJson -Json $script:V1Json
