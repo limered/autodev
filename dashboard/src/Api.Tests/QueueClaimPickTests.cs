@@ -177,9 +177,4 @@ public class QueueClaimPickTests
 
         Assert.Equal("quick", bumped!.Workflow);
     }
-
-    private sealed class FixedFactoryWorkflows(FactoryWorkflows? workflows) : IFactoryWorkflows
-    {
-        public FactoryWorkflows? TryRead() => workflows;
-    }
 }

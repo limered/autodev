@@ -60,9 +60,4 @@ public class CatalogRulesWorkflowNamesTests
         Assert.Null(defaultName);
         Assert.Empty(names);
     }
-
-    private sealed class FixedFactoryWorkflows(FactoryWorkflows? workflows) : IFactoryWorkflows
-    {
-        public FactoryWorkflows? TryRead() => workflows;
-    }
 }
