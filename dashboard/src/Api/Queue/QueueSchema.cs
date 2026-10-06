@@ -25,7 +25,7 @@ public static class QueueSchema
             ALTER TABLE queue ADD COLUMN IF NOT EXISTS resume_branch text;
             ALTER TABLE queue ADD COLUMN IF NOT EXISTS resume_stage text;
             ALTER TABLE queue ADD COLUMN IF NOT EXISTS parent_run_id uuid;
-            -- Idempotent migration: the row's workflow pick, frozen at claim time.
+            -- the row's workflow pick, frozen at claim time.
             ALTER TABLE queue ADD COLUMN IF NOT EXISTS workflow text;
             """, conn);
         await cmd.ExecuteNonQueryAsync();

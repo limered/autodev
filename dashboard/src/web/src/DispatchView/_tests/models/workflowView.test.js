@@ -69,7 +69,9 @@ describe("rowCatalogSummary", () => {
   });
 
   it("a fallback source or no row entry reads the factory feed", () => {
-    expect(rowCatalogSummary({ source: "factory-fallback", content: null }, factoryCatalog)).toEqual({
+    expect(
+      rowCatalogSummary({ source: "factory-fallback", content: null }, factoryCatalog),
+    ).toEqual({
       usable: true,
       workflows: factoryCatalog.workflows,
       defaultWorkflow: "full",
@@ -147,12 +149,13 @@ describe("workflowRowState", () => {
     expect(workflowRowState(summary, unclaimed, "retired-flow")).toEqual({
       kind: "vanished",
       stalePick: "retired-flow",
+      hasDefault: true,
       name: "full",
       stageCount: 5,
     });
   });
 
-  it("the vanished reset target falls back to the first workflow when the default is gone", () => {
+  it("marks hasDefault false — no arbitrary first-workflow reset fallback", () => {
     const noDefault = {
       usable: true,
       workflows: [{ name: "only", stageCount: 3 }],
@@ -162,8 +165,63 @@ describe("workflowRowState", () => {
     expect(workflowRowState(noDefault, unclaimed, "retired-flow")).toEqual({
       kind: "vanished",
       stalePick: "retired-flow",
-      name: "only",
-      stageCount: 3,
+      hasDefault: false,
+      name: "gone",
+      stageCount: 0,
     });
+  });
+});
+
+// Contract fixture pinning parse parity with FactoryCatalog.ParseContent
+// (Api/Catalogs/FactoryCatalog.cs, FactoryCatalogTests Read_InvalidCatalog...):
+// every catalog C# rejects answers the factory fallback here too — never a
+// partial JS-only parse the claim-path validator would reject.
+describe("rowCatalogSummary parity with FactoryCatalog.ParseContent", () => {
+  const rejected = (json) =>
+    expect(rowCatalogSummary(targetEntry(json), factoryCatalog)).toEqual({
+      usable: true,
+      workflows: factoryCatalog.workflows,
+      defaultWorkflow: "full",
+    });
+
+  it.each([
+    ["an empty workflows map", '{"stages":{"a":{}},"workflows":{},"defaultWorkflow":"x"}'],
+    [
+      "an empty stage list",
+      '{"stages":{"a":{}},"workflows":{"empty":[]},"defaultWorkflow":"empty"}',
+    ],
+    [
+      "an unknown stage id",
+      '{"stages":{"a":{}},"workflows":{"bad":["a","ghost"]},"defaultWorkflow":"bad"}',
+    ],
+    [
+      "a duplicate stage id",
+      '{"stages":{"a":{}},"workflows":{"dup":["a","a"]},"defaultWorkflow":"dup"}',
+    ],
+    [
+      "the reserved default name",
+      '{"stages":{"a":{}},"workflows":{"default":["a"]},"defaultWorkflow":"default"}',
+    ],
+    ["a missing default marker", '{"stages":{"a":{}},"workflows":{"only":["a"]}}'],
+    [
+      "an unknown default marker",
+      '{"stages":{"a":{}},"workflows":{"only":["a"]},"defaultWorkflow":"ghost"}',
+    ],
+  ])("rejects %s", (_, json) => rejected(json));
+
+  it("rejects a non-array workflow value where C# throws", () => {
+    rejected('{"stages":{"a":{}},"workflows":{"bad":5},"defaultWorkflow":"bad"}');
+  });
+
+  it("rejects a workflows value that is not a map", () => {
+    rejected('{"stages":{"a":{}},"workflows":[{"name":"only","stages":["a"]}]}');
+  });
+
+  it("rejects a stages value that is not a map", () => {
+    rejected('{"stages":["a"],"workflows":{"only":["a"]},"defaultWorkflow":"only"}');
+  });
+
+  it("rejects a doc that is not an object", () => {
+    rejected('["stages"]');
   });
 });

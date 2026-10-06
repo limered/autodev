@@ -23,27 +23,44 @@ export function rowCatalogSummary(rowEntry, factoryCatalog) {
   return factorySummary(factoryCatalog);
 }
 
+const isPlainObject = (v) => v !== null && typeof v === "object" && !Array.isArray(v);
+
+// Same rules as FactoryCatalog.ParseContent (Api/Catalogs/FactoryCatalog.cs):
+// a catalog that would not parse in C# answers null here too, so the summary
+// falls back to the factory feed exactly as the claim path does.
 function parseWorkflows(doc) {
-  const stageIds = Object.keys(doc?.stages ?? {});
+  if (!isPlainObject(doc) || !isPlainObject(doc.stages)) return null;
+  const stageIds = Object.keys(doc.stages);
   if (!stageIds.length) return null;
 
-  if (doc.workflows && typeof doc.workflows === "object") {
-    const names = Object.keys(doc.workflows);
-    if (!names.length) return null;
-    const workflows = names.map((name) => ({
-      name,
-      stageCount: Array.isArray(doc.workflows[name]) ? doc.workflows[name].length : 0,
-    }));
-    const defaultWorkflow = typeof doc.defaultWorkflow === "string" ? doc.defaultWorkflow : null;
-    if (!defaultWorkflow || !workflows.some((w) => w.name === defaultWorkflow)) return null;
-    return { usable: true, workflows, defaultWorkflow };
+  if (!Object.hasOwn(doc, "workflows")) {
+    return {
+      usable: true,
+      workflows: [{ name: "default", stageCount: stageIds.length }],
+      defaultWorkflow: "default",
+    };
   }
 
-  return {
-    usable: true,
-    workflows: [{ name: "default", stageCount: stageIds.length }],
-    defaultWorkflow: "default",
-  };
+  if (!isPlainObject(doc.workflows)) return null;
+  const names = Object.keys(doc.workflows);
+  if (!names.length) return null;
+  const workflows = [];
+  for (const name of names) {
+    if (name === "default" || !name.trim()) return null;
+    const stages = doc.workflows[name];
+    if (
+      !Array.isArray(stages) ||
+      !stages.length ||
+      stages.some((id) => typeof id !== "string" || !id.trim() || !stageIds.includes(id)) ||
+      new Set(stages).size !== stages.length
+    ) {
+      return null;
+    }
+    workflows.push({ name, stageCount: stages.length });
+  }
+  const defaultWorkflow = typeof doc.defaultWorkflow === "string" ? doc.defaultWorkflow : null;
+  if (!defaultWorkflow || !workflows.some((w) => w.name === defaultWorkflow)) return null;
+  return { usable: true, workflows, defaultWorkflow };
 }
 
 function factorySummary(factoryCatalog) {
@@ -58,8 +75,10 @@ function factorySummary(factoryCatalog) {
 // The row's picker state from one catalog summary plus the row's pick:
 // ready while unclaimed, plain frozen text once claimed, a muted default
 // notice while no catalog is readable (the factory fallback runs), and a red
-// vanished warning naming the stale pick with the reset target when the pick
-// names nothing in the catalog. Formal mini-states: kind only, never class names.
+// vanished warning naming the stale pick with the default as the reset target
+// when the pick names nothing in the catalog — hasDefault marks whether a
+// default to reset to actually exists. Formal mini-states: kind only,
+// never class names.
 export function workflowRowState(summary, item, pickedName) {
   const claimed = Boolean(item?.runId);
   const workflows = summary?.workflows ?? [];
@@ -80,12 +99,15 @@ export function workflowRowState(summary, item, pickedName) {
   }
 
   if (pickedName && !find(pickedName)) {
-    const resetTarget = find(defaultWorkflow) ?? workflows[0];
+    // The reset target is the catalog default and nothing else — no
+    // arbitrary first-workflow fallback.
+    const resetTarget = find(defaultWorkflow) ?? null;
     return {
       kind: "vanished",
       stalePick: pickedName,
-      name: resetTarget.name,
-      stageCount: resetTarget.stageCount,
+      hasDefault: Boolean(resetTarget),
+      name: resetTarget?.name ?? defaultWorkflow,
+      stageCount: resetTarget?.stageCount ?? 0,
     };
   }
 
