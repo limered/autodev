@@ -42,3 +42,14 @@ Describe 'Guest resume contract' {
         }
     }
 }
+
+Describe 'Guest seeded category names' {
+    BeforeAll {
+        $script:GuestScript = Join-Path $PSScriptRoot '..' 'infrastructure' 'multipass' 'test-feature-builder.sh'
+        $script:GuestText = Get-Content -LiteralPath $script:GuestScript -Raw
+    }
+    It 'reports the seeded static-loop slot from the quality loop phases' {
+        $script:GuestText | Should -Match 'run_agent_phase static-analysis "\$QUALITY_SPEC" "\$i" "static-loop"'
+        $script:GuestText | Should -Match 'run_agent_phase feature-builder "\$FIX_SPEC" "\$\(\(i\+3\)\)" "static-loop"'
+    }
+}

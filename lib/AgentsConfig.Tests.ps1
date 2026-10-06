@@ -484,3 +484,16 @@ Describe 'Get-ResumeStage' {
         Get-ResumeStage -Config @() -CompletedSteps @() -CurrentCategory 'review-loop' | Should -Be $null
     }
 }
+
+Describe 'Resolve-LegacyStageAlias' {
+    BeforeAll {
+        $script:repoConfig = ConvertFrom-AgentsConfigJson -Json (Get-Content -LiteralPath (Join-Path $PSScriptRoot '..' 'agents.json') -Raw)
+    }
+    It 'resolves the pre-rename loop label when the catalog holds the renamed stage' {
+        Get-ResumeStage -Config $script:repoConfig -CompletedSteps @() -CurrentCategory 'quality-loop' | Should -Be 'static-loop'
+    }
+    It 'keeps an exact catalog match ahead of the alias' {
+        $config = ConvertFrom-AgentsConfigJson -Json $script:V1Json
+        Get-ResumeStage -Config $config -CompletedSteps @() -CurrentCategory 'quality-loop' | Should -Be 'quality-loop'
+    }
+}

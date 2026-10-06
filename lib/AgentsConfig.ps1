@@ -399,6 +399,20 @@ function Get-StepCategory {
     return 'uncategorized'
 }
 
+# Runs that failed before the guest reported seeded names carry the old
+# label; resolve it only when the catalog holds the renamed stage.
+function Resolve-LegacyStageAlias {
+    param($Config, [string]$Category)
+    if ([string]::IsNullOrWhiteSpace($Category)) { return $Category }
+    $ids = @(@($Config) | ForEach-Object { "$($_.Id)" })
+    if ($ids -ccontains "$Category") { return "$Category" }
+    $aliases = @{ 'quality-loop' = 'static-loop' }
+    foreach ($key in $aliases.Keys) {
+        if ("$Category" -ceq $key -and $ids -ccontains $aliases[$key]) { return $aliases[$key] }
+    }
+    return "$Category"
+}
+
 # Resume-point derivation for same-branch restarts: maps the failed run's
 # completed steps and current phase to the first incomplete stage name.
 # Reuses the stage catalog order plus the slot rule (Get-StepCategory) — no
@@ -413,6 +427,7 @@ function Get-ResumeStage {
     param($Config, $CompletedSteps, [string]$CurrentCategory)
     $entries = @($Config)
     if ($entries.Count -eq 0) { return $null }
+    $CurrentCategory = Resolve-LegacyStageAlias -Config $entries -Category $CurrentCategory
     if (-not [string]::IsNullOrWhiteSpace($CurrentCategory)) {
         $match = @($entries | Where-Object { "$($_.Id)" -ceq "$CurrentCategory" }) | Select-Object -First 1
         if ($match) { return "$($match.Id)" }

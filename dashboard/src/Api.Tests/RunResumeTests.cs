@@ -68,4 +68,21 @@ public class RunResumeTests
         Assert.Equal("beta", RunResume.DeriveResumeStage(renamed, "beta"));
         Assert.Equal("beta", RunResume.DeriveResumeStage(renamed, null));
     }
+
+    [Fact]
+    public void DeriveResumeStage_LegacyQualityLoopLabel_ResolvesToStaticLoop()
+    {
+        Assert.Equal("static-loop", RunResume.DeriveResumeStage(Pipeline, "quality-loop"));
+    }
+
+    [Fact]
+    public void DeriveResumeStage_ExactMatchWinsOverLegacyAlias()
+    {
+        var legacy = new[]
+        {
+            new RunStage("quality-loop", "m", "quality-loop", "loop"),
+        };
+
+        Assert.Equal("quality-loop", RunResume.DeriveResumeStage(legacy, "quality-loop"));
+    }
 }

@@ -187,11 +187,11 @@ phase_category() {
   if [[ "$agent" == "code-review" ]]; then
     printf 'review-loop'
   elif [[ "$agent" == "static-analysis" ]]; then
-    printf 'quality-loop'
+    printf 'static-loop'
   elif [[ "$agent" == "feature-builder" && "$iteration" != "0" ]]; then
     # Fix passes in both loops share this worker: review-loop owns 1..3,
-    # quality-loop continues at 4..6 (mirrors Get-PhaseStepCandidates).
-    if [[ "$iteration" -ge 4 ]]; then printf 'quality-loop'; else printf 'review-loop'; fi
+    # static-loop continues at 4..6 (mirrors Get-PhaseStepCandidates).
+    if [[ "$iteration" -ge 4 ]]; then printf 'static-loop'; else printf 'review-loop'; fi
   else
     printf '%s' "$agent"
   fi
@@ -241,7 +241,7 @@ config_phase_category() {
 # as it begins, so the host heartbeat poller can relay the current phase up to
 # the backend without any new secrets crossing into the VM.
 # /tmp/current-category is the category marker: each phase writes the seeded
-# slot it fills here as it begins (review-loop / quality-loop for each loop's
+# slot it fills here as it begins (review-loop / static-loop for each loop's
 # scan and fix workers), so the host relays liveness by category and the
 # dashboard lights the seeded slot even when the worker name differs from it.
 #
@@ -347,14 +347,14 @@ run_review_loop() {
 # fix pass).
 run_quality_loop() {
   for i in 1 2 3; do
-    run_agent_phase static-analysis "$QUALITY_SPEC" "$i" "quality-loop" || fail "static-analysis agent crashed"
+    run_agent_phase static-analysis "$QUALITY_SPEC" "$i" "static-loop" || fail "static-analysis agent crashed"
     status=$(tail -n1 .factory/static-analysis-result.json | jq -r .status) || fail "static-analysis agent crashed: cannot read status sentinel from .factory/static-analysis-result.json"
     case "$status" in
       clean|hitl-only) return 0 ;;                      # nothing left to auto-fix
       # Fix passes continue the shared worker's numbering at 4..6 (the review
       # loop's fix passes own 1..3) so relay files never collide — mirrors
       # Get-PhaseStepCandidates' next-free assignment on the host.
-      fixed)  run_agent_phase feature-builder "$FIX_SPEC" "$((i+3))" "quality-loop" || fail "fix pass crashed" ;;
+      fixed)  run_agent_phase feature-builder "$FIX_SPEC" "$((i+3))" "static-loop" || fail "fix pass crashed" ;;
       *) fail "static-analysis returned unknown status sentinel: $status" ;;
     esac
   done

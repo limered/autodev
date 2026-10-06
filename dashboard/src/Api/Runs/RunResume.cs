@@ -17,6 +17,7 @@ public static class RunResume
             return null;
         }
 
+        currentCategory = ResolveLegacyAlias(stages, currentCategory);
         var views = RunStageStatus.Derive(stages, RunStatus.Failed, currentCategory);
         for (var i = 0; i < views.Count; i++)
         {
@@ -50,4 +51,35 @@ public static class RunResume
         string.IsNullOrWhiteSpace(view.Category) || view.Category == RunStageStatus.Uncategorized
             ? view.Agent
             : view.Category;
+
+    // Runs that failed before the guest reported seeded names carry the old
+    // label; resolve it only when the catalog holds the renamed stage.
+    private static readonly IReadOnlyDictionary<string, string> LegacyAliases =
+        new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["quality-loop"] = "static-loop",
+        };
+
+    private static string? ResolveLegacyAlias(IReadOnlyList<RunStage> stages, string? currentCategory)
+    {
+        if (string.IsNullOrWhiteSpace(currentCategory))
+        {
+            return currentCategory;
+        }
+
+        var names = stages.Select(s =>
+            string.IsNullOrWhiteSpace(s.Category) ? s.Agent : s.Category);
+        if (names.Any(n => string.Equals(n, currentCategory, StringComparison.OrdinalIgnoreCase)))
+        {
+            return currentCategory;
+        }
+
+        if (LegacyAliases.TryGetValue(currentCategory.Trim(), out var renamed) &&
+            names.Any(n => string.Equals(n, renamed, StringComparison.OrdinalIgnoreCase)))
+        {
+            return renamed;
+        }
+
+        return currentCategory;
+    }
 }
