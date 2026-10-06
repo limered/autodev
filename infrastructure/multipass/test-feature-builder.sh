@@ -1,18 +1,21 @@
 #!/usr/bin/env bash
 # End-to-end feature-builder test for the slop-factory job VM.
 # Sets up the GitHub PAT, opencode API key, clones the project
-# repo, injects the .opencode agent configuration, then runs the opencode
-# phases headlessly in the same clone: implement (feature-builder agent:
-# issue token in, implemented branch pushed), test (test-runner agent),
-# review loop (<=3 iterations of code-review scans, each followed by a
-# feature-builder fix-findings pass while AFK findings remain - never a red
-# gate, so the review sees the implementation before static-analysis touches it),
-# quality loop (<=3 iterations of static-analysis scans, each followed by a
-# feature-builder fix-findings pass while AFK findings remain - never a red
-# gate), test again (review fixes and autofixes can break behaviour),
-# agentic-review (architecture findings filed as ready-for-human tracker issues)
-# and - after a gate plus a hook point - PR (pr-author agent: PR authored
-# from the branch diff and POSTed).
+# repo, injects the .opencode agent configuration, then runs the frozen
+# workflow headlessly in the same clone, dispatched by stage id from
+# WORKFLOW_STAGES_B64 (the host launcher rechecks the claim at start and
+# hands over the picked, ordered stage list): implementation (feature-builder
+# agent: issue token in, implemented branch pushed; test-runner test agent
+# inside the same stage), review loop (<=3 iterations of code-review scans,
+# each followed by a feature-builder fix-findings pass while AFK findings
+# remain - never a red gate, so the review sees the implementation before
+# static-analysis touches it), quality loop (<=3 iterations of
+# static-analysis scans, each followed by a fix-findings pass - never a red
+# gate), test re-run (fixes and autofixes must keep every harness green),
+# architecture-review (agentic-review agent, findings filed as a
+# ready-for-human tracker issue) and PR (pr-author agent: PR authored from
+# the branch diff and POSTed). Generic gates run only when their stage is
+# present; an unknown stage id fails fast rather than being skipped.
 # The calling PowerShell harness verifies the resulting branch/PR.
 set -euo pipefail
 
@@ -35,6 +38,11 @@ MODEL="${MODEL:-opencode-go/grok-4.5}"
 # to /tmp/agents.json before this script runs. The VM builds its category list
 # on startup from that file and reports liveness by category (phase_category
 # below) over the existing heartbeat channel.
+# Frozen workflow: the host launcher rechecks the claimed pick at start against
+# the same catalog and hands the ordered stage-id list over base64-encoded
+# (WORKFLOW_STAGES_B64, comma-joined). The guest runs exactly those stages, in
+# that order, in this clone — a stage-id list that is missing, empty, or unrun
+# by this guest fails fast and never falls back to a hardcoded phase order.
 AGENTS_JSON="/tmp/agents.json"
 CATEGORY_SPECS=()  # entries "id|type|member1,member2" in stages-map order
 
@@ -66,6 +74,24 @@ fail() {
 pass() {
   echo "PASS: $1"
 }
+
+# The frozen workflow stage list, base64-encoded by the host (WORKFLOW_STAGES_B64,
+# comma-joined). It is authoritative: the guest loops it instead of the script's
+# old hardcoded phase order, and a missing, empty, or undecodable list fails
+# fast with a stale-workflow reason rather than falling back.
+FROZEN_STAGES=()
+WORKFLOW_STAGES_B64="${WORKFLOW_STAGES_B64:-}"
+if [[ -n "$WORKFLOW_STAGES_B64" ]]; then
+  _frozen_csv="$(printf '%s' "$WORKFLOW_STAGES_B64" | base64 -d)" || fail "stale-workflow: frozen stage list is not decodable base64"
+  IFS=',' read -r -a FROZEN_STAGES <<< "$_frozen_csv"
+fi
+if [[ "${#FROZEN_STAGES[@]}" -eq 0 ]] || [[ -z "${FROZEN_STAGES[0]}" && "${#FROZEN_STAGES[@]}" -eq 1 ]]; then
+  fail "stale-workflow: no frozen workflow stage list was handed to the guest; refusing to fall back to any default pipeline"
+fi
+for _stage in "${FROZEN_STAGES[@]}"; do
+  _stage_trim="${_stage//[[:space:]]/}"
+  [[ -n "$_stage_trim" ]] || fail "stale-workflow: the frozen workflow contains an empty stage id"
+done
 
 echo "== Feature builder end-to-end test =="
 
@@ -100,36 +126,32 @@ pass "Shallow-cloned https://github.com/${REPO}.git"
 # environment from the Runner passthrough. When both name a remote branch that
 # exists and is ahead of base, check it out, log the cloned commit for
 # auditability (a fixup pushed too late is obvious), and skip implement —
-# phases below jump to the start of the enclosing loop. When the branch is
+# stages below jump to the start of the enclosing stage. When the branch is
 # absent or not ahead, fall back to the normal full pipeline so implement
 # crashes stay restartable through the same button.
 #
-# The resume entry point is derived from /tmp/agents.json (loaded into
-# CATEGORY_SPECS above in stages-map order): the stage's catalog position
-# sets the phase threshold, so renames and additions flow through without
-# touching this script. Pre-rename labels resolve only when the catalog
-# holds the renamed stage; anything else falls back to the full pipeline.
+# The resume entry point is resolved against the frozen stage list above, not
+# the catalog: the stage's position in the picked workflow sets the stage
+# threshold, so a stage the workflow does not run can never resume into it.
+# Pre-rename labels resolve only when the frozen list holds the renamed stage;
+# anything else falls back to the full frozen pipeline.
 RESUME_BRANCH="${RESUME_BRANCH:-}"
 RESUME_STAGE="${RESUME_STAGE:-}"
 RESUME_ACTIVE=0
 RESUME_IDX=0
-STAGE_IDS=()
-for _resume_spec in "${CATEGORY_SPECS[@]}"; do
-  STAGE_IDS+=("${_resume_spec%%|*}")
-done
-# Zero-based position of a stage id in the catalog order; fails when absent.
+# Zero-based position of a stage id in the frozen workflow order; fails when absent.
 stage_index() {
   local _want="$1" _i
-  for _i in "${!STAGE_IDS[@]}"; do
-    if [[ "${STAGE_IDS[$_i]}" == "$_want" ]]; then printf '%s' "$_i"; return 0; fi
+  for _i in "${!FROZEN_STAGES[@]}"; do
+    if [[ "${FROZEN_STAGES[$_i]}" == "$_want" ]]; then printf '%s' "$_i"; return 0; fi
   done
   return 1
 }
-# Resolves a resume label to a catalog stage id. Exact matches win; legacy
-# pre-rename labels map to their successor only when the catalog holds it.
+# Resolves a resume label to a frozen stage id. Exact matches win; legacy
+# pre-rename labels map to their successor only when the frozen list holds it.
 resolve_resume_stage() {
   local _want="$1" _alias="" _id
-  for _id in "${STAGE_IDS[@]}"; do
+  for _id in "${FROZEN_STAGES[@]}"; do
     if [[ "$_id" == "$_want" ]]; then printf '%s' "$_want"; return 0; fi
   done
   case "$_want" in
@@ -137,7 +159,7 @@ resolve_resume_stage() {
     agentic-review) _alias="architecture-review" ;;
   esac
   if [[ -n "$_alias" ]]; then
-    for _id in "${STAGE_IDS[@]}"; do
+    for _id in "${FROZEN_STAGES[@]}"; do
       if [[ "$_id" == "$_alias" ]]; then printf '%s' "$_alias"; return 0; fi
     done
   fi
@@ -151,7 +173,7 @@ if [[ -n "$RESUME_BRANCH" && -n "$RESUME_STAGE" ]]; then
     RESUME_IDX=$((RESUME_POS + 1))
   fi
   if [[ "$RESUME_IDX" -eq 0 ]]; then
-    echo "resume: unknown resume stage '$RESUME_STAGE'; falling back to full pipeline"
+    echo "resume: unknown resume stage '$RESUME_STAGE'; running the full frozen pipeline"
   elif git ls-remote --heads "$REPO_HTTPS" "$RESUME_BRANCH" | grep -q "$RESUME_BRANCH"; then
     git -C "$WORK_DIR" fetch origin "$RESUME_BRANCH:$RESUME_BRANCH"
     git -C "$WORK_DIR" checkout "$RESUME_BRANCH"
@@ -173,19 +195,6 @@ if [[ -n "$RESUME_BRANCH" && -n "$RESUME_STAGE" ]]; then
   fi
 fi
 
-# Reports whether the numbered phase runs under the active resume.
-# Phase numbers are pipeline positions: 0 implement (runs only unresumed),
-# then one threshold per catalog stage in order (1 implementation, 2
-# review-loop, 3 static-loop, 4 test-rerun, 5 architecture-review, 6
-# pr-author for the current catalog). RESUME_IDX is the resolved stage's
-# catalog position + 1, so only the threshold derivation — not the phase
-# gating below — depends on the stage order. Full pipeline runs all.
-resume_runs_phase() {
-  local phase="$1"
-  if [[ "$RESUME_ACTIVE" -ne 1 ]]; then return 0; fi
-  [[ "$RESUME_IDX" -le "$phase" ]]
-}
-
 # 7. Copy the .opencode configuration into the cloned project repo.
 [[ -d "$OPENCODE_DIR" ]] || fail ".opencode directory not found at $OPENCODE_DIR"
 cp -r "$OPENCODE_DIR" "$WORK_DIR/"
@@ -201,9 +210,9 @@ fi
 [[ -n "$OPENCODE_BIN" ]] || fail "opencode binary not found in PATH"
 pass "opencode binary: $OPENCODE_BIN"
 
-# 9. Phase 1 - implement: run the feature-builder agent headlessly against the
-#    issue token. It implements, commits, and pushes the branch. It does NOT
-#    create the PR; that is the PR phase's job.
+# 9. clone workspace + implement spec: the feature-builder agent implements
+#    headlessly against the issue token, commits, and pushes the branch. It
+#    does NOT create the PR; that is the PR stage's job.
 cd "$WORK_DIR"
 BASE="${BASE:-main}"
 BASE_REF="origin/$BASE"
@@ -357,9 +366,9 @@ run_agent_phase() {
 # sentinel the code-review agent appends to .factory/code-review-result.json;
 # the agent's exit code means only that the agent itself broke -> hard fail().
 # Never fail() on findings: `hitl-only` (everything left is for a human) and
-# cap exhaustion both proceed to the next phase. Reads the SPECs defined at
-# the phase 3 call site below ($REVIEW_SPEC for the scan, $REVIEW_FIX_SPEC for
-# the fix pass).
+# cap exhaustion both proceed to the next phase. Reads $REVIEW_SPEC for the
+# scan and $REVIEW_FIX_SPEC for the fix pass, both defined above the
+# dispatch loop.
 run_review_loop() {
   for i in 1 2 3; do
     run_agent_phase code-review "$REVIEW_SPEC" "$i" "review-loop" || fail "code-review agent crashed"
@@ -383,9 +392,8 @@ run_review_loop() {
 # sentinel the static-analysis agent appends to .factory/static-analysis-result.json;
 # the agent's exit code means only that the agent itself broke -> hard fail().
 # Never fail() on findings: `hitl-only` (everything left is for a human) and
-# cap exhaustion both proceed to the next phase. Reads the SPECs defined at
-# the phase 3 call site below ($QUALITY_SPEC for the scan, $FIX_SPEC for the
-# fix pass).
+# cap exhaustion both proceed to the next phase. Reads $QUALITY_SPEC for
+# the scan and $FIX_SPEC for the fix pass, both defined above the dispatch loop.
 run_quality_loop() {
   for i in 1 2 3; do
     run_agent_phase static-analysis "$QUALITY_SPEC" "$i" "static-loop" || fail "static-analysis agent crashed"
@@ -407,79 +415,20 @@ run_quality_loop() {
   return 0
 }
 
-if resume_runs_phase 0; then
-echo "Running phase 1/7 (implement): OPENCODE_API_KEY=*** $OPENCODE_BIN run --agent feature-builder --auto --format json \"...\""
-if ! run_agent_phase feature-builder "$IMPL_SPEC" 0; then
-  fail "implement phase failed: opencode run exited non-zero (see log above)"
-fi
-pass "implement phase completed (feature-builder exited 0)"
-else
-  echo "Skipping phase 1/7 (implement): resumed branch already holds the implementation"
-fi
+# --------------------------------------------------------------------------
+# The frozen workflow pipeline: stage runners dispatched by stage id from
+# FROZEN_STAGES in the order the claim froze, inside this same clone. Each
+# generic catalog stage has one runner; a stage id the guest has no runner
+# for fails fast instead of being skipped silently. Generic gates are
+# attached to their owning stage (the forward gate below lives inside
+# implementation), so a gate runs only when its stage is present in the
+# frozen workflow; per-workflow custom gates are out of scope here.
+# --------------------------------------------------------------------------
 
-# 10. Gate between phases: the PR phase runs only if the implement agent exited
-#     cleanly AND the branch has commits ahead of base. A clean-but-empty
-#     implement (exit 0, nothing committed) stops here, before the PR phase,
-#     and is recorded as a failed run - fail() exits 1, which fails the
-#     multipass exec on the host, which marks the run failed (run-failed
-#     event, freeze snapshot, VM teardown). A resumed run already verified
-#     ahead-of-base at checkout, so it skips this gate.
-if [[ "$RESUME_ACTIVE" -eq 1 ]]; then
-  pass "gate skipped: resume already verified HEAD ahead of base"
-else
-if ! AHEAD_COUNT=$(git rev-list --count "$BASE_REF..HEAD" 2>/dev/null); then
-  fail "gate: cannot count commits ahead of $BASE_REF - is the base ref present in the clone?"
-fi
-if [[ "$AHEAD_COUNT" -eq 0 ]]; then
-  fail "clean-but-empty implement: HEAD has no commits ahead of $BASE_REF; stopping before the PR phase"
-fi
-pass "gate passed: HEAD is $AHEAD_COUNT commit(s) ahead of $BASE_REF"
-fi
-
-# 11. -----------------------------------------------------------------------
-#     Phase 2 - test: run the test-runner agent in the same clone.
-#
-#     The test-runner reads the target repo's AGENTS.md for
-#     `test-harness.<name>: <command>` entries and runs every one. If no
-#     harness is declared, or any harness exits non-zero, the run fails here:
-#     the branch stays pushed, but the review loop below does not run. This
-#     is the first of two test phases; phase 5 re-runs every harness after
-#     the review and quality loops' fix commits.
-#     -----------------------------------------------------------------------
 TEST_SPEC="BRANCH: $BRANCH
 BASE: $BASE
 REPO: $REPO"
 
-echo "Running phase 2/7 (test): OPENCODE_API_KEY=*** $OPENCODE_BIN run --agent test-runner --auto --format json \"...\""
-if resume_runs_phase 1; then
-if ! run_agent_phase test-runner "$TEST_SPEC" 0; then
-  fail "test phase failed: a declared harness is red or no harness was declared (see log above)"
-fi
-pass "test phase completed (test-runner exited 0, every harness green)"
-else
-  echo "Skipping phase 2/7 (test): resume starts after implementation"
-fi
-
-# 12. -----------------------------------------------------------------------
-#     Phase 3 - review loop: up to 3 iterations of code-review ->
-#     feature-builder (fix-findings mode) in the same clone. Runs before the
-#     quality loop so the review sees the feature implementation before
-#     static-analysis autofixes touch it.
-#
-#     Each code-review run executes the /code-review skill headless on the
-#     BASE...HEAD diff against the issue, classifies residual findings
-#     afk/hitl (self-escalating any finding that survived an earlier fix pass
-#     to hitl), files the HITL roll-up issue, and appends the `status`
-#     sentinel the loop reads: `clean`/`hitl-only` -> nothing left to
-#     auto-fix, loop stops; `fixed` -> feature-builder applies the afk fixes,
-#     then re-scan.
-#     A completed scan is always a success - findings are data, not a red
-#     gate - so fail() fires only on an agent crash. Cap exhaustion (still
-#     `fixed` after 3 iterations) proceeds like `hitl-only` does: never
-#     block the PR on findings; the human reviewing it is the backstop.
-#     .factory/ scratch (code-review-findings.json, code-review-result.json)
-#     is gitignored, so it never enters fix commits or the PR diff.
-#     -----------------------------------------------------------------------
 REVIEW_SPEC="ISSUE: $ISSUE
 BRANCH: $BRANCH
 BASE: $BASE
@@ -491,32 +440,6 @@ BRANCH: $BRANCH
 BASE: $BASE
 REPO: $REPO"
 
-echo "Running phase 3/7 (review-loop): OPENCODE_API_KEY=*** $OPENCODE_BIN run --agent code-review --auto --format json \"...\" (then --agent feature-builder in fix-findings mode while status is fixed)"
-if resume_runs_phase 2; then
-run_review_loop
-pass "review loop completed (status clean/hitl-only, or 3-iteration cap exhausted - never a red gate)"
-else
-  echo "Skipping phase 3/7 (review-loop): resume starts after the review loop"
-fi
-
-# 13. -----------------------------------------------------------------------
-#     Phase 4 - quality loop: up to 3 iterations of static-analysis ->
-#     feature-builder (fix-findings mode) in the same clone.
-#
-#     Each static-analysis run discovers the repo's own analysers, applies
-#     tool autofixes as a `chore: apply tool autofixes` checkpoint commit,
-#     re-scans, classifies residual faults afk/hitl (self-escalating any
-#     finding that survived an earlier fix pass to hitl), files the HITL
-#     roll-up issue, and appends the `status` sentinel the loop reads:
-#     `clean`/`hitl-only` -> nothing left to auto-fix, loop stops;
-#     `fixed` -> feature-builder applies the afk fixes, then re-scan.
-#     A completed scan is always a success - findings are data, not a red
-#     gate - so fail() fires only on an agent crash. Cap exhaustion (still
-#     `fixed` after 3 iterations) proceeds like `hitl-only` does: never
-#     block the PR on findings; the human reviewing it is the backstop.
-#     .factory/ scratch (findings.json, static-analysis-result.json) is
-#     gitignored, so it never enters autofix commits or the PR diff.
-#     -----------------------------------------------------------------------
 QUALITY_SPEC="BRANCH: $BRANCH
 BASE: $BASE
 REPO: $REPO"
@@ -527,69 +450,124 @@ BRANCH: $BRANCH
 BASE: $BASE
 REPO: $REPO"
 
-echo "Running phase 4/7 (static-loop): OPENCODE_API_KEY=*** $OPENCODE_BIN run --agent static-analysis --auto --format json \"...\" (then --agent feature-builder in fix-findings mode while status is fixed)"
-if resume_runs_phase 3; then
-run_quality_loop
-pass "quality loop completed (status clean/hitl-only, or 3-iteration cap exhausted - never a red gate)"
-else
-  echo "Skipping phase 4/7 (static-loop): resume starts after the quality loop"
-fi
-
-# 14. -----------------------------------------------------------------------
-#     Phase 5 - test (re-run): run the test-runner agent again in the same
-#     clone, after the review and quality loops. The loops' fix-findings
-#     refactors and autofix checkpoint commits can change behaviour, so every
-#     declared harness must be green again before review and PR. Same failure
-#     semantics as phase 2: a red harness fails the run here. Iteration 1
-#     (phase 2 used 0): the backend keys steps on (agent, iteration), so the
-#     re-run lands as its own row instead of overwriting the phase-2 step.
-#     -----------------------------------------------------------------------
-echo "Running phase 5/7 (test re-run): OPENCODE_API_KEY=*** $OPENCODE_BIN run --agent test-runner --auto --format json \"...\""
-if resume_runs_phase 4; then
-if ! run_agent_phase test-runner "$TEST_SPEC" 1; then
-  fail "test re-run phase failed: a declared harness is red after the review/quality loops (see log above)"
-fi
-pass "test re-run phase completed (test-runner exited 0, every harness still green)"
-else
-  echo "Skipping phase 5/7 (test re-run): resume starts after the test re-run"
-fi
-
-# 15. Phase 6 - agentic-review: run the agentic-review agent in the same clone,
-#     after the review and quality loops (and the test re-run) and before the
-#     PR phase. It runs the improve-codebase-architecture skill headless
-#     (explore-only) and files its candidates as one ready-for-human tracker
-#     issue. Standards + Spec code review already ran in the review loop, so
-#     this phase is architecture-only. It never
-#     fixes and never fails the run for findings - a non-zero exit here means
-#     an operational failure (PAT missing, tracker unreachable), not
-#     findings.
 AR_SPEC="BRANCH: $BRANCH
 BASE: $BASE
 REPO: $REPO"
 
-echo "Running phase 6/7 (agentic-review): OPENCODE_API_KEY=*** $OPENCODE_BIN run --agent agentic-review --auto --format json \"...\""
-if resume_runs_phase 5; then
-if ! run_agent_phase agentic-review "$AR_SPEC" 0; then
-  fail "agentic-review phase failed: opencode run exited non-zero (operational failure, see log above)"
-fi
-pass "agentic-review phase completed (agentic-review exited 0)"
-else
-  echo "Skipping phase 6/7 (agentic-review): resume starts after the agentic review"
-fi
-
-# 16. Phase 7 - PR: run the pr-author agent as a distinct opencode run in the
-#     same clone. It authors the PR title and body from the branch diff and
-#     POSTs the pull request.
 PR_SPEC="BRANCH: $BRANCH
 BASE: $BASE
 REPO: $REPO"
 
-echo "Running phase 7/7 (PR): OPENCODE_API_KEY=*** $OPENCODE_BIN run --agent pr-author --auto --format json \"...\""
-if resume_runs_phase 6; then
-if ! run_agent_phase pr-author "$PR_SPEC" 0; then
-  fail "pr phase failed: opencode run exited non-zero (see log above)"
-fi
-pass "pr phase completed (pr-author exited 0, PR created)"
-else
-  echo "Skipping phase 7/7 (PR): resume starts after the PR phase"
-fi
+# Tests run right after the implement phase inside the implementation stage.
+# The test-runner reads the target repo's AGENTS.md for
+# `test-harness.<name>: <command>` entries and runs every one. If no harness
+# is declared, or any harness exits non-zero, the run fails here.
+run_test_phase() {
+  local iter="$1" label="$2"
+  if ! run_agent_phase test-runner "$TEST_SPEC" "$iter"; then
+    fail "$label: a declared harness is red or no harness was declared (see log above)"
+  fi
+  pass "$label completed (test-runner exited 0, harness green)"
+}
+
+# Forward gate, attached to the implementation stage: later stages run only
+# if the implement agent exited cleanly AND the branch has commits ahead of
+# base. A clean-but-empty implement (exit 0, nothing committed) stops here
+# and is recorded as a failed run - fail() exits 1, which fails the exec on
+# the host, which marks the run failed (run-failed event, freeze snapshot,
+# teardown). A resumed run already verified ahead-of-base at checkout, so it
+# skips this gate.
+run_forward_gate() {
+  if [[ "$RESUME_ACTIVE" -eq 1 ]]; then
+    pass "gate skipped: resume already verified HEAD ahead of base"
+    return 0
+  fi
+  if ! AHEAD_COUNT=$(git rev-list --count "$BASE_REF..HEAD" 2>/dev/null); then
+    fail "gate: cannot count commits ahead of $BASE_REF - is the base ref present in the clone?"
+  fi
+  if [[ "$AHEAD_COUNT" -eq 0 ]]; then
+    fail "clean-but-empty implement: HEAD has no commits ahead of $BASE_REF; stopping before the next stage"
+  fi
+  pass "gate passed: HEAD is $AHEAD_COUNT commit(s) ahead of $BASE_REF"
+}
+
+run_architecture_review_phase() {
+  if ! run_agent_phase agentic-review "$AR_SPEC" 0; then
+    fail "agentic-review phase failed: opencode run exited non-zero (operational failure, see log above)"
+  fi
+  pass "agentic-review phase completed (agentic-review exited 0)"
+}
+
+run_pr_phase() {
+  if ! run_agent_phase pr-author "$PR_SPEC" 0; then
+    fail "pr phase failed: opencode run exited non-zero (see log above)"
+  fi
+  pass "pr phase completed (pr-author exited 0, PR created)"
+}
+
+echo "Frozen workflow stages, in picked order: ${FROZEN_STAGES[*]}"
+stage_count=${#FROZEN_STAGES[@]}
+for _idx in "${!FROZEN_STAGES[@]}"; do
+  stage="${FROZEN_STAGES[$_idx]}"
+  stage_no=$((_idx + 1))
+  if [[ "$RESUME_ACTIVE" -eq 1 && "$stage_no" -lt "$RESUME_IDX" ]]; then
+    echo "Skipping stage $stage_no/$stage_count ($stage): resume starts at '$RESUME_STAGE'"
+    continue
+  fi
+  case "$stage" in
+    implementation)
+      # Implement and the first test agent are the implementation stage's
+      # members; the forward gate sits between them. On a resumed run the
+      # checked-out branch already holds the implementation (verified above),
+      # so only the gate skip and the test agent run.
+      if [[ "$RESUME_ACTIVE" -eq 1 ]]; then
+        echo "Skipping implement: resumed branch already holds the implementation"
+      else
+        echo "Running stage $stage_no/$stage_count ($stage): $OPENCODE_BIN run --agent feature-builder --auto --format json \"...\""
+        if ! run_agent_phase feature-builder "$IMPL_SPEC" 0; then
+          fail "implement phase failed: opencode run exited non-zero (see log above)"
+        fi
+        pass "implement phase completed (feature-builder exited 0)"
+      fi
+      run_forward_gate
+      echo "Running test agent of stage $stage_no/$stage_count ($stage): $OPENCODE_BIN run --agent test-runner --auto --format json \"...\""
+      run_test_phase 0 "test phase"
+      ;;
+    review-loop)
+      echo "Running stage $stage_no/$stage_count ($stage): $OPENCODE_BIN run --agent code-review --auto --format json \"...\" (then --agent feature-builder in fix-findings mode while status is fixed)"
+      run_review_loop
+      pass "review stage completed (status clean/hitl-only, or 3-iteration cap exhausted - never a red gate)"
+      ;;
+    static-loop)
+      echo "Running stage $stage_no/$stage_count ($stage): $OPENCODE_BIN run --agent static-analysis --auto --format json \"...\" (then --agent feature-builder in fix-findings mode while status is fixed)"
+      run_quality_loop
+      pass "quality stage completed (status clean/hitl-only, or 3-iteration cap exhausted - never a red gate)"
+      ;;
+    test-rerun)
+      # Re-run every harness after the loops' fix commits. Iteration 1 (the
+      # implementation stage's test used 0): the backend keys steps on
+      # (agent, iteration), so the re-run lands as its own step row.
+      echo "Running stage $stage_no/$stage_count ($stage): $OPENCODE_BIN run --agent test-runner --auto --format json \"...\""
+      run_test_phase 1 "test re-run phase"
+      ;;
+    architecture-review)
+      # Runs the improve-codebase-architecture skill headless (explore-only)
+      # and files its candidates as one ready-for-human tracker issue. It
+      # never fixes and never fails the run for findings - a non-zero exit
+      # here means an operational failure (PAT missing, tracker unreachable),
+      # not findings.
+      echo "Running stage $stage_no/$stage_count ($stage): $OPENCODE_BIN run --agent agentic-review --auto --format json \"...\""
+      run_architecture_review_phase
+      ;;
+    pr-author)
+      echo "Running stage $stage_no/$stage_count ($stage): $OPENCODE_BIN run --agent pr-author --auto --format json \"...\""
+      run_pr_phase
+      ;;
+    *)
+      fail "unknown stage id at start: '$stage' is in the frozen workflow but has no guest runner"
+      ;;
+  esac
+done
+
+echo "Frozen workflow sequence complete"
+
