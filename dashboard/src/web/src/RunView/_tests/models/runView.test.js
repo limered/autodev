@@ -329,5 +329,18 @@ describe("runView", () => {
       expect(v({ freezeCaptured: undefined }).showFreeze).toBe(false);
       expect(v({ freezeCaptured: null }).showFreeze).toBe(false);
     });
+
+    it("offers restart only for failed runs", () => {
+      expect(v({ status: "failed" }).showRestart).toBe(true);
+      expect(v({ status: "done" }).showRestart).toBe(false);
+      expect(v({ status: "running" }).showRestart).toBe(false);
+      expect(v({ status: "stalled" }).showRestart).toBe(false);
+      expect(v({ status: "launching" }).showRestart).toBe(false);
+    });
+
+    it("passes the restarting run link through, defaulting to null", () => {
+      expect(v({}).restartedByRunId).toBeNull();
+      expect(v({ restartedByRunId: "new-run-id" }).restartedByRunId).toBe("new-run-id");
+    });
   });
 });

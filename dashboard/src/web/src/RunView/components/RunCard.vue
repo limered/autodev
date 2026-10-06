@@ -7,9 +7,10 @@ const props = defineProps({
   run: { type: Object, required: true },
   now: { type: Number, required: true },
   deletable: { type: Boolean, default: false },
+  restarting: { type: Boolean, default: false },
 });
 
-defineEmits(["delete"]);
+defineEmits(["delete", "restart"]);
 
 const view = computed(() => runView(props.run, props.now));
 const expanded = ref(false);
@@ -60,6 +61,17 @@ function isLastRow(groupIndex, stepIndex) {
         <span class="branch mono">{{ view.branch }}</span>
       </div>
       <button
+        v-if="view.showRestart"
+        type="button"
+        class="restart-run"
+        title="Restart this run on the same branch"
+        aria-label="Restart this run on the same branch"
+        :disabled="restarting"
+        @click="$emit('restart', run.runId)"
+      >
+        ↻
+      </button>
+      <button
         v-if="deletable"
         type="button"
         class="delete-run"
@@ -103,6 +115,10 @@ function isLastRow(groupIndex, stepIndex) {
         <div v-if="view.showFreeze" class="secondary-row">
           <span class="secondary-label">Freeze</span>
           <span class="freeze-path mono" title="Local snapshot path">{{ view.freezePath }}</span>
+        </div>
+        <div v-if="view.restartedByRunId" class="secondary-row">
+          <span class="secondary-label">Restarted</span>
+          <span class="restarted-link mono" title="Resumed run">{{ view.restartedByRunId }}</span>
         </div>
       </div>
     </div>
@@ -300,6 +316,32 @@ function isLastRow(groupIndex, stepIndex) {
   border-radius: var(--radius);
   cursor: pointer;
 }
+.restart-run {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 1.75rem;
+  height: 1.75rem;
+  padding: 0;
+  font-size: 1.1rem;
+  font-weight: 600;
+  line-height: 1;
+  color: var(--text-muted);
+  background: transparent;
+  border: none;
+  border-radius: var(--radius);
+  cursor: pointer;
+}
+.restart-run:hover:not(:disabled),
+.restart-run:focus-visible:not(:disabled) {
+  color: var(--green);
+  background: rgba(63, 185, 80, 0.1);
+}
+.restart-run:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
 .delete-run:hover,
 .delete-run:focus-visible {
   color: var(--red);
@@ -402,6 +444,10 @@ function isLastRow(groupIndex, stepIndex) {
 }
 .freeze-path {
   color: var(--text-muted);
+  word-break: break-all;
+}
+.restarted-link {
+  color: var(--green);
   word-break: break-all;
 }
 .dev-loop-section {

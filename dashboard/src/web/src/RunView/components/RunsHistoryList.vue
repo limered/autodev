@@ -1,17 +1,61 @@
 <script setup>
+import { computed, ref } from "vue";
 import ErrorBanner from "../../_shared/components/ErrorBanner.vue";
 import RunCard from "./RunCard.vue";
 import RunSection from "./RunSection.vue";
 import { usePagedRuns } from "../services/usePagedRuns.js";
+import { useRunActions } from "../services/useRunActions.js";
 import { useNowTicker } from "../services/useNowTicker.js";
 
 const { now } = useNowTicker();
 
 // Deliberately not polled (issue #46): the raw /runs window drives the
 // skip/take paging, and historyRuns is the terminal-only visible window.
-const { historyRuns, error, hasMore, isLoading, loadNext, refreshFirst } = usePagedRuns((url) =>
+const { runs, historyRuns, error, hasMore, isLoading, loadNext, refreshFirst } = usePagedRuns((url) =>
   fetch(url),
 );
+
+const { restartRun, restartError, isRestarting } = useRunActions((url, opts) => fetch(url, opts));
+
+// Restarted indication derived from the parent link the new run carries:
+// a failed card points at the run whose parentRunId names it. The raw window
+// (not just the terminal slice) is scanned so a still-active retry is found;
+// refreshFirst pulls the new run's row in.
+const restartedBy = computed(() => {
+  const map = new Map();
+  for (const r of runs.value) {
+    if (r.parentRunId) map.set(r.parentRunId, r.runId);
+  }
+  return map;
+});
+
+const annotatedHistory = computed(() =>
+  historyRuns.value.map((r) => ({ ...r, restartedByRunId: restartedBy.value.get(r.runId) ?? null })),
+);
+
+// A restart with no queue row (an ad-hoc run) has nothing for dispatch to
+// claim, so the retry stays a copyable Runner invocation for the operator.
+const resumeCommand = ref(null);
+
+function toResumeCommand(payload) {
+  const spec = String(payload.spec ?? "").replace(/'/g, "''");
+  return (
+    `./start-job.ps1 -RepoUrl "https://github.com/${payload.repo}.git" ` +
+    `-Spec '${spec}' -Branch "${payload.branch}" ` +
+    `-ResumeBranch "${payload.branch}" -ResumeStage "${payload.resumeStage}" ` +
+    `-ParentRunId "${payload.parentRunId}"`
+  );
+}
+
+async function onRestart(runId) {
+  resumeCommand.value = null;
+  const payload = await restartRun(runId);
+  if (!payload) return;
+  if (payload.queueId == null && payload.branch) {
+    resumeCommand.value = toResumeCommand(payload);
+  }
+  await refreshFirst();
+}
 
 // Called by the container when the active set changes (a run started or
 // finished): re-fetches the first page once, leaving appended pages untouched.
@@ -26,10 +70,26 @@ defineExpose({ refreshFirst });
         title="Connection lost"
         :message="`Failed to load run history: ${error}`"
       />
+      <ErrorBanner
+        v-if="restartError"
+        title="Restart failed"
+        :message="`Failed to restart run: ${restartError}`"
+      />
+      <div v-if="resumeCommand" class="resume-command" role="status">
+        <span class="resume-label">Resume queued manually — run this on the Runner host:</span>
+        <code class="mono">{{ resumeCommand }}</code>
+      </div>
     </template>
 
-    <div v-if="historyRuns.length" class="run-list">
-      <RunCard v-for="r in historyRuns" :key="r.runId" :run="r" :now="now" />
+    <div v-if="annotatedHistory.length" class="run-list">
+      <RunCard
+        v-for="r in annotatedHistory"
+        :key="r.runId"
+        :run="r"
+        :now="now"
+        :restarting="isRestarting"
+        @restart="onRestart"
+      />
     </div>
 
     <section v-else-if="!error" class="empty-state">
@@ -91,5 +151,21 @@ defineExpose({ refreshFirst });
 .load-more:disabled {
   opacity: 0.6;
   cursor: default;
+}
+.resume-command {
+  display: grid;
+  gap: 0.5rem;
+  margin-top: 1rem;
+  padding: 0.75rem 1rem;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  font-size: 0.85rem;
+}
+.resume-command code {
+  display: block;
+  white-space: pre-wrap;
+  word-break: break-all;
+  color: var(--cyan);
 }
 </style>

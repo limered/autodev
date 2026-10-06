@@ -107,6 +107,102 @@ describe("RunCard header", () => {
   });
 });
 
+describe("RunCard restart action", () => {
+  const failedRun = (overrides = {}) => run({ status: "failed", failureReason: "boom", ...overrides });
+
+  it("shows the restart control on failed runs", async () => {
+    const html = await renderCard(failedRun());
+
+    expect(html).toContain("restart-run");
+  });
+
+  it("omits the restart control on non-failed runs", async () => {
+    for (const status of ["running", "done", "launching", "stalled"]) {
+      const html = await renderCard(run({ status }));
+
+      expect(html).not.toContain("restart-run");
+    }
+  });
+
+  it("renders the restart control as a glyph-only ↻ carrying title and aria-label", async () => {
+    const html = await renderCard(failedRun());
+    const button = html.match(/<button[^>]*\brestart-run\b[^>]*>[\s\S]*?<\/button>/)?.[0] ?? "";
+
+    expect(button).not.toBe("");
+    expect(button.replace(/<[^>]*>/g, "").trim()).toBe("↻");
+    expect(button).toContain('title="Restart this run on the same branch"');
+    expect(button).toContain('aria-label="Restart this run on the same branch"');
+  });
+
+  it("disables the restart control while a restart is in flight", async () => {
+    const idle = await renderCard(failedRun());
+    const busy = await renderCard(failedRun(), { restarting: true });
+
+    expect(idle).not.toContain("disabled");
+    expect(busy).toContain("disabled");
+  });
+
+  it("emits restart with the run id when the control is clicked", async () => {
+    const host = document.createElement("div");
+    document.body.appendChild(host);
+    let emitted = null;
+    const app = createApp({
+      render: () =>
+        h(RunCard, {
+          run: failedRun(),
+          now: NOW,
+          onRestart: (id) => {
+            emitted = id;
+          },
+        }),
+    });
+    app.mount(host);
+    host.querySelector(".restart-run").click();
+    await nextTick();
+    app.unmount();
+    host.remove();
+
+    expect(emitted).toBe("run-1");
+  });
+
+  it("does not emit restart when the control is disabled mid-flight", async () => {
+    const host = document.createElement("div");
+    document.body.appendChild(host);
+    let emitted = null;
+    const app = createApp({
+      render: () =>
+        h(RunCard, {
+          run: failedRun(),
+          now: NOW,
+          restarting: true,
+          onRestart: (id) => {
+            emitted = id;
+          },
+        }),
+    });
+    app.mount(host);
+    host.querySelector(".restart-run").click();
+    await nextTick();
+    app.unmount();
+    host.remove();
+
+    expect(emitted).toBeNull();
+  });
+
+  it("shows the restarted indicator pointing at the retry run", async () => {
+    const html = await renderCard(failedRun({ restartedByRunId: "run-2" }));
+
+    expect(html).toContain("restarted-link");
+    expect(html).toContain("run-2");
+  });
+
+  it("omits the restarted indicator when nothing points at the run", async () => {
+    const html = await renderCard(failedRun());
+
+    expect(html).not.toContain("restarted-link");
+  });
+});
+
 describe("RunCard body and status", () => {
   it("renders the stat rows with the live Last seen for active runs", async () => {
     const html = await renderCard(run());

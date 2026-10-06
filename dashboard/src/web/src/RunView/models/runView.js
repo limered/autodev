@@ -34,6 +34,8 @@ export function runView(run, nowMs) {
     showPr: Boolean(run.prUrl),
     showFailure: Boolean(run.status === "failed" && run.failureReason),
     showFreeze: Boolean(run.freezeCaptured),
+    showRestart: run.status === "failed",
+    restartedByRunId: run.restartedByRunId ?? null,
     timeLabel: terminal ? "Completed" : "Last seen",
     lastSeen: terminal ? null : lastSeenLabel(secs),
     completed: terminal ? formatTime(run.finishedAt ?? run.lastHeartbeatAt) : null,
