@@ -108,7 +108,8 @@ describe("RunCard header", () => {
 });
 
 describe("RunCard restart action", () => {
-  const failedRun = (overrides = {}) => run({ status: "failed", failureReason: "boom", ...overrides });
+  const failedRun = (overrides = {}) =>
+    run({ status: "failed", failureReason: "boom", ...overrides });
 
   it("shows the restart control on failed runs", async () => {
     const html = await renderCard(failedRun());

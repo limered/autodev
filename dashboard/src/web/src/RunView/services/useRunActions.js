@@ -40,5 +40,12 @@ export function useRunActions(fetchFn = fetch) {
     }
   }
 
-  return { deleteRun, deleteError: error, isDeleting: isBusy, restartRun, restartError: error, isRestarting: isBusy };
+  return {
+    deleteRun,
+    deleteError: error,
+    isDeleting: isBusy,
+    restartRun,
+    restartError: error,
+    isRestarting: isBusy,
+  };
 }
