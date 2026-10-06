@@ -30,6 +30,14 @@ public static class RunStageStatus
     /// </summary>
     public const string Uncategorized = "uncategorized";
 
+    /// <summary>
+    /// True when a report's category names a stage the seeded list lights:
+    /// the case-insensitive match every category consumer shares. Reports
+    /// that name nothing — no category, or a stage with none — never match.
+    /// </summary>
+    public static bool NamesSeededStage(IReadOnlyList<RunStage>? stages, string? category) =>
+        IndexOfCategory(stages, category) >= 0;
+
     public static IReadOnlyList<RunStageView> Derive(
         IReadOnlyList<RunStage>? stages,
         string runStatus,
