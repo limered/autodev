@@ -48,7 +48,9 @@ describe("useRunActions", () => {
 
   it("restartRun POSTs to the restart endpoint and returns the payload", async () => {
     const payload = { branch: "factory/x", resumeStage: "review-loop", parentRunId: "old" };
-    const fetchFn = vi.fn(() => Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve(payload) }));
+    const fetchFn = vi.fn(() =>
+      Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve(payload) }),
+    );
     const actions = useRunActions(fetchFn);
 
     const result = await actions.restartRun("abc-123");

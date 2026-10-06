@@ -11,8 +11,8 @@ const { now } = useNowTicker();
 
 // Deliberately not polled (issue #46): the raw /runs window drives the
 // skip/take paging, and historyRuns is the terminal-only visible window.
-const { runs, historyRuns, error, hasMore, isLoading, loadNext, refreshFirst } = usePagedRuns((url) =>
-  fetch(url),
+const { runs, historyRuns, error, hasMore, isLoading, loadNext, refreshFirst } = usePagedRuns(
+  (url) => fetch(url),
 );
 
 const { restartRun, restartError, isRestarting } = useRunActions((url, opts) => fetch(url, opts));
@@ -30,7 +30,10 @@ const restartedBy = computed(() => {
 });
 
 const annotatedHistory = computed(() =>
-  historyRuns.value.map((r) => ({ ...r, restartedByRunId: restartedBy.value.get(r.runId) ?? null })),
+  historyRuns.value.map((r) => ({
+    ...r,
+    restartedByRunId: restartedBy.value.get(r.runId) ?? null,
+  })),
 );
 
 // A restart with no queue row (an ad-hoc run) has nothing for dispatch to
