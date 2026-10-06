@@ -77,30 +77,30 @@ const { activePick, setPick } = useWorkflowPicks();
 // feed when the repo ships none) names what the claim will actually verify,
 // and the resolved pick — local preview first, then the row's persisted
 // workflow, then that catalog's default — is what gets frozen at claim time.
+// Summaries are memoized per row id; rowSummary stays the single parse point.
 function rowSummary(item) {
   return rowCatalogSummary(props.rowCatalogs?.[item.repo] ?? null, props.catalog);
 }
+const summaries = computed(
+  () => new Map(localQueue.value.map((item) => [item.id, rowSummary(item)])),
+);
+const summaryOf = (item) => summaries.value.get(item.id) ?? rowSummary(item);
 function workflowState(item) {
-  const summary = rowSummary(item);
   return workflowRowState(
-    summary,
+    summaryOf(item),
     item,
-    activePick(item.id, item.workflow ?? summary.defaultWorkflow),
+    activePick(item.id, item.workflow ?? summaryOf(item).defaultWorkflow),
   );
 }
-async function onPick(item, name) {
-  const before = activePick(item.id, item.workflow ?? rowSummary(item).defaultWorkflow);
+async function persistPick(item, name) {
+  const before = activePick(item.id, item.workflow ?? summaryOf(item).defaultWorkflow);
   setPick(item.id, name);
   if (!(await pickWorkflow(item, name))) setPick(item.id, before);
 }
+const onPick = (item, name) => persistPick(item, name);
 // The vanished warning's reset: re-pick the catalog default and persist it, so
 // the next claim assesses a verifiable pick instead of skipping the row.
-async function onResetPick(item) {
-  const summary = rowSummary(item);
-  const before = activePick(item.id, item.workflow ?? summary.defaultWorkflow);
-  setPick(item.id, summary.defaultWorkflow);
-  if (!(await pickWorkflow(item, summary.defaultWorkflow))) setPick(item.id, before);
-}
+const onResetPick = (item) => persistPick(item, summaryOf(item).defaultWorkflow);
 
 const nextQueueItem = computed(() => localQueue.value[0] ?? null);
 
@@ -187,7 +187,7 @@ async function onStartNext() {
         </div>
         <WorkflowPicker
           :state="workflowState(item)"
-          :workflows="rowSummary(item).workflows"
+          :workflows="summaryOf(item).workflows"
           @pick="(name) => onPick(item, name)"
           @reset="() => onResetPick(item)"
         />

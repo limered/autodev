@@ -36,17 +36,17 @@ public class CatalogRulesWorkflowNamesTests
         Assert.Empty(names);
     }
 
-    [Theory]
-    [InlineData(CatalogRules.SourceFactoryFallback)]
-    public void WorkflowNames_FallbackCatalog_ReadsFactoryNames(string source)
+    [Fact]
+    public void WorkflowNames_FallbackCatalog_ReadsFactoryNames()
     {
         var factory = new FixedFactoryWorkflows(new FactoryWorkflows(
             "full", [new WorkflowEntry("full", 2), new WorkflowEntry("quick", 1)]));
 
         var (defaultName, names) = CatalogRules.WorkflowNames(
-            new TargetCatalog("owner/repo", null, null, source, null, DateTimeOffset.UtcNow), factory);
+            new TargetCatalog(
+                "owner/repo", null, null, CatalogRules.SourceFactoryFallback, null,
+                DateTimeOffset.UtcNow), factory);
 
-        Assert.Equal(CatalogRules.SourceFactoryFallback, source);
         Assert.Equal("full", defaultName);
         Assert.Equal(new[] { "full", "quick" }, names);
     }

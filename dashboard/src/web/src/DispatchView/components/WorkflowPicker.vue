@@ -63,8 +63,11 @@ onUnmounted(() => document.removeEventListener("click", onDocumentClick));
   >
   <div v-else-if="state.kind === 'vanished'" class="workflow-vanished">
     <span class="vanished-text">
-      pick “{{ state.stalePick }}” no longer exists — resort to
-      <button class="reset-link" type="button" @click="emit('reset')">{{ state.name }}</button>
+      pick “{{ state.stalePick }}” no longer exists —
+      <template v-if="state.hasDefault">
+        resort to
+        <button class="reset-link" type="button" @click="emit('reset')">{{ state.name }}</button>
+      </template>
     </span>
   </div>
   <span v-else class="workflow-missing">{{ state.name }} (no catalog)</span>

@@ -115,10 +115,10 @@ public sealed class QueueStore : IQueueStore
         cmd.Parameters.AddWithValue("id", id);
         cmd.Parameters.AddWithValue("workflow", (object?)workflow ?? DBNull.Value);
 
-        var updated = await cmd.ExecuteScalarAsync();
+        await cmd.ExecuteScalarAsync();
         await tx.CommitAsync();
 
-        return await GetById(updated is long updatedId ? updatedId : id);
+        return await GetById(id);
     }
 
     public async Task<QueueRow?> StartNext(long id)
