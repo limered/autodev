@@ -231,6 +231,33 @@ function Select-WorkflowStages {
     return $filtered
 }
 
+# Start-time recheck of the frozen claim pick: the launcher resolves the pick
+# into the ordered stage-id list again from the start catalog, so a catalog
+# changed between claim and start cannot run stale stages. A missing, empty,
+# or unknown pick throws with a stale-workflow prefix; the known-id checks
+# that follow (Select-WorkflowStages) fail fast on catalog drift too. Pure:
+# takes the parsed workflow catalog (Read-AgentsWorkflowCatalog shape).
+function Resolve-FrozenWorkflowStages {
+    param([string]$Workflow, $WorkflowCatalog)
+    $name = "$Workflow"
+    if ([string]::IsNullOrWhiteSpace($name)) {
+        throw "stale-workflow: the claim carries no workflow; refusing to fall back to any default"
+    }
+    if ($null -eq $WorkflowCatalog -or $null -eq $WorkflowCatalog.Workflows) {
+        throw "stale-workflow: workflow '$name' cannot be rechecked without a start catalog"
+    }
+    $names = @()
+    foreach ($key in @($WorkflowCatalog.Workflows.Keys)) { $names += "$key" }
+    if ($names -cnotcontains $name) {
+        throw "stale-workflow: workflow '$name' is missing from the start catalog (known: $($names -join ', '))"
+    }
+    $ids = @(@($WorkflowCatalog.Workflows[$name]) | ForEach-Object { "$_" })
+    if ($ids.Count -eq 0) {
+        throw "stale-workflow: workflow '$name' resolves to no stages at start"
+    }
+    return $ids
+}
+
 function Read-AgentsWorkflowCatalog {
     param([Parameter(Mandatory = $true)][string]$Path)
     $raw = Read-AgentsJsonFile -Path $Path
