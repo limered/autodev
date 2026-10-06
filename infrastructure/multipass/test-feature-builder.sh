@@ -76,9 +76,9 @@ pass() {
 }
 
 # The frozen workflow stage list, base64-encoded by the host (WORKFLOW_STAGES_B64,
-# comma-joined). It is authoritative: the guest loops it instead of the script's
-# old hardcoded phase order, and a missing, empty, or undecodable list fails
-# fast with a stale-workflow reason rather than falling back.
+# comma-joined). It is authoritative: the guest loops it, and a missing, empty,
+# or undecodable list fails fast with a stale-workflow reason rather than
+# falling back.
 FROZEN_STAGES=()
 WORKFLOW_STAGES_B64="${WORKFLOW_STAGES_B64:-}"
 if [[ -n "$WORKFLOW_STAGES_B64" ]]; then
@@ -91,6 +91,17 @@ fi
 for _stage in "${FROZEN_STAGES[@]}"; do
   _stage_trim="${_stage//[[:space:]]/}"
   [[ -n "$_stage_trim" ]] || fail "stale-workflow: the frozen workflow contains an empty stage id"
+done
+
+# Upfront runner check, mirroring the dispatch case arms below: an unknown
+# stage id fails fast here, so a resume skip below the RESUME_IDX cut can
+# never silently pass over a stage the guest cannot run.
+for _stage in "${FROZEN_STAGES[@]}"; do
+  _stage_trim="${_stage//[[:space:]]/}"
+  case "$_stage_trim" in
+    implementation|review-loop|static-loop|test-rerun|architecture-review|pr-author) ;;
+    *) fail "unknown stage id at start: '$_stage_trim' is in the frozen workflow but has no guest runner" ;;
+  esac
 done
 
 echo "== Feature builder end-to-end test =="
@@ -534,14 +545,14 @@ for _idx in "${!FROZEN_STAGES[@]}"; do
       run_test_phase 0 "test phase"
       ;;
     review-loop)
-      echo "Running stage $stage_no/$stage_count ($stage): $OPENCODE_BIN run --agent code-review --auto --format json \"...\" (then --agent feature-builder in fix-findings mode while status is fixed)"
+      echo "Running stage $stage_no/$stage_count ($stage): $OPENCODE_BIN run --agent code-review --auto --format json \"...\""
       run_review_loop
-      pass "review stage completed (status clean/hitl-only, or 3-iteration cap exhausted - never a red gate)"
+      pass "review stage completed"
       ;;
     static-loop)
-      echo "Running stage $stage_no/$stage_count ($stage): $OPENCODE_BIN run --agent static-analysis --auto --format json \"...\" (then --agent feature-builder in fix-findings mode while status is fixed)"
+      echo "Running stage $stage_no/$stage_count ($stage): $OPENCODE_BIN run --agent static-analysis --auto --format json \"...\""
       run_quality_loop
-      pass "quality stage completed (status clean/hitl-only, or 3-iteration cap exhausted - never a red gate)"
+      pass "quality stage completed"
       ;;
     test-rerun)
       # Re-run every harness after the loops' fix commits. Iteration 1 (the
