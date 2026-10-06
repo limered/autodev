@@ -132,12 +132,22 @@ $staleReason = $null
 try {
     $frozenStageIds = @(Resolve-FrozenWorkflowStages -Workflow $Workflow -WorkflowCatalog $seedCatalog)
     $seedConfig = @(Select-WorkflowStages -Config $seedConfig -StageIds $frozenStageIds -Workflow $Workflow)
-    $agentModels = Get-AgentModelMap -Config $seedConfig -RepoRoot $RepoRoot
-    $stages = @(ConvertTo-SeededStages -Config $seedConfig -ModelMap $agentModels)
 }
 catch {
     $staleReason = "stale-workflow at start: $_"
     Write-Host "ERROR: $staleReason" -ForegroundColor Red
+}
+
+$seedFailure = $null
+if (-not $staleReason) {
+    try {
+        $agentModels = Get-AgentModelMap -Config $seedConfig -RepoRoot $RepoRoot
+        $stages = @(ConvertTo-SeededStages -Config $seedConfig -ModelMap $agentModels)
+    }
+    catch {
+        $seedFailure = "$_"
+        Write-Host "ERROR: $seedFailure" -ForegroundColor Red
+    }
 }
 
 # The run id is either supplied by the dispatch client or defaulted above to a
@@ -162,11 +172,15 @@ if ($staleReason) {
     Send-FactoryEvent -RunId $RunId -Type "run-failed" -Fields @{ failureReason = $staleReason }
     exit 1
 }
+if ($seedFailure) {
+    Send-FactoryEvent -RunId $RunId -Type "run-failed" -Fields @{ failureReason = $seedFailure }
+    exit 1
+}
 
 $cloudInit = Join-Path $RepoRoot "infrastructure/multipass/cloud-init.yaml"
 # The frozen stage list rides to the guest base64-encoded (comma-joined ids):
-# the guest build script loops it verbatim instead of its old hardcoded phase
-# order, and never falls back when it is missing.
+# the guest build script loops the resolved ordered stage-id list verbatim,
+# and never falls back when it is missing.
 $frozenStageList = (@($frozenStageIds) -join ',')
 $frozenStagesB64 = [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($frozenStageList))
 $testScript = Join-Path $RepoRoot "infrastructure/multipass/test-feature-builder.sh"
