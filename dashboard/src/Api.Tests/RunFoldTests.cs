@@ -10,8 +10,15 @@ public class RunFoldTests
     private static readonly DateTimeOffset T1 = T0.AddMinutes(1);
     private static readonly DateTimeOffset T2 = T0.AddMinutes(2);
 
-    private static RunState State(string status = "launching", DateTimeOffset? updatedAt = null, DateTimeOffset? lastHeartbeatAt = null, string? currentPhase = null, string? currentCategory = null) =>
-        new(RunId, "repo", "branch", "spec", "model", null, status, T0, null, lastHeartbeatAt, null, null, false, null, updatedAt ?? T0, null, currentPhase, null, currentCategory);
+    private static RunState State(string status = "launching", DateTimeOffset? updatedAt = null, DateTimeOffset? lastHeartbeatAt = null, string? currentPhase = null, string? currentCategory = null, IReadOnlyList<RunStage>? stages = null) =>
+        new(RunId, "repo", "branch", "spec", "model", null, status, T0, null, lastHeartbeatAt, null, null, false, null, updatedAt ?? T0, stages, currentPhase, null, currentCategory);
+
+    // A run seeded from a subset workflow: the claimed pick's stages only.
+    private static readonly RunStage[] ClaimedWorkflowStages =
+    {
+        new("feature-builder", "opencode-go/glm-5.2", "implementation"),
+        new("pr-author", "opencode-go/kimi-k2.7-code", "pr-author"),
+    };
 
     [Fact]
     public void RunStarted_CreatesNewRun()
@@ -276,6 +283,72 @@ public class RunFoldTests
 
         Assert.NotNull(next);
         Assert.Equal(T1, next.LastHeartbeatAt);
+    }
+
+    [Fact]
+    public void Heartbeat_ForStageOutsideWorkflow_IsNoOp()
+    {
+        var current = State("running", updatedAt: T0, lastHeartbeatAt: T0,
+            currentPhase: "code-review", stages: ClaimedWorkflowStages);
+
+        var next = RunFold.Apply(current, new HeartbeatEvent("code-review", "quality-loop") { At = T1, RunId = RunId });
+
+        Assert.Null(next);
+    }
+
+    [Fact]
+    public void Heartbeat_ForSeededWorkflowStage_StillApplies()
+    {
+        var current = State("running", updatedAt: T0, lastHeartbeatAt: T0,
+            currentPhase: "feature-builder", currentCategory: "implementation", stages: ClaimedWorkflowStages);
+
+        var next = RunFold.Apply(current, new HeartbeatEvent("pr-author", "pr-author") { At = T1, RunId = RunId });
+
+        Assert.NotNull(next);
+        Assert.Equal(T1, next.LastHeartbeatAt);
+        Assert.Equal("pr-author", next.CurrentPhase);
+        Assert.Equal("pr-author", next.CurrentCategory);
+    }
+
+    [Fact]
+    public void Heartbeat_ForWorkflowStage_MatchesSeededCategoryCaseInsensitively()
+    {
+        var current = State("running", updatedAt: T0, lastHeartbeatAt: T0,
+            currentPhase: "feature-builder", stages: ClaimedWorkflowStages);
+
+        var next = RunFold.Apply(current, new HeartbeatEvent("pr-author", "PR-AUTHOR") { At = T1, RunId = RunId });
+
+        Assert.NotNull(next);
+        Assert.Equal(T1, next.LastHeartbeatAt);
+        Assert.Equal("PR-AUTHOR", next.CurrentCategory);
+    }
+
+    [Fact]
+    public void Heartbeat_WithoutStageCategory_WithSeededStages_StillApplies()
+    {
+        var current = State("running", updatedAt: T0, lastHeartbeatAt: T0,
+            currentPhase: "feature-builder", currentCategory: "implementation", stages: ClaimedWorkflowStages);
+
+        var next = RunFold.Apply(current, new HeartbeatEvent("pr-author") { At = T1, RunId = RunId });
+
+        Assert.NotNull(next);
+        Assert.Equal(T1, next.LastHeartbeatAt);
+        Assert.Equal("pr-author", next.CurrentPhase);
+        Assert.Equal("implementation", next.CurrentCategory); // kept
+    }
+
+    [Fact]
+    public void Heartbeat_ForForeignCategory_WithoutSeededStages_StillApplies()
+    {
+        // Runs seeded before the stage list travelled on run-started carry
+        // none, so nothing can be attributed to a workflow there.
+        var current = State("running", updatedAt: T0, lastHeartbeatAt: T0);
+
+        var next = RunFold.Apply(current, new HeartbeatEvent("code-review", "quality-loop") { At = T1, RunId = RunId });
+
+        Assert.NotNull(next);
+        Assert.Equal(T1, next.LastHeartbeatAt);
+        Assert.Equal("quality-loop", next.CurrentCategory);
     }
 
     [Theory]
@@ -723,5 +796,51 @@ public class RunFoldTests
         { At = T1, RunId = RunId });
 
         Assert.Null(next);
+    }
+
+    [Fact]
+    public void PhaseFinished_ForStageOutsideWorkflow_IsNoOp()
+    {
+        var current = State("running", updatedAt: T0, stages: ClaimedWorkflowStages);
+
+        var next = RunFold.Apply(current, new PhaseFinishedEvent(
+            Agent: "static-analysis", Iteration: 1, DurationMs: 1000,
+            InputTokens: 10, OutputTokens: 5, Status: "done",
+            Model: "m", Category: "quality-loop")
+        { At = T1, RunId = RunId });
+
+        Assert.Null(next);
+    }
+
+    [Fact]
+    public void PhaseFinished_ForSeededWorkflowStage_StillStores()
+    {
+        var current = State("running", updatedAt: T0, stages: ClaimedWorkflowStages);
+
+        var next = RunFold.Apply(current, new PhaseFinishedEvent(
+            Agent: "static-analysis", Iteration: 1, DurationMs: 1000,
+            InputTokens: 10, OutputTokens: 5, Status: "done",
+            Model: "m", Category: "pr-author")
+        { At = T1, RunId = RunId });
+
+        Assert.NotNull(next);
+        Assert.Equal("pr-author", Assert.Single(next.Steps!).Category);
+    }
+
+    [Fact]
+    public void PhaseFinished_WithoutCategory_WithSeededStages_Stores()
+    {
+        // Unattributable reports (steps sent before categories, or unmapped
+        // workers) are not stage reports and never read as foreign.
+        var current = State("running", updatedAt: T0, stages: ClaimedWorkflowStages);
+
+        var next = RunFold.Apply(current, new PhaseFinishedEvent(
+            Agent: "feature-builder", Iteration: 0, DurationMs: 1000,
+            InputTokens: 10, OutputTokens: 5, Status: "done",
+            Model: "m")
+        { At = T1, RunId = RunId });
+
+        Assert.NotNull(next);
+        Assert.Null(Assert.Single(next.Steps!).Category);
     }
 }

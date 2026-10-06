@@ -16,23 +16,30 @@ public static class RunFold
     {
         var at = ev.At ?? DateTimeOffset.UtcNow;
 
-        // Full applicability rule (ordering + terminal) in one place; handlers below
-        // are pure transitions and enforce nothing themselves:
+        // Full applicability rule (ordering + terminal + claimed workflow) in
+        // one place; handlers below are pure transitions and enforce nothing:
         // - run-started: creation, applies only when there is no run yet.
         // - heartbeat: freshness orders on LastHeartbeatAt (it never bumps UpdatedAt,
         //   so IsStale does not apply); exempt from the terminal rule like freeze/pr.
+        //   A heartbeat naming a stage the claimed workflow does not seed is
+        //   ignored - a dropped report must not twist the seeded lights.
         // - freeze-captured, pr-verified: IsStale only, exempt from the terminal rule
         //   (post-terminal bookkeeping must still land).
+        // - phase-finished: a step naming an unseeded stage is dropped.
         // - everything else: IsBlocked (stale or terminal).
         return ev switch
         {
             RunStartedEvent e => current is not null ? null : ApplyRunStarted(e, at),
-            HeartbeatEvent e => IsHeartbeatStale(current, at) ? null : ApplyHeartbeat(current!, e, at),
+            HeartbeatEvent e => IsHeartbeatStale(current, at) || NamesForeignStage(current!, e.CurrentCategory)
+                ? null
+                : ApplyHeartbeat(current!, e, at),
             FreezeCapturedEvent e => IsStale(current, at) ? null : ApplyFreezeCaptured(current!, e, at),
             PrVerifiedEvent e => IsStale(current, at) ? null : ApplyPrVerified(current!, e, at),
             AgentStartedEvent e => IsBlocked(current, at) ? null : ApplyAgentStarted(current!, e, at),
             StallDetectedEvent e => IsBlocked(current, at) ? null : ApplyStallDetected(current!, e, at),
-            PhaseFinishedEvent e => IsBlocked(current, at) ? null : ApplyPhaseFinished(current!, e, at),
+            PhaseFinishedEvent e => IsBlocked(current, at) || NamesForeignStage(current!, e.Category)
+                ? null
+                : ApplyPhaseFinished(current!, e, at),
             RunFinishedEvent => IsBlocked(current, at) ? null : ApplyRunFinished(current!, at),
             RunFailedEvent e => IsBlocked(current, at) ? null : ApplyRunFailed(current!, e, at),
             _ => null, // unknown/unmapped event type (a bare RunEvent): no-op
@@ -60,6 +67,19 @@ public static class RunFold
     /// </summary>
     public static bool IsHeartbeatStale(RunState? current, DateTimeOffset at) =>
         current is null || (current.LastHeartbeatAt.HasValue && at <= current.LastHeartbeatAt.Value);
+
+    /// <summary>
+    /// True when a report names a stage the claimed workflow does not seed: the
+    /// run carries a seeded stage list (run-started stores the pick's stages as
+    /// given), the report names one by its category, and no seeded stage lights
+    /// under that category. Stages without a seeded category land in the
+    /// uncategorized bucket and match nothing, and runs whose run-started
+    /// carried no stage list filter nothing.
+    /// </summary>
+    private static bool NamesForeignStage(RunState current, string? category) =>
+        current.Stages is { Count: > 0 } &&
+        !string.IsNullOrWhiteSpace(category) &&
+        !RunStageStatus.NamesSeededStage(current.Stages, category);
 
     private static RunState ApplyRunStarted(RunStartedEvent ev, DateTimeOffset at)
     {
