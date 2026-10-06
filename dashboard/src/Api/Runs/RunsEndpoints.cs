@@ -40,6 +40,60 @@ public static class RunsEndpoints
                 ? Results.NoContent()
                 : Results.NotFound());
 
+        app.MapPost("/runs/{runId:guid}/restart", async (
+            Guid runId,
+            IRunStore runs,
+            Api.Queue.IQueueStore queue) =>
+        {
+            var old = await runs.GetRun(runId);
+            if (old is null)
+            {
+                return Results.NotFound();
+            }
+
+            if (!string.Equals(old.Status, RunStatus.Failed, StringComparison.Ordinal))
+            {
+                return Results.Problem(
+                    "Only failed runs can be restarted.",
+                    statusCode: StatusCodes.Status409Conflict,
+                    title: "Run is not failed");
+            }
+
+            var resumeStage = RunResume.DeriveResumeStage(old.Stages, old.CurrentCategory);
+            var queueRow = await queue.PrepareResume(old.RunId, old.Branch, resumeStage, old.RunId);
+
+            return Results.Json(new RestartRunResponse(
+                old.Repo,
+                old.Branch,
+                old.Spec,
+                resumeStage,
+                old.RunId,
+                queueRow?.Id));
+        });
+
+        app.MapGet("/runs/{runId:guid}/restarts", async (Guid runId, IRunStore store) =>
+        {
+            var existing = await store.GetRun(runId);
+            if (existing is null)
+            {
+                return Results.NotFound();
+            }
+
+            var children = (await store.All())
+                .Where(r => r.ParentRunId == runId)
+                .Select(RunResponse.From)
+                .ToArray();
+            return Results.Json(children);
+        });
+
         return app;
     }
 }
+
+public record RestartRunResponse(
+    string Repo,
+    string Branch,
+    string Spec,
+    string? ResumeStage,
+    Guid ParentRunId,
+    long? QueueId);

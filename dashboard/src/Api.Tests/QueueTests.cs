@@ -238,4 +238,69 @@ public class QueueTests
         var all = await store.All();
         Assert.Equal(claim.RunId, all[0].RunId);
     }
+
+    [Fact]
+    public async Task PrepareResume_ReusesBoundRowAndMakesItClaimable()
+    {
+        var store = new FakeQueueStore();
+        var item = await store.Enqueue(42);
+        await store.StartNext(item!.Id);
+        var first = await store.ClaimNext();
+        Assert.NotNull(first);
+
+        var oldRunId = first!.RunId;
+        var prepared = await store.PrepareResume(oldRunId, "factory/issue-1-abc", "review-loop", Guid.NewGuid());
+
+        Assert.NotNull(prepared);
+        Assert.Equal(item.Id, prepared!.Id);
+        Assert.Null(prepared.RunId);
+        Assert.NotNull(prepared.StartRequestedAt);
+        Assert.Equal("factory/issue-1-abc", prepared.ResumeBranch);
+        Assert.Equal("review-loop", prepared.ResumeStage);
+        Assert.NotNull(prepared.ParentRunId);
+    }
+
+    [Fact]
+    public async Task PrepareResume_UnknownRun_ReturnsNull()
+    {
+        var store = new FakeQueueStore();
+        await store.Enqueue(42);
+
+        Assert.Null(await store.PrepareResume(Guid.NewGuid(), "b", "review-loop", Guid.NewGuid()));
+    }
+
+    [Fact]
+    public async Task ClaimNext_AfterPrepareResume_CarriesBranchStageAndParent()
+    {
+        var store = new FakeQueueStore();
+        var item = await store.Enqueue(42);
+        await store.StartNext(item!.Id);
+        var first = await store.ClaimNext();
+        var parent = Guid.NewGuid();
+        await store.PrepareResume(first!.RunId, "factory/issue-1-abc", "static-loop", parent);
+
+        var retry = await store.ClaimNext();
+
+        Assert.NotNull(retry);
+        Assert.Equal("factory/issue-1-abc", retry!.Branch);
+        Assert.Equal("static-loop", retry.ResumeStage);
+        Assert.Equal(parent, retry.ParentRunId);
+    }
+
+    [Fact]
+    public async Task Restart_ClearsResumeCarry_SoItStaysStartCompletelyNew()
+    {
+        var store = new FakeQueueStore();
+        var item = await store.Enqueue(42);
+        await store.StartNext(item!.Id);
+        var first = await store.ClaimNext();
+        await store.PrepareResume(first!.RunId, "factory/issue-1-abc", "review-loop", Guid.NewGuid());
+
+        var restarted = await store.Restart(item.Id);
+
+        Assert.NotNull(restarted);
+        Assert.Null(restarted!.ResumeBranch);
+        Assert.Null(restarted.ResumeStage);
+        Assert.Null(restarted.ParentRunId);
+    }
 }

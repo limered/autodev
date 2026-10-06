@@ -25,7 +25,9 @@ public record RunResponse(
     IReadOnlyList<RunStageView> Stages,
     string? CurrentPhase,
     IReadOnlyList<RunStepView> Steps,
-    string? CurrentCategory = null)
+    string? CurrentCategory = null,
+    Guid? ParentRunId = null,
+    string? ResumeStage = null)
 {
     public static RunResponse From(RunState r) => new(
         r.RunId,
@@ -49,5 +51,7 @@ public record RunResponse(
             s.Agent, s.Iteration, s.Model, s.Status,
             s.InputTokens, s.OutputTokens, s.DurationMs, s.Cost, s.Category)).ToArray()
             ?? Array.Empty<RunStepView>(),
-        r.CurrentCategory);
+        r.CurrentCategory,
+        r.ParentRunId,
+        r.ResumeStage);
 }

@@ -15,9 +15,16 @@ public static class QueueSchema
                 rank                int         NOT NULL,
                 run_id              uuid,
                 start_requested_at  timestamptz,
-                enqueued_at         timestamptz NOT NULL DEFAULT now()
+                enqueued_at         timestamptz NOT NULL DEFAULT now(),
+                resume_branch       text,
+                resume_stage        text,
+                parent_run_id       uuid
             );
             CREATE INDEX IF NOT EXISTS queue_rank_idx ON queue (rank);
+            -- Idempotent migration: same-branch resume carry across clear/re-claim.
+            ALTER TABLE queue ADD COLUMN IF NOT EXISTS resume_branch text;
+            ALTER TABLE queue ADD COLUMN IF NOT EXISTS resume_stage text;
+            ALTER TABLE queue ADD COLUMN IF NOT EXISTS parent_run_id uuid;
             """, conn);
         await cmd.ExecuteNonQueryAsync();
     }

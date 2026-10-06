@@ -26,7 +26,7 @@ public sealed class RunStore : IRunStore
     private readonly IIssueResolver _resolver;
 
     private const string RunColumns =
-        "run_id, repo, branch, spec, model, vm_name, status, started_at, finished_at, last_heartbeat_at, pr_url, failure_reason, freeze_captured, freeze_local_path, updated_at, stages, current_phase, steps, current_category";
+        "run_id, repo, branch, spec, model, vm_name, status, started_at, finished_at, last_heartbeat_at, pr_url, failure_reason, freeze_captured, freeze_local_path, updated_at, stages, current_phase, steps, current_category, parent_run_id, resume_stage";
 
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
 
@@ -247,8 +247,8 @@ public sealed class RunStore : IRunStore
     {
         await using var cmd = new NpgsqlCommand(
             """
-            INSERT INTO runs (run_id, repo, branch, spec, model, status, started_at, updated_at, stages, steps)
-            VALUES (@id, @repo, @branch, @spec, @model, @status, @startedAt, @updatedAt, @stages, @steps)
+            INSERT INTO runs (run_id, repo, branch, spec, model, status, started_at, updated_at, stages, steps, parent_run_id, resume_stage)
+            VALUES (@id, @repo, @branch, @spec, @model, @status, @startedAt, @updatedAt, @stages, @steps, @parentRunId, @resumeStage)
             ON CONFLICT (run_id) DO NOTHING;
             """, conn, tx);
         cmd.Parameters.AddWithValue("id", next.RunId);
@@ -267,6 +267,8 @@ public sealed class RunStore : IRunStore
         {
             Value = (object?)SerializeJson(next.Steps) ?? DBNull.Value,
         });
+        cmd.Parameters.AddWithValue("parentRunId", (object?)next.ParentRunId ?? DBNull.Value);
+        cmd.Parameters.AddWithValue("resumeStage", (object?)next.ResumeStage ?? DBNull.Value);
         await cmd.ExecuteNonQueryAsync();
     }
 
@@ -388,7 +390,15 @@ public sealed class RunStore : IRunStore
             GetJsonList<RunStage>(r, "stages"),
             GetStringOrNull(r, "current_phase"),
             GetJsonList<RunStep>(r, "steps"),
-            GetStringOrNull(r, "current_category"));
+            GetStringOrNull(r, "current_category"),
+            GetGuidOrNull(r, "parent_run_id"),
+            GetStringOrNull(r, "resume_stage"));
+    }
+
+    private static Guid? GetGuidOrNull(NpgsqlDataReader r, string column)
+    {
+        var ordinal = r.GetOrdinal(column);
+        return r.IsDBNull(ordinal) ? null : r.GetGuid(ordinal);
     }
 
     private static string? GetStringOrNull(NpgsqlDataReader r, string column)

@@ -116,7 +116,27 @@ public sealed class FakeQueueStore : IQueueStore
         }
 
         var idx = _items.IndexOf(item);
-        _items[idx] = item with { RunId = null, StartRequestedAt = null };
+        _items[idx] = item with { RunId = null, StartRequestedAt = null, ResumeBranch = null, ResumeStage = null, ParentRunId = null };
+        return Task.FromResult<QueueRow?>(_items[idx]);
+    }
+
+    public Task<QueueRow?> PrepareResume(Guid oldRunId, string branch, string? resumeStage, Guid parentRunId)
+    {
+        var item = _items.FirstOrDefault(i => i.RunId == oldRunId);
+        if (item is null)
+        {
+            return Task.FromResult<QueueRow?>(null);
+        }
+
+        var idx = _items.IndexOf(item);
+        _items[idx] = item with
+        {
+            RunId = null,
+            StartRequestedAt = DateTimeOffset.UtcNow,
+            ResumeBranch = branch,
+            ResumeStage = resumeStage,
+            ParentRunId = parentRunId,
+        };
         return Task.FromResult<QueueRow?>(_items[idx]);
     }
 
@@ -155,14 +175,21 @@ public sealed class FakeQueueStore : IQueueStore
         var runId = Guid.NewGuid();
         var item = _items.Single(i => i.Id == next.Id);
         var idx = _items.IndexOf(item);
-        _items[idx] = item with { RunId = runId };
+        var branch = item.ResumeBranch;
+        var resumeStage = item.ResumeStage;
+        var parentRunId = item.ParentRunId;
+        _items[idx] = item with { RunId = runId, ResumeBranch = null, ResumeStage = null, ParentRunId = null };
         return new ClaimedQueueItem(
             runId,
             payload.RepoUrl,
             payload.Spec,
             catalog?.Sha,
             catalog?.Source ?? Api.Catalogs.CatalogRules.SourceFactoryFallback,
-            catalog?.Content);
+            catalog?.Content,
+            branch,
+            resumeStage,
+            parentRunId,
+            next.Id);
     }
 
     public Task Reorder(IReadOnlyList<long> ids)

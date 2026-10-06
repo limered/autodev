@@ -14,6 +14,7 @@ public interface IQueueStore
     Task<ClaimedQueueItem?> ClaimNext();
     Task Reorder(IReadOnlyList<long> ids);
     Task<bool> Delete(long id);
+    Task<QueueRow?> PrepareResume(Guid oldRunId, string branch, string? resumeStage, Guid parentRunId);
 }
 
 public record ClaimedQueueItem(
@@ -22,7 +23,11 @@ public record ClaimedQueueItem(
     string Spec,
     string? CatalogSha = null,
     string CatalogSource = CatalogRules.SourceFactoryFallback,
-    string? CatalogContent = null);
+    string? CatalogContent = null,
+    string? Branch = null,
+    string? ResumeStage = null,
+    Guid? ParentRunId = null,
+    long? QueueId = null);
 
 public sealed class QueueStore : IQueueStore
 {
@@ -124,7 +129,10 @@ public sealed class QueueStore : IQueueStore
             """
             UPDATE queue
             SET run_id = NULL,
-                start_requested_at = NULL
+                start_requested_at = NULL,
+                resume_branch = NULL,
+                resume_stage = NULL,
+                parent_run_id = NULL
             WHERE id = @id
             RETURNING id;
             """, conn, tx);
@@ -173,8 +181,9 @@ public sealed class QueueStore : IQueueStore
         if (claimed is not null && payload is not null)
         {
             var catalog = await ResolveCatalogForIssueAsync(claimed.IssueId, conn, tx);
+            var resume = await GetResumeForQueueIdAsync(claimed.Id, conn, tx);
             await using var updateCmd = new NpgsqlCommand(
-                "UPDATE queue SET run_id = @runId WHERE id = @id;", conn, tx);
+                "UPDATE queue SET run_id = @runId, resume_branch = NULL, resume_stage = NULL, parent_run_id = NULL WHERE id = @id;", conn, tx);
             updateCmd.Parameters.AddWithValue("runId", runId);
             updateCmd.Parameters.AddWithValue("id", claimed.Id);
             await updateCmd.ExecuteNonQueryAsync();
@@ -188,7 +197,11 @@ public sealed class QueueStore : IQueueStore
                 payload.Spec,
                 catalog?.Sha,
                 catalog?.Source ?? CatalogRules.SourceFactoryFallback,
-                catalog?.Content);
+                catalog?.Content,
+                resume?.Branch,
+                resume?.Stage,
+                resume?.ParentRunId,
+                claimed.Id);
         }
 
         await tx.CommitAsync();
@@ -239,6 +252,57 @@ public sealed class QueueStore : IQueueStore
         cmd.Parameters.AddWithValue("id", queueId);
         var value = await cmd.ExecuteScalarAsync();
         return value as string;
+    }
+
+    public async Task<QueueRow?> PrepareResume(Guid oldRunId, string branch, string? resumeStage, Guid parentRunId)
+    {
+        await using var conn = await _dataSource.OpenConnectionAsync();
+        await using var tx = await conn.BeginTransactionAsync();
+
+        await using var cmd = new NpgsqlCommand(
+            """
+            UPDATE queue
+            SET run_id = NULL,
+                start_requested_at = now(),
+                resume_branch = @branch,
+                resume_stage = @resumeStage,
+                parent_run_id = @parentRunId
+            WHERE run_id = @oldRunId
+            RETURNING id;
+            """, conn, tx);
+        cmd.Parameters.AddWithValue("oldRunId", oldRunId);
+        cmd.Parameters.AddWithValue("branch", branch);
+        cmd.Parameters.AddWithValue("resumeStage", (object?)resumeStage ?? DBNull.Value);
+        cmd.Parameters.AddWithValue("parentRunId", parentRunId);
+
+        var id = await cmd.ExecuteScalarAsync();
+        await tx.CommitAsync();
+
+        if (id is null)
+        {
+            return null;
+        }
+
+        return await GetById((long)id);
+    }
+
+    private sealed record ResumeCarry(string? Branch, string? Stage, Guid? ParentRunId);
+
+    private static async Task<ResumeCarry?> GetResumeForQueueIdAsync(long queueId, NpgsqlConnection conn, NpgsqlTransaction tx)
+    {
+        await using var cmd = new NpgsqlCommand(
+            "SELECT resume_branch, resume_stage, parent_run_id FROM queue WHERE id = @id;", conn, tx);
+        cmd.Parameters.AddWithValue("id", queueId);
+        await using var reader = await cmd.ExecuteReaderAsync();
+        if (!await reader.ReadAsync())
+        {
+            return null;
+        }
+
+        var branch = reader.IsDBNull(0) ? null : reader.GetString(0);
+        var stage = reader.IsDBNull(1) ? null : reader.GetString(1);
+        Guid? parent = reader.IsDBNull(2) ? null : reader.GetGuid(2);
+        return new ResumeCarry(branch, stage, parent);
     }
 
     private static async Task<QueueRuleItem?> TryLockClaimable(long id, NpgsqlConnection conn, NpgsqlTransaction tx)
@@ -354,7 +418,10 @@ public sealed class QueueStore : IQueueStore
             i.number,
             i.html_url,
             i.state AS issue_state,
-            (i.github_id IS NOT NULL) AS issue_present
+            (i.github_id IS NOT NULL) AS issue_present,
+            q.resume_branch,
+            q.resume_stage,
+            q.parent_run_id
         FROM queue q
         LEFT JOIN issues i ON i.github_id = q.issue_id
         LEFT JOIN runs r ON r.run_id = q.run_id
@@ -386,7 +453,10 @@ public sealed class QueueStore : IQueueStore
             GetInt32OrNull(r, "number"),
             GetStringOrNull(r, "html_url"),
             GetStringOrNull(r, "issue_state"),
-            r.GetBoolean(r.GetOrdinal("issue_present")));
+            r.GetBoolean(r.GetOrdinal("issue_present")),
+            GetStringOrNull(r, "resume_branch"),
+            GetStringOrNull(r, "resume_stage"),
+            GetGuidOrNull(r, "parent_run_id"));
     }
 
     private static QueueRuleItem MapRuleItem(NpgsqlDataReader r) =>

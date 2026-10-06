@@ -19,4 +19,6 @@ public record RunState(
     IReadOnlyList<RunStage>? Stages,
     string? CurrentPhase = null,
     IReadOnlyList<RunStep>? Steps = null,
-    string? CurrentCategory = null);
+    string? CurrentCategory = null,
+    Guid? ParentRunId = null,
+    string? ResumeStage = null);

@@ -79,7 +79,9 @@ public static class RunFold
             FreezeCaptured: false,
             FreezeLocalPath: null,
             UpdatedAt: at,
-            Stages: ev.Stages);
+            Stages: ev.Stages,
+            ParentRunId: ev.ParentRunId,
+            ResumeStage: ev.ResumeStage);
     }
 
     private static RunState ApplyAgentStarted(RunState current, AgentStartedEvent ev, DateTimeOffset at)

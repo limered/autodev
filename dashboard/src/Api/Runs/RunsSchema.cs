@@ -28,9 +28,12 @@ public static class RunsSchema
                 stages            jsonb,
                 current_phase     text,
                 steps             jsonb,
-                current_category  text
+                current_category  text,
+                parent_run_id     uuid,
+                resume_stage      text
             );
             CREATE INDEX IF NOT EXISTS runs_status_started_idx ON runs (status, started_at DESC);
+            CREATE INDEX IF NOT EXISTS runs_parent_run_idx ON runs (parent_run_id);
             -- Idempotent migration: add the stages JSON column to pre-existing runs tables.
             ALTER TABLE runs ADD COLUMN IF NOT EXISTS stages jsonb;
             -- Idempotent migration: add the current_phase column to pre-existing runs tables.
@@ -39,6 +42,9 @@ public static class RunsSchema
             ALTER TABLE runs ADD COLUMN IF NOT EXISTS current_category text;
             -- Idempotent migration: add the steps JSON column to pre-existing runs tables.
             ALTER TABLE runs ADD COLUMN IF NOT EXISTS steps jsonb;
+            -- Idempotent migration: link a resumed run to the failed run it retries.
+            ALTER TABLE runs ADD COLUMN IF NOT EXISTS parent_run_id uuid;
+            ALTER TABLE runs ADD COLUMN IF NOT EXISTS resume_stage text;
             """, conn);
         await cmd.ExecuteNonQueryAsync();
     }
