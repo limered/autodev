@@ -42,7 +42,9 @@ export function useQueueHandlers({ reloadIssues, reloadQueue, fetchFn = fetch } 
   }
 
   async function pickWorkflow(item, name) {
-    if (await actions.pickWorkflow(item.id, name)) await reloadQueue();
+    const ok = await actions.pickWorkflow(item.id, name);
+    if (ok) await reloadQueue();
+    return ok;
   }
 
   // reorder takes raw ids (sole caller: useDragReorder.onDrop); reload is
