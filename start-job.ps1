@@ -48,6 +48,12 @@
 .PARAMETER CatalogSha
   Claimed target-repo catalog sha for observability on run-started.
 
+.PARAMETER Workflow
+  Workflow the claim froze at claim time. Rechecked at start against the
+  start catalog and resolved into the ordered stage-id list the guest runs.
+  A missing, empty, unknown, or stale workflow fails the run fast with a
+  stale-workflow reason instead of falling back to a default pipeline.
+
 .PARAMETER ResumeBranch
   Existing branch to resume on (same-branch restart). When set with
   ResumeStage, the guest fetches and checks out this branch instead of
@@ -74,6 +80,7 @@ param(
     [string]$Image = 'slop-factory-runner:latest',
     [string]$CatalogJson = '',
     [string]$CatalogSha = '',
+    [string]$Workflow = '',
     [string]$ResumeBranch = '',
     [string]$ResumeStage = '',
     [string]$ParentRunId = '',
@@ -100,19 +107,38 @@ if (-not $Model) {
     $Model = Get-AgentModel -Agent $defaultAgent -RepoRoot $RepoRoot
 }
 
-$seedConfig = Read-AgentsConfig -Path (Join-Path $RepoRoot "agents.json")
+$seedCatalog = Read-AgentsWorkflowCatalog -Path (Join-Path $RepoRoot "agents.json")
+$seedConfig = $seedCatalog.Stages
 $agentsJson = Join-Path $RepoRoot "agents.json"
 $catalogSource = 'factory-fallback'
 if (-not [string]::IsNullOrWhiteSpace($CatalogJson)) {
     $catalogTmp = Join-Path (Get-HostTempDir) "target-agents-$VmName.json"
     Set-Content -LiteralPath $catalogTmp -Value $CatalogJson -Encoding UTF8 -NoNewline
-    $seedConfig = Read-AgentsConfig -Path $catalogTmp
+    $seedCatalog = Read-AgentsWorkflowCatalog -Path $catalogTmp
+    $seedConfig = $seedCatalog.Stages
     $agentsJson = $catalogTmp
     $catalogSource = 'target'
 }
 $agentModels = Get-AgentModelMap -Config $seedConfig -RepoRoot $RepoRoot
 $categoryLookup = { param($agent, $iteration) Get-StepCategory -Agent "$agent" -Iteration ([int]$iteration) -Config $seedConfig }
 $stages = @(ConvertTo-SeededStages -Config $seedConfig -ModelMap $agentModels)
+
+# Freeze recheck at start: resolve the claimed workflow into the ordered
+# stage-id list the guest runs, against the same start catalog, and seed only
+# the picked stages so run-started and the step relay reflect the pick. A
+# missing, empty, stale, or unknown pick fails the run fast instead of
+# falling back to the catalog's default workflow.
+$staleReason = $null
+try {
+    $frozenStageIds = @(Resolve-FrozenWorkflowStages -Workflow $Workflow -WorkflowCatalog $seedCatalog)
+    $seedConfig = @(Select-WorkflowStages -Config $seedConfig -StageIds $frozenStageIds -Workflow $Workflow)
+    $agentModels = Get-AgentModelMap -Config $seedConfig -RepoRoot $RepoRoot
+    $stages = @(ConvertTo-SeededStages -Config $seedConfig -ModelMap $agentModels)
+}
+catch {
+    $staleReason = "stale-workflow at start: $_"
+    Write-Host "ERROR: $staleReason" -ForegroundColor Red
+}
 
 # The run id is either supplied by the dispatch client or defaulted above to a
 # fresh GUID; it is the identity carried on every dashboard event.
@@ -132,8 +158,17 @@ $runStartedFields = @{
 if (-not [string]::IsNullOrWhiteSpace($ParentRunId)) { $runStartedFields['parentRunId'] = $ParentRunId }
 if (-not [string]::IsNullOrWhiteSpace($ResumeStage)) { $runStartedFields['resumeStage'] = $ResumeStage }
 Send-FactoryEvent -RunId $RunId -Type "run-started" -Fields $runStartedFields
+if ($staleReason) {
+    Send-FactoryEvent -RunId $RunId -Type "run-failed" -Fields @{ failureReason = $staleReason }
+    exit 1
+}
 
 $cloudInit = Join-Path $RepoRoot "infrastructure/multipass/cloud-init.yaml"
+# The frozen stage list rides to the guest base64-encoded (comma-joined ids):
+# the guest build script loops it verbatim instead of its old hardcoded phase
+# order, and never falls back when it is missing.
+$frozenStageList = (@($frozenStageIds) -join ',')
+$frozenStagesB64 = [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($frozenStageList))
 $testScript = Join-Path $RepoRoot "infrastructure/multipass/test-feature-builder.sh"
 $secretsDir = Join-Path $RepoRoot ".secrets"
 $patFile = Join-Path $secretsDir "github-pat.txt"
@@ -197,17 +232,18 @@ try {
         $specCopy = $Spec
         $repoCopy = $Repo
         $resumeEnvCopy = @(Get-ResumeGuestEnv -ResumeBranch $ResumeBranch -ResumeStage $ResumeStage)
+        $stagesEnvCopy = $frozenStagesB64
         $StartGuestJob = {
             $jobScript = {
-                param($Cli, $InnerName, $InnerModel, $InnerBranch, $InnerSpec, $InnerRepo, $InnerResumeEnv)
+                param($Cli, $InnerName, $InnerModel, $InnerBranch, $InnerSpec, $InnerRepo, $InnerResumeEnv, $InnerStages)
                 $ErrorActionPreference = "Continue"
                 $specB64 = [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($InnerSpec))
-                & $Cli exec $InnerName env "MODEL=$InnerModel" "ISSUE_B64=$specB64" @InnerResumeEnv bash /tmp/test-feature-builder.sh "$InnerBranch" "$InnerRepo" 2>&1 | ForEach-Object { "$_" }
+                & $Cli exec $InnerName env "MODEL=$InnerModel" "ISSUE_B64=$specB64" "WORKFLOW_STAGES_B64=$InnerStages" @InnerResumeEnv bash /tmp/test-feature-builder.sh "$InnerBranch" "$InnerRepo" 2>&1 | ForEach-Object { "$_" }
                 if ($LASTEXITCODE -ne 0) {
                     throw "container exec failed with exit code ${LASTEXITCODE}"
                 }
             }
-            return (Start-Job -ScriptBlock $jobScript -ArgumentList $cliCopy, $nameCopy, $modelCopy, $branchCopy, $specCopy, $repoCopy, $resumeEnvCopy)
+            return (Start-Job -ScriptBlock $jobScript -ArgumentList $cliCopy, $nameCopy, $modelCopy, $branchCopy, $specCopy, $repoCopy, $resumeEnvCopy, $stagesEnvCopy)
         }.GetNewClosure()
     }
     else {
@@ -235,17 +271,18 @@ try {
         $specCopy = $Spec
         $repoCopy = $Repo
         $resumeEnvCopy = @(Get-ResumeGuestEnv -ResumeBranch $ResumeBranch -ResumeStage $ResumeStage)
+        $stagesEnvCopy = $frozenStagesB64
         $StartGuestJob = {
             $jobScript = {
-                param($InnerName, $InnerModel, $InnerBranch, $InnerSpec, $InnerRepo, $InnerResumeEnv)
+                param($InnerName, $InnerModel, $InnerBranch, $InnerSpec, $InnerRepo, $InnerResumeEnv, $InnerStages)
                 $ErrorActionPreference = "Continue"
                 $specB64 = [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($InnerSpec))
-                & multipass exec $InnerName '--' env "MODEL=$InnerModel" "ISSUE_B64=$specB64" @InnerResumeEnv bash /tmp/test-feature-builder.sh "$InnerBranch" "$InnerRepo" 2>&1 | ForEach-Object { "$_" }
+                & multipass exec $InnerName '--' env "MODEL=$InnerModel" "ISSUE_B64=$specB64" "WORKFLOW_STAGES_B64=$InnerStages" @InnerResumeEnv bash /tmp/test-feature-builder.sh "$InnerBranch" "$InnerRepo" 2>&1 | ForEach-Object { "$_" }
                 if ($LASTEXITCODE -ne 0) {
                     throw "multipass exec failed with exit code ${LASTEXITCODE}"
                 }
             }
-            return (Start-Job -ScriptBlock $jobScript -ArgumentList $nameCopy, $modelCopy, $branchCopy, $specCopy, $repoCopy, $resumeEnvCopy)
+            return (Start-Job -ScriptBlock $jobScript -ArgumentList $nameCopy, $modelCopy, $branchCopy, $specCopy, $repoCopy, $resumeEnvCopy, $stagesEnvCopy)
         }.GetNewClosure()
     }
     $vmCreated = $true

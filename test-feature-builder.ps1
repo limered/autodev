@@ -10,10 +10,15 @@
 
 .PARAMETER Model
   opencode model id. Defaults to start-job.ps1's default.
+
+.PARAMETER Workflow
+  Workflow the smoke run executes. Defaults to 'full', the factory catalog's
+  default; the launcher still rechecks it against the start catalog.
 #>
 [CmdletBinding()]
 param(
-    [string]$Model = "opencode-go/kimi-k2.7-code"
+    [string]$Model = "opencode-go/kimi-k2.7-code",
+    [string]$Workflow = "full"
 )
 
 $ErrorActionPreference = "Stop"
@@ -23,7 +28,8 @@ $spec = "Add a one-line note to AGENTS.md stating this repo is managed by slop-f
 $result = & (Join-Path $PSScriptRoot "start-job.ps1") `
     -RepoUrl "https://github.com/limered/autodev.git" `
     -Spec $spec `
-    -Model $Model
+    -Model $Model `
+    -Workflow $Workflow
 
 if ($LASTEXITCODE -ne 0) {
     Write-Host "TEST FAILED" -ForegroundColor Red
