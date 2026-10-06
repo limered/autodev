@@ -72,7 +72,6 @@ public static class FactoryCatalog
 
     private static FactoryWorkflows Parse(JsonElement root, Func<string, string> message)
     {
-        const string path = "catalog content";
         if (root.ValueKind != JsonValueKind.Object
             || !root.TryGetProperty("stages", out var stages)
             || stages.ValueKind != JsonValueKind.Object)
@@ -111,7 +110,7 @@ public static class FactoryCatalog
                     message("workflow name 'default' is reserved for the legacy stages-only workflow."));
             }
 
-            entries.Add(new WorkflowEntry(name, AssertStageIds(path, message, name, property.Value, stageIds).Count));
+            entries.Add(new WorkflowEntry(name, AssertStageIds(message, name, property.Value, stageIds).Count));
         }
 
         if (!root.TryGetProperty("defaultWorkflow", out var marker)
@@ -133,7 +132,7 @@ public static class FactoryCatalog
     }
 
     private static List<string> AssertStageIds(
-        string path, Func<string, string> message, string workflow, JsonElement value, IReadOnlyList<string> knownIds)
+        Func<string, string> message, string workflow, JsonElement value, IReadOnlyList<string> knownIds)
     {
         if (value.ValueKind != JsonValueKind.Array)
         {
