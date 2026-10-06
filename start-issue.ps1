@@ -21,6 +21,11 @@
 .PARAMETER Model
   opencode model id. Defaults to start-job.ps1's default.
 
+.PARAMETER Workflow
+  Workflow pick the job runs (e.g. full). Unlike the queue path there is no
+  claim to recheck, so it must be named explicitly; leaving it empty fails
+  the run at start instead of silently defaulting.
+
 .PARAMETER RepoRoot
   Path to the slop-factory repo root (source of .opencode, blueprint, secrets).
   Defaults to this script's directory.
@@ -33,6 +38,7 @@ param(
     [Parameter(Mandatory = $true, Position = 0)][string]$Issue,
     [Parameter(Mandatory = $true)][string]$RepoUrl,
     [string]$Model,
+    [string]$Workflow = '',
     [string]$RepoRoot = $PSScriptRoot,
     [ValidateSet('multipass', 'container')][string]$Isolator = $(if ($env:OS -eq 'Windows_NT') { 'multipass' } else { 'container' }),
     [switch]$KeepVmOnFailure
@@ -54,6 +60,7 @@ $invokeArgs = @{
     RepoUrl = $RepoUrl
     Spec    = $IssueNumber
     Branch  = $Branch
+    Workflow = $Workflow
     RepoRoot = $RepoRoot
     Isolator = $Isolator
 }
