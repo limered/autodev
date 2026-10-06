@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
-import { workflowRowState } from "../../models/workflowView.js";
+import { rowCatalog, workflowRowState } from "../../models/workflowView.js";
 
-const catalog = {
+const factoryCatalog = {
   defaultWorkflow: "full",
   workflows: [
     { name: "full", stageCount: 5 },
@@ -9,65 +9,161 @@ const catalog = {
   ],
 };
 
+const targetEntry = (content) => ({
+  repo: "owner/repo",
+  source: "target",
+  sha: "sha-1",
+  content,
+  fetchedAt: "2026-01-01T00:00:00Z",
+});
+
+const namedWorkflowsJson = JSON.stringify({
+  stages: { implementation: {}, ci: {} },
+  workflows: { full: ["implementation", "ci"], quick: ["implementation"] },
+  defaultWorkflow: "full",
+});
+
+const legacyStagesJson = JSON.stringify({ stages: { a: {}, b: {} } });
+
 const unclaimed = { runId: null };
 const claimed = { runId: "550e8400-e29b-41d4-a716-446655440000" };
 
-describe("workflowRowState", () => {
-  it("resolves to the catalog default with no local pick", () => {
-    expect(workflowRowState(catalog, unclaimed, null)).toEqual({
-      kind: "ready",
-      name: "full",
-      stageCount: 5,
+describe("rowCatalog", () => {
+  it("a target repo file fully replaces the factory catalog", () => {
+    const summary = rowCatalog(targetEntry(namedWorkflowsJson), factoryCatalog);
+
+    expect(summary).toEqual({
+      usable: true,
+      workflows: [
+        { name: "full", stageCount: 2 },
+        { name: "quick", stageCount: 1 },
+      ],
+      defaultWorkflow: "full",
     });
   });
 
-  it("resolves to the locally picked workflow while unclaimed", () => {
-    expect(workflowRowState(catalog, unclaimed, "quick")).toEqual({
+  it("a legacy stages-only target file reads as the default workflow", () => {
+    const summary = rowCatalog(targetEntry(legacyStagesJson), factoryCatalog);
+
+    expect(summary).toEqual({
+      usable: true,
+      workflows: [{ name: "default", stageCount: 2 }],
+      defaultWorkflow: "default",
+    });
+  });
+
+  it("an unreadable target file falls back to the factory catalog summary", () => {
+    const summary = rowCatalog(targetEntry("{not json"), factoryCatalog);
+
+    expect(summary).toEqual({
+      usable: true,
+      workflows: factoryCatalog.workflows,
+      defaultWorkflow: "full",
+    });
+  });
+
+  it("an unreadable target file with no factory read names the unresolved default", () => {
+    const summary = rowCatalog(targetEntry("{not json"), null);
+
+    expect(summary).toEqual({ usable: false, workflows: [], defaultWorkflow: "default" });
+  });
+
+  it("a fallback source or no row entry reads the factory feed", () => {
+    expect(rowCatalog({ source: "factory-fallback", content: null }, factoryCatalog)).toEqual({
+      usable: true,
+      workflows: factoryCatalog.workflows,
+      defaultWorkflow: "full",
+    });
+    expect(rowCatalog(null, factoryCatalog)).toEqual({
+      usable: true,
+      workflows: factoryCatalog.workflows,
+      defaultWorkflow: "full",
+    });
+  });
+
+  it("no factory catalog at all resolves unusable naming the legacy default", () => {
+    expect(rowCatalog(null, null)).toEqual({
+      usable: false,
+      workflows: [],
+      defaultWorkflow: "default",
+    });
+  });
+});
+
+describe("workflowRowState", () => {
+  const summary = rowCatalog(null, factoryCatalog);
+
+  it("resolves to the picked workflow while unclaimed", () => {
+    expect(workflowRowState(summary, unclaimed, "quick")).toEqual({
       kind: "ready",
       name: "quick",
       stageCount: 2,
+    });
+  });
+
+  it("resolves to the catalog default with no pick", () => {
+    expect(workflowRowState(summary, unclaimed, null)).toEqual({
+      kind: "ready",
+      name: "full",
+      stageCount: 5,
     });
   });
 
   it("freezes the active pick once the row is claimed", () => {
-    expect(workflowRowState(catalog, claimed, "quick")).toEqual({
+    expect(workflowRowState(summary, claimed, "quick")).toEqual({
       kind: "frozen",
       name: "quick",
       stageCount: 2,
     });
   });
 
-  it("freezes the catalog default on claimed rows with no local pick", () => {
-    expect(workflowRowState(catalog, claimed, null)).toEqual({
+  it("freezes the catalog default on claimed rows with no pick", () => {
+    expect(workflowRowState(summary, claimed, null)).toEqual({
       kind: "frozen",
       name: "full",
       stageCount: 5,
     });
   });
 
-  it("falls back to the muted default notice when the catalog is missing", () => {
-    for (const missing of [null, undefined]) {
-      expect(workflowRowState(missing, unclaimed, null)).toEqual({
-        kind: "missing",
-        name: "default",
-        stageCount: 0,
-      });
-    }
+  it("keeps claimed rows on frozen text even when the pick vanished", () => {
+    expect(workflowRowState(summary, claimed, "retired-flow")).toEqual({
+      kind: "frozen",
+      name: "full",
+      stageCount: 5,
+    });
   });
 
-  it("falls back to the muted default notice when the catalog has no workflows", () => {
-    expect(workflowRowState({ defaultWorkflow: "full", workflows: [] }, unclaimed, null)).toEqual({
+  it("shows the muted default notice when no catalog is readable", () => {
+    const missing = { usable: false, workflows: [], defaultWorkflow: "full" };
+
+    expect(workflowRowState(missing, unclaimed, null)).toEqual({
       kind: "missing",
       name: "full",
       stageCount: 0,
     });
   });
 
-  it("falls back to the muted default notice when the pick vanished from the catalog", () => {
-    expect(workflowRowState(catalog, unclaimed, "retired-flow")).toEqual({
-      kind: "missing",
+  it("shows the red vanished warning naming the stale pick and the reset default", () => {
+    expect(workflowRowState(summary, unclaimed, "retired-flow")).toEqual({
+      kind: "vanished",
+      stalePick: "retired-flow",
       name: "full",
       stageCount: 5,
+    });
+  });
+
+  it("the vanished reset target falls back to the first workflow when the default is gone", () => {
+    const noDefault = {
+      usable: true,
+      workflows: [{ name: "only", stageCount: 3 }],
+      defaultWorkflow: "gone",
+    };
+
+    expect(workflowRowState(noDefault, unclaimed, "retired-flow")).toEqual({
+      kind: "vanished",
+      stalePick: "retired-flow",
+      name: "only",
+      stageCount: 3,
     });
   });
 });

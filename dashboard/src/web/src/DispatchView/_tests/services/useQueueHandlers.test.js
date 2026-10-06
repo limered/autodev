@@ -121,6 +121,27 @@ describe("useQueueHandlers reload policy", () => {
     expect(reloads.reloadIssues).not.toHaveBeenCalled();
   });
 
+  it("reloads only the queue after a successful pick workflow", async () => {
+    const reloads = makeReloads();
+    const { pickWorkflow } = makeHandlers(okFetch(), reloads);
+
+    await pickWorkflow({ id: "q2" }, "quick");
+
+    expect(reloads.reloadQueue).toHaveBeenCalledTimes(1);
+    expect(reloads.reloadIssues).not.toHaveBeenCalled();
+  });
+
+  it("reloads nothing and surfaces the error when a pick workflow fails", async () => {
+    const reloads = makeReloads();
+    const { pickWorkflow, pickWorkflowError } = makeHandlers(failFetch(), reloads);
+
+    await pickWorkflow({ id: "q2" }, "quick");
+
+    expect(reloads.reloadQueue).not.toHaveBeenCalled();
+    expect(reloads.reloadIssues).not.toHaveBeenCalled();
+    expect(pickWorkflowError.value).toBe("HTTP 500");
+  });
+
   it("reloads nothing and surfaces the error when a restart fails", async () => {
     const reloads = makeReloads();
     const { restart, restartError } = makeHandlers(failFetch(), reloads);

@@ -6,8 +6,7 @@ const props = defineProps({
   workflows: { type: Array, required: true },
   initialOpen: { type: Boolean, default: false },
 });
-const emit = defineEmits(["pick"]);
-
+const emit = defineEmits(["pick", "reset"]);
 const open = ref(props.initialOpen);
 const wrap = ref(null);
 
@@ -62,6 +61,12 @@ onUnmounted(() => document.removeEventListener("click", onDocumentClick));
   <span v-else-if="state.kind === 'frozen'" class="workflow-frozen"
     >{{ state.name }} <span class="muted">· {{ state.stageCount }}</span></span
   >
+  <div v-else-if="state.kind === 'vanished'" class="workflow-vanished">
+    <span class="vanished-text">
+      pick “{{ state.stalePick }}” no longer exists — resort to
+      <button class="reset-link" type="button" @click="emit('reset')">{{ state.name }}</button>
+    </span>
+  </div>
   <span v-else class="workflow-missing">{{ state.name }} (no catalog)</span>
 </template>
 
@@ -156,6 +161,33 @@ onUnmounted(() => document.removeEventListener("click", onDocumentClick));
   font-size: 0.85rem;
   font-style: italic;
   color: var(--text-muted);
+  white-space: nowrap;
+}
+
+.workflow-vanished {
+  flex-shrink: 0;
+  margin-left: auto;
+  max-width: 20rem;
+  font-size: 0.8rem;
+  color: var(--red);
+  text-align: right;
+}
+
+.vanished-text {
+  display: inline-flex;
+  gap: 0.25rem;
+  align-items: baseline;
+}
+
+.reset-link {
+  background: none;
+  border: none;
+  padding: 0;
+  font-size: 0.8rem;
+  font-weight: 700;
+  color: var(--red);
+  text-decoration: underline;
+  cursor: pointer;
   white-space: nowrap;
 }
 </style>
