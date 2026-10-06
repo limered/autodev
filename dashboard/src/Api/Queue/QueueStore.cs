@@ -8,7 +8,7 @@ namespace Api.Queue;
 public interface IQueueStore
 {
     Task<IReadOnlyList<QueueRow>> All();
-    Task<QueueRow?> Enqueue(long issueId, string? workflow = null);
+    Task<QueueRow?> Enqueue(long issueId);
     Task<QueueRow?> SetWorkflow(long id, string? workflow);
     Task<QueueRow?> StartNext(long id);
     Task<QueueRow?> Restart(long id);
@@ -60,7 +60,7 @@ public sealed class QueueStore : IQueueStore
         return items;
     }
 
-    public async Task<QueueRow?> Enqueue(long issueId, string? workflow = null)
+    public async Task<QueueRow?> Enqueue(long issueId)
     {
         await using var conn = await _dataSource.OpenConnectionAsync();
         await using var tx = await conn.BeginTransactionAsync();
@@ -82,13 +82,12 @@ public sealed class QueueStore : IQueueStore
 
         await using var insertCmd = new NpgsqlCommand(
             """
-            INSERT INTO queue (issue_id, rank, workflow)
-            VALUES (@issueId, @rank, @workflow)
+            INSERT INTO queue (issue_id, rank)
+            VALUES (@issueId, @rank)
             RETURNING id;
             """, conn, tx);
         insertCmd.Parameters.AddWithValue("issueId", issueId);
         insertCmd.Parameters.AddWithValue("rank", rank);
-        insertCmd.Parameters.AddWithValue("workflow", (object?)workflow ?? DBNull.Value);
         var id = (long)(await insertCmd.ExecuteScalarAsync() ?? 0L);
 
         await tx.CommitAsync();
@@ -205,11 +204,6 @@ public sealed class QueueStore : IQueueStore
                 continue;
             }
 
-            // The claim used to be one statement that inner-joined issues: a queue row
-            // whose issue has no issues row matched nothing and claimed nothing. The
-            // resolver seam keeps that — a missing issue row answers null — while the
-            // issues SQL moves behind the issues domain, still on this locked transaction
-            // so the answer is covered by the row lock the claim just took.
             payload = await _resolver.ResolveClaimPayloadAsync(claimed.IssueId, conn, tx);
             if (payload is null)
             {
