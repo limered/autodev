@@ -69,7 +69,9 @@ function New-IssueBranchName {
 # Maps a dispatch claim to the single-Job launcher arguments. Resume fields
 # ride the claim only when the queue row carries them (a same-branch restart
 # prepared via PrepareResume); ordinary claims omit them so the launcher
-# defaults (fresh branch, full pipeline) stay untouched.
+# defaults (fresh branch, full pipeline) stay untouched. The workflow pick
+# the claim froze at claim time always rides along, even when blank: the
+# launcher rechecks it at start and blank means a stale pick, not a default.
 function Get-ClaimedJobArgs {
     param([object]$Claim, [string]$RepoRoot, [string]$Isolator = 'multipass')
     $jobArgs = [ordered]@{
@@ -80,6 +82,7 @@ function Get-ClaimedJobArgs {
         Isolator    = $Isolator
         CatalogJson = "$($Claim.catalogContent)"
         CatalogSha  = "$($Claim.catalogSha)"
+        Workflow    = "$($Claim.workflow)"
     }
     if (-not [string]::IsNullOrWhiteSpace("$($Claim.branch)")) {
         $jobArgs['Branch'] = "$($Claim.branch)"

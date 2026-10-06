@@ -73,16 +73,25 @@ Describe 'Get-ClaimedJobArgs' {
     It 'passes an ordinary claim through with no resume keys' {
         $claim = [PSCustomObject]@{
             runId = 'run-1'; repoUrl = 'https://github.com/o/r.git'; spec = 's'
-            catalogContent = 'c'; catalogSha = 'sha'
+            catalogContent = 'c'; catalogSha = 'sha'; workflow = 'full'
         }
         $args = Get-ClaimedJobArgs -Claim $claim -RepoRoot '/repo' -Isolator 'container'
         $args['RunId'] | Should -Be 'run-1'
         $args['RepoUrl'] | Should -Be 'https://github.com/o/r.git'
         $args['Isolator'] | Should -Be 'container'
+        $args['Workflow'] | Should -Be 'full'
         $args.Contains('ResumeBranch') | Should -Be $false
         $args.Contains('ResumeStage') | Should -Be $false
         $args.Contains('ParentRunId') | Should -Be $false
         $args.Contains('Branch') | Should -Be $false
+    }
+    It 'passes a blank workflow through so the launcher rechecks it instead of defaulting' {
+        $claim = [PSCustomObject]@{
+            runId = 'run-3'; repoUrl = 'https://github.com/o/r.git'; spec = 's'
+            catalogContent = 'c'; catalogSha = 'sha'
+        }
+        $args = Get-ClaimedJobArgs -Claim $claim -RepoRoot '/repo' -Isolator 'multipass'
+        $args['Workflow'] | Should -Be ''
     }
     It 'carries the same branch plus resume stage and parent link for a resume claim' {
         $claim = [PSCustomObject]@{
