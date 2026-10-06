@@ -33,7 +33,6 @@ public static class RunsSchema
                 resume_stage      text
             );
             CREATE INDEX IF NOT EXISTS runs_status_started_idx ON runs (status, started_at DESC);
-            CREATE INDEX IF NOT EXISTS runs_parent_run_idx ON runs (parent_run_id);
             -- Idempotent migration: add the stages JSON column to pre-existing runs tables.
             ALTER TABLE runs ADD COLUMN IF NOT EXISTS stages jsonb;
             -- Idempotent migration: add the current_phase column to pre-existing runs tables.
@@ -45,6 +44,8 @@ public static class RunsSchema
             -- Idempotent migration: link a resumed run to the failed run it retries.
             ALTER TABLE runs ADD COLUMN IF NOT EXISTS parent_run_id uuid;
             ALTER TABLE runs ADD COLUMN IF NOT EXISTS resume_stage text;
+            -- After the link columns exist: index the reverse lookup.
+            CREATE INDEX IF NOT EXISTS runs_parent_run_idx ON runs (parent_run_id);
             """, conn);
         await cmd.ExecuteNonQueryAsync();
     }
