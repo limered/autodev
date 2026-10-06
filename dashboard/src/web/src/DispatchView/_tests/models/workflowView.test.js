@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { rowCatalog, workflowRowState } from "../../models/workflowView.js";
+import { rowCatalogSummary, workflowRowState } from "../../models/workflowView.js";
 
 const factoryCatalog = {
   defaultWorkflow: "full",
@@ -28,9 +28,9 @@ const legacyStagesJson = JSON.stringify({ stages: { a: {}, b: {} } });
 const unclaimed = { runId: null };
 const claimed = { runId: "550e8400-e29b-41d4-a716-446655440000" };
 
-describe("rowCatalog", () => {
+describe("rowCatalogSummary", () => {
   it("a target repo file fully replaces the factory catalog", () => {
-    const summary = rowCatalog(targetEntry(namedWorkflowsJson), factoryCatalog);
+    const summary = rowCatalogSummary(targetEntry(namedWorkflowsJson), factoryCatalog);
 
     expect(summary).toEqual({
       usable: true,
@@ -43,7 +43,7 @@ describe("rowCatalog", () => {
   });
 
   it("a legacy stages-only target file reads as the default workflow", () => {
-    const summary = rowCatalog(targetEntry(legacyStagesJson), factoryCatalog);
+    const summary = rowCatalogSummary(targetEntry(legacyStagesJson), factoryCatalog);
 
     expect(summary).toEqual({
       usable: true,
@@ -53,7 +53,7 @@ describe("rowCatalog", () => {
   });
 
   it("an unreadable target file falls back to the factory catalog summary", () => {
-    const summary = rowCatalog(targetEntry("{not json"), factoryCatalog);
+    const summary = rowCatalogSummary(targetEntry("{not json"), factoryCatalog);
 
     expect(summary).toEqual({
       usable: true,
@@ -63,18 +63,18 @@ describe("rowCatalog", () => {
   });
 
   it("an unreadable target file with no factory read names the unresolved default", () => {
-    const summary = rowCatalog(targetEntry("{not json"), null);
+    const summary = rowCatalogSummary(targetEntry("{not json"), null);
 
     expect(summary).toEqual({ usable: false, workflows: [], defaultWorkflow: "default" });
   });
 
   it("a fallback source or no row entry reads the factory feed", () => {
-    expect(rowCatalog({ source: "factory-fallback", content: null }, factoryCatalog)).toEqual({
+    expect(rowCatalogSummary({ source: "factory-fallback", content: null }, factoryCatalog)).toEqual({
       usable: true,
       workflows: factoryCatalog.workflows,
       defaultWorkflow: "full",
     });
-    expect(rowCatalog(null, factoryCatalog)).toEqual({
+    expect(rowCatalogSummary(null, factoryCatalog)).toEqual({
       usable: true,
       workflows: factoryCatalog.workflows,
       defaultWorkflow: "full",
@@ -82,7 +82,7 @@ describe("rowCatalog", () => {
   });
 
   it("no factory catalog at all resolves unusable naming the legacy default", () => {
-    expect(rowCatalog(null, null)).toEqual({
+    expect(rowCatalogSummary(null, null)).toEqual({
       usable: false,
       workflows: [],
       defaultWorkflow: "default",
@@ -91,7 +91,7 @@ describe("rowCatalog", () => {
 });
 
 describe("workflowRowState", () => {
-  const summary = rowCatalog(null, factoryCatalog);
+  const summary = rowCatalogSummary(null, factoryCatalog);
 
   it("resolves to the picked workflow while unclaimed", () => {
     expect(workflowRowState(summary, unclaimed, "quick")).toEqual({
