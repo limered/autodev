@@ -51,7 +51,7 @@ public sealed class FakeQueueStore : IQueueStore
         return Task.FromResult<IReadOnlyList<QueueRow>>(ordered);
     }
 
-    public Task<QueueRow?> Enqueue(long issueId, string? workflow = null)
+    public Task<QueueRow?> Enqueue(long issueId)
     {
         // Rank/dedup derivation is QueueRules', shared with the real SQL store; only
         // the storage here is fake.
@@ -76,7 +76,7 @@ public sealed class FakeQueueStore : IQueueStore
             null,
             null,
             false,
-            Workflow: workflow);
+            Workflow: null);
 
         _items.Add(item);
         return Task.FromResult<QueueRow?>(item);

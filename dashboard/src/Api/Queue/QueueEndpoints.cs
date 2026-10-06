@@ -8,7 +8,7 @@ public static class QueueEndpoints
     {
         app.MapPost("/queue", async (EnqueueRequest req, IQueueStore store) =>
         {
-            var row = await store.Enqueue(req.IssueId, req.Workflow);
+            var row = await store.Enqueue(req.IssueId);
             return row is null
                 ? Results.Problem("Failed to enqueue issue.")
                 : Results.Json(row);
@@ -104,7 +104,7 @@ public static class QueueEndpoints
     }
 }
 
-public record EnqueueRequest(long IssueId, string? Workflow = null);
+public record EnqueueRequest(long IssueId);
 
 public record PickWorkflowRequest(string? Workflow);
 
