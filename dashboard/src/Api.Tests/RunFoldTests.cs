@@ -334,7 +334,7 @@ public class RunFoldTests
         Assert.NotNull(next);
         Assert.Equal(T1, next.LastHeartbeatAt);
         Assert.Equal("pr-author", next.CurrentPhase);
-        Assert.Equal("implementation", next.CurrentCategory); // kept
+        Assert.Equal("implementation", next.CurrentCategory);
     }
 
     [Fact]
