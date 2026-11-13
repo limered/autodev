@@ -24,6 +24,24 @@ public class RunResponseTests
     };
 
     [Fact]
+    public void From_ExposesWorkflowName()
+    {
+        var state = State() with { Workflow = "full" };
+
+        var response = RunResponse.From(state);
+
+        Assert.Equal("full", response.Workflow);
+    }
+
+    [Fact]
+    public void From_RunWithoutWorkflowName_LeavesWorkflowNull()
+    {
+        var response = RunResponse.From(State());
+
+        Assert.Null(response.Workflow);
+    }
+
+    [Fact]
     public void From_ProjectsDerivedStageStatus()
     {
         var state = State(status: "running", currentPhase: "test-runner", stages: Pipeline, currentCategory: "test-runner");

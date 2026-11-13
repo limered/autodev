@@ -61,6 +61,20 @@ public sealed class RunStoreIntegrationTests : IClassFixture<PostgresFixture>, I
     }
 
     [SkippableFact]
+    public async Task RunStarted_PersistsWorkflowName()
+    {
+        Skip.IfNot(_fixture.IsDockerAvailable, "Docker is not available; skipping RunStore integration tests.");
+        var runId = Guid.NewGuid();
+
+        var started = Started(DateTimeOffset.UtcNow) with { Workflow = "full" };
+        await _store.Apply(runId, started);
+
+        var persisted = await _fixture.GetRunAsync(runId);
+        Assert.NotNull(persisted);
+        Assert.Equal("full", persisted!.Workflow);
+    }
+
+    [SkippableFact]
     public async Task Delete_RemovesRow_AndReportsWhetherItExisted()
     {
         Skip.IfNot(_fixture.IsDockerAvailable, "Docker is not available; skipping RunStore integration tests.");

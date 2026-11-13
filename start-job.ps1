@@ -165,6 +165,7 @@ $runStartedFields = @{
     catalogSource = $catalogSource
     catalogSha    = $CatalogSha
 }
+if (-not [string]::IsNullOrWhiteSpace($Workflow)) { $runStartedFields['workflow'] = $Workflow }
 if (-not [string]::IsNullOrWhiteSpace($ParentRunId)) { $runStartedFields['parentRunId'] = $ParentRunId }
 if (-not [string]::IsNullOrWhiteSpace($ResumeStage)) { $runStartedFields['resumeStage'] = $ResumeStage }
 Send-FactoryEvent -RunId $RunId -Type "run-started" -Fields $runStartedFields

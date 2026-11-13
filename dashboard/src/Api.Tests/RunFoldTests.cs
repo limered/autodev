@@ -106,6 +106,24 @@ public class RunFoldTests
     }
 
     [Fact]
+    public void RunStarted_CarriesWorkflowName()
+    {
+        var next = RunFold.Apply(null, new RunStartedEvent(Repo: "r", Workflow: "full") { At = T1, RunId = RunId });
+
+        Assert.NotNull(next);
+        Assert.Equal("full", next.Workflow);
+    }
+
+    [Fact]
+    public void RunStarted_WithoutWorkflowName_LeavesWorkflowEmpty()
+    {
+        var next = RunFold.Apply(null, new RunStartedEvent(Repo: "r") { At = T1, RunId = RunId });
+
+        Assert.NotNull(next);
+        Assert.Null(next.Workflow);
+    }
+
+    [Fact]
     public void RunStarted_OnExistingRun_IsNoOp()
     {
         var current = State();

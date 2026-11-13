@@ -300,6 +300,15 @@ describe("runView", () => {
       expect(view.runId).toBeUndefined();
     });
 
+    it("gates the workflow chip on a truthy workflow", () => {
+      expect(v({ workflow: "full" }).showWorkflow).toBe(true);
+      expect(v({ workflow: "full" }).workflow).toBe("full");
+      expect(v({ workflow: "" }).showWorkflow).toBe(false);
+      expect(v({ workflow: null }).showWorkflow).toBe(false);
+      expect(v({ workflow: undefined }).showWorkflow).toBe(false);
+      expect(v({}).workflow).toBe("");
+    });
+
     it("gates the VM stat on a truthy vmName", () => {
       expect(v({ vmName: "vm-42" }).showVm).toBe(true);
       expect(v({ vmName: "" }).showVm).toBe(false);

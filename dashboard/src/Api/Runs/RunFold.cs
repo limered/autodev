@@ -95,7 +95,8 @@ public static class RunFold
             UpdatedAt: at,
             Stages: ev.Stages,
             ParentRunId: ev.ParentRunId,
-            ResumeStage: ev.ResumeStage);
+            ResumeStage: ev.ResumeStage,
+            Workflow: ev.Workflow);
     }
 
     private static RunState ApplyAgentStarted(RunState current, AgentStartedEvent ev, DateTimeOffset at)
