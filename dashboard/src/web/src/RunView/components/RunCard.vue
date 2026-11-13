@@ -59,6 +59,11 @@ function isLastRow(groupIndex, stepIndex) {
         <span class="repo">{{ view.repo }}</span>
         <span class="sep">/</span>
         <span class="branch mono">{{ view.branch }}</span>
+        <span
+          v-if="view.showWorkflow"
+          class="workflow mono"
+          :title="`Workflow this run attempted: ${view.workflow}`"
+        >{{ view.workflow }}</span>
       </div>
       <button
         v-if="view.showRestart"
@@ -272,6 +277,15 @@ function isLastRow(groupIndex, stepIndex) {
 }
 .branch {
   color: var(--cyan);
+}
+.workflow {
+  font-size: 0.8rem;
+  font-weight: 500;
+  color: var(--text-muted);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 0.1rem 0.55rem;
+  white-space: nowrap;
 }
 .status-badge {
   display: inline-flex;

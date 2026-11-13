@@ -30,7 +30,8 @@ public static class RunsSchema
                 steps             jsonb,
                 current_category  text,
                 parent_run_id     uuid,
-                resume_stage      text
+                resume_stage      text,
+                workflow          text
             );
             CREATE INDEX IF NOT EXISTS runs_status_started_idx ON runs (status, started_at DESC);
             -- Idempotent migration: add the stages JSON column to pre-existing runs tables.
@@ -44,6 +45,8 @@ public static class RunsSchema
             -- Idempotent migration: link a resumed run to the failed run it retries.
             ALTER TABLE runs ADD COLUMN IF NOT EXISTS parent_run_id uuid;
             ALTER TABLE runs ADD COLUMN IF NOT EXISTS resume_stage text;
+            -- Idempotent migration: the workflow pick this run attempted.
+            ALTER TABLE runs ADD COLUMN IF NOT EXISTS workflow text;
             -- After the link columns exist: index the reverse lookup.
             CREATE INDEX IF NOT EXISTS runs_parent_run_idx ON runs (parent_run_id);
             """, conn);

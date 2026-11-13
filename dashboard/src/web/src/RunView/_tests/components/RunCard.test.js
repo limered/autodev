@@ -90,6 +90,20 @@ describe("RunCard header", () => {
     expect(metaLine(many)).toBe(metaLine(noStages));
   });
 
+  it("shows the workflow pick in the header for runs launched from a pick", async () => {
+    const html = await renderCard(run({ workflow: "full" }));
+    const header = findElement(html, "div", "card-header");
+
+    expect(header.inner).toContain("workflow");
+    expect(header.inner).toContain("full");
+  });
+
+  it("omits the workflow chip for runs without a pick (direct launches)", async () => {
+    const html = await renderCard(run());
+
+    expect(html).not.toContain('class="workflow');
+  });
+
   it("renders the abort control as a glyph-only × carrying title and aria-label", async () => {
     const html = await renderCard(run(), { deletable: true });
     const button = html.match(/<button[^>]*\bdelete-run\b[^>]*>[\s\S]*?<\/button>/)?.[0] ?? "";

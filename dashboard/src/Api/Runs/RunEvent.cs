@@ -58,7 +58,8 @@ public sealed record RunStartedEvent(
     string? Model = null,
     IReadOnlyList<RunStage>? Stages = null,
     Guid? ParentRunId = null,
-    string? ResumeStage = null) : RunEvent;
+    string? ResumeStage = null,
+    string? Workflow = null) : RunEvent;
 
 [RunEventDiscriminator("agent-started")]
 public sealed record AgentStartedEvent(string? VmName = null) : RunEvent;

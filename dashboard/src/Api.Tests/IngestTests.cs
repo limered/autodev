@@ -123,6 +123,61 @@ public class IngestTests
     }
 
     [Fact]
+    public async Task FromWire_RunStarted_IngestsWorkflowName()
+    {
+        var store = new FakeRunStore();
+
+        var ev = FromWire(
+            """{"type":"run-started","at":"2024-02-01T00:01:00Z","repo":"owner/repo","branch":"feat/x","spec":"do the thing","model":"gpt-x","workflow":"full","stages":[{"agent":"build","model":"gpt-x"}]}""");
+
+        var started = Assert.IsType<RunStartedEvent>(ev);
+        Assert.Equal("full", started.Workflow);
+
+        var state = await store.Apply(RunId, started);
+        Assert.NotNull(state);
+        Assert.Equal("full", state.Workflow);
+    }
+
+    [Fact]
+    public async Task FromWire_RunStarted_WithoutWorkflowName_IngestsNullWorkflow()
+    {
+        var store = new FakeRunStore();
+
+        // A direct launch with no pick: no workflow field on the wire at all.
+        var ev = FromWire(
+            """{"type":"run-started","at":"2024-02-01T00:01:00Z","repo":"owner/repo","branch":"feat/x","spec":"do the thing","model":"gpt-x"}""");
+
+        var started = Assert.IsType<RunStartedEvent>(ev);
+        Assert.Null(started.Workflow);
+
+        var state = await store.Apply(RunId, started);
+        Assert.NotNull(state);
+        Assert.Null(state.Workflow);
+    }
+
+    [Fact]
+    public async Task FromWire_StaleWorkflowAbort_KeepsPickNameAndFailsWithStaleReason()
+    {
+        // The stale-workflow abort path: run-started still carries the pick name
+        // (with the full-catalog seeding as stages) and the immediately-following
+        // run-failed carries the stale reason. RunView shows WHICH pick failed.
+        var store = new FakeRunStore();
+
+        var started = FromWire(
+            """{"type":"run-started","at":"2024-02-01T00:01:00Z","repo":"owner/repo","branch":"feat/x","spec":"do the thing","model":"gpt-x","workflow":"ghost","stages":[{"agent":"triage","model":"gpt-x"},{"agent":"build","model":"gpt-x"}]}""");
+        var failed = FromWire(
+            """{"type":"run-failed","at":"2024-02-01T00:01:30Z","failureReason":"stale-workflow at start: pick 'ghost' is not known to the start catalog"}""");
+
+        await store.Apply(RunId, started!);
+        var state = await store.Apply(RunId, failed!);
+
+        Assert.NotNull(state);
+        Assert.Equal("failed", state.Status);
+        Assert.Equal("ghost", state.Workflow);
+        Assert.StartsWith("stale-workflow at start:", state.FailureReason);
+    }
+
+    [Fact]
     public async Task FromWire_RunStarted_IngestsStageCategories()
     {
         var store = new FakeRunStore();

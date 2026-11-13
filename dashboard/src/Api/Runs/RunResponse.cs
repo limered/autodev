@@ -27,7 +27,8 @@ public record RunResponse(
     IReadOnlyList<RunStepView> Steps,
     string? CurrentCategory = null,
     Guid? ParentRunId = null,
-    string? ResumeStage = null)
+    string? ResumeStage = null,
+    string? Workflow = null)
 {
     public static RunResponse From(RunState r) => new(
         r.RunId,
@@ -53,5 +54,6 @@ public record RunResponse(
             ?? Array.Empty<RunStepView>(),
         r.CurrentCategory,
         r.ParentRunId,
-        r.ResumeStage);
+        r.ResumeStage,
+        r.Workflow);
 }

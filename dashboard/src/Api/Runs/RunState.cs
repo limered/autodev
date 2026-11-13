@@ -21,4 +21,5 @@ public record RunState(
     IReadOnlyList<RunStep>? Steps = null,
     string? CurrentCategory = null,
     Guid? ParentRunId = null,
-    string? ResumeStage = null);
+    string? ResumeStage = null,
+    string? Workflow = null);
