@@ -21,7 +21,13 @@ public sealed class QueueStoreIntegrationTests : IClassFixture<PostgresFixture>,
     {
         _fixture = fixture;
         // Only meaningful when Docker is available; tests skip otherwise before touching _store.
-        _store = fixture.IsDockerAvailable ? fixture.CreateStore() : null!;
+        // The readable factory fallback mirrors Program.cs's always-registered provider, so
+        // claims without a target catalog resolve a verifiable default workflow.
+        _store = fixture.IsDockerAvailable
+            ? fixture.CreateStore(factory: new FixedFactoryWorkflows(new Api.Catalogs.FactoryWorkflows(
+                "full",
+                [new Api.Catalogs.WorkflowEntry("full", 1)])))
+            : null!;
     }
 
     // Per-test: start from a clean slate. Skips do nothing here; the test body re-checks.

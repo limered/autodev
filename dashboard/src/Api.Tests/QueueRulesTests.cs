@@ -92,10 +92,11 @@ public class QueueRulesTests
         Assert.Null(QueueRules.ExistingForIssue(items, 99));
     }
 
-    // The claim-time pick verdict: a row with no pick claims (resolved to the
-    // catalog default when one is readable); a pick the catalog verifies claims
-    // as itself; a pick the catalog cannot verify skips the row — never a silent
-    // fallback to the default.
+    // The claim-time pick verdict — claim iff something verifiable resolves: a row
+    // with no pick claims when the catalog default verifies against the names; a
+    // pick the catalog verifies claims as itself; an unverifiable default (absent,
+    // or no readable names) and a pick the catalog cannot verify both skip the
+    // row — it stays unclaimed and retryable, never a silent fallback.
     [Fact]
     public void DecidePick_NoPickWithNames_ResolvesCatalogDefault()
     {
@@ -106,11 +107,20 @@ public class QueueRulesTests
     }
 
     [Fact]
-    public void DecidePick_NoPickWithoutNames_ClaimsNoExplicitWorkflow()
+    public void DecidePick_NoPickWithoutNames_SkipsRow()
     {
         var decision = QueueRules.DecidePick(null, null, Array.Empty<string>());
 
-        Assert.False(decision.Skip);
+        Assert.True(decision.Skip);
+        Assert.Null(decision.Resolved);
+    }
+
+    [Fact]
+    public void DecidePick_NoPickDefaultMissingFromNames_SkipsRow()
+    {
+        var decision = QueueRules.DecidePick(null, "retired-flow", new[] { "full", "quick" });
+
+        Assert.True(decision.Skip);
         Assert.Null(decision.Resolved);
     }
 

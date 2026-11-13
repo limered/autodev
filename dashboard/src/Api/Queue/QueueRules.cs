@@ -50,27 +50,22 @@ public static class QueueRules
         items.FirstOrDefault(i => i.IssueId == issueId);
 
     /// <summary>
-    /// The claim-time verdict on a row's workflow pick, so a stale pick freezes out
-    /// instead of silently running the wrong stages: no pick resolves to the catalog's
-    /// default; a pick the catalog verifies resolves to itself; a pick the catalog
-    /// cannot verify (vanished, or no catalog read to verify it against) skips the
-    /// row — it stays unclaimed and retryable after the catalog resyncs. Names are
-    /// the workflow names the row's effective catalog runs under.
+    /// The claim-time verdict on a row's workflow pick: claim iff something
+    /// verifiable resolves — a verified pick, or a verifiable default. No pick
+    /// resolves to the catalog's default only when the names verify it; a default
+    /// or a pick the catalog cannot verify (vanished, or no catalog read to check
+    /// against) skips the row — it stays unclaimed and retryable after the catalog
+    /// resyncs, symmetric with the stale-pick rule. Names are the workflow names
+    /// the row's effective catalog runs under.
     /// </summary>
     public static WorkflowPickDecision DecidePick(
         string? pick, string? defaultWorkflow, IEnumerable<string>? workflowNames)
     {
         var names = new HashSet<string>(workflowNames ?? Enumerable.Empty<string>(), StringComparer.Ordinal);
-        if (names.Count == 0)
-        {
-            return new WorkflowPickDecision(pick is not null, null);
-        }
-
         if (pick is null)
         {
-            return new WorkflowPickDecision(
-                false,
-                defaultWorkflow is not null && names.Contains(defaultWorkflow) ? defaultWorkflow : null);
+            var defaultVerified = defaultWorkflow is not null && names.Contains(defaultWorkflow);
+            return new WorkflowPickDecision(!defaultVerified, defaultVerified ? defaultWorkflow : null);
         }
 
         var verified = names.Contains(pick);
