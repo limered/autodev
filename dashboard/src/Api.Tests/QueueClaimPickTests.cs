@@ -7,11 +7,14 @@ namespace Api.Tests;
 
 /// <summary>
 /// The claim-time workflow freeze through the fake queue store's seam: the pick
-/// resolves into the claim payload as an explicit workflow string; a pick the
-/// catalog cannot verify skips the row (left unclaimed, no run) and is retryable
-/// after the catalog resyncs — never a silent fallback to the default. The
-/// decision is shared with the SQL store by QueueRules + CatalogRules, so these
-/// pin both stores' claim behaviour modulo the fake's single-row claim.
+/// resolves into the claim payload as an explicit workflow string; a row claims
+/// only when something verifiable resolves — a verified pick or a verifiable
+/// default. A pick the catalog cannot verify, and a default the catalog cannot
+/// verify (no readable names), both skip the row (left unclaimed, no run) and are
+/// retryable after the catalog resyncs — never a silent fallback, never a
+/// blank-workflow claim. The decision is shared with the SQL store by QueueRules
+/// + CatalogRules, so these pin both stores' claim behaviour modulo the fake's
+/// single-row claim.
 /// </summary>
 public class QueueClaimPickTests
 {
@@ -130,6 +133,37 @@ public class QueueClaimPickTests
 
         Assert.Null(claim);
         Assert.Null((await queue.All()).Single().RunId);
+    }
+
+    [Fact]
+    public async Task ClaimNext_NoPickUnverifiableCatalog_SkipsRowAndSelfHealsAfterResync()
+    {
+        var queue = await ClaimableQueue();
+        var store = new FakeTargetCatalogStore();
+        queue.Catalogs = await CachedCatalog(store, "sha-1", "{not json");
+        queue.Factory = new FixedFactoryWorkflows(null);
+
+        var enqueued = await queue.Enqueue(1);
+        await queue.StartNext(enqueued!.Id);
+
+        var claim = await queue.ClaimNext();
+
+        // Skipped: the catalog default cannot be verified against any names, so the
+        // row stays unclaimed (no run, no dispatch) but still start-requested — the
+        // next sweep picks it up once the catalog reads again.
+        Assert.Null(claim);
+        var row = (await queue.All()).Single();
+        Assert.Null(row.RunId);
+        Assert.NotNull(row.StartRequestedAt);
+
+        // Resync moves the cache to a parsable catalog with a verifiable default.
+        await new TargetCatalogService(FakeTargetCatalogFetcher.Target("sha-2", CatalogFullOnly), store)
+            .RefreshOnSyncAsync("owner/repo");
+
+        var retried = await queue.ClaimNext();
+
+        Assert.NotNull(retried);
+        Assert.Equal("full", retried!.Workflow);
     }
 
     [Fact]

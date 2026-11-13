@@ -215,10 +215,11 @@ public sealed class QueueStore : IQueueStore
             var decision = QueueRules.DecidePick(claimed.Workflow, defaultName, names);
             if (decision.Skip)
             {
-                // Stale pick: the row is released from the claim attempt — it stays
-                // unclaimed with no run, and retries once the next Issue sync
-                // refreshes the catalog or the pick is reset. Never a silent fallback
-                // to the default.
+                // Nothing verifiable resolved: a stale pick, or a default the
+                // catalog cannot verify. The row is released from the claim
+                // attempt — it stays unclaimed with no run, and retries once the
+                // next Issue sync refreshes the catalog or the pick is reset.
+                // Never a silent fallback or a blank-workflow claim.
                 claimed = null;
                 payload = null;
                 catalog = null;

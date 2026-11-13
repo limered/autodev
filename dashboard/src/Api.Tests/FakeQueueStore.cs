@@ -17,8 +17,16 @@ public sealed class FakeQueueStore : IQueueStore
 
     public Catalogs.ITargetCatalogService? Catalogs { get; set; }
 
-    /// <summary>The factory catalog the fake verifies fallback picks against; unwired answers no names.</summary>
-    public Catalogs.IFactoryWorkflows? Factory { get; set; }
+    /// <summary>
+    /// The factory catalog the fake verifies fallback picks against. Defaults to a
+    /// readable fallback catalog — the way Program.cs always registers an
+    /// <c>IFactoryWorkflows</c> — so an unwired claim resolves the factory default;
+    /// pick tests override it to control catalog drift and verification.
+    /// </summary>
+    public Catalogs.IFactoryWorkflows? Factory { get; set; } =
+        new FixedFactoryWorkflows(new Catalogs.FactoryWorkflows(
+            "full",
+            [new Catalogs.WorkflowEntry("full", 1), new Catalogs.WorkflowEntry("quick", 1)]));
 
     public FakeIssuesStore? Issues { get; set; }
 
@@ -198,8 +206,9 @@ public sealed class FakeQueueStore : IQueueStore
         var decision = QueueRules.DecidePick(next.Workflow, defaultName, names);
         if (decision.Skip)
         {
-            // Stale pick: skip the row — unclaimed with no run, retryable after the
-            // catalog resyncs; shared with the real store's claim path.
+            // Nothing verifiable resolved: a stale pick, or a default the catalog
+            // cannot verify. Skip the row — unclaimed with no run, retryable after
+            // the catalog resyncs; shared with the real store's claim path.
             return null;
         }
 
